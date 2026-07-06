@@ -74,6 +74,7 @@ final class LibraryModel {
     }
 
     func refresh() async {
+        guard !refreshing else { return }
         let settings = AppSettings.shared
         guard settings.isConfigured else { needsAuth = true; return }
         refreshing = true
@@ -97,6 +98,10 @@ final class LibraryModel {
     func playItem(for item: LibraryItem, fileIndex: Int) async throws -> PlayItem {
         let settings = AppSettings.shared
         let rd = RealDebridClient(token: settings.rdToken)
+        // itemKey can outlive a torrent's link layout (RD re-sync); never trust it.
+        guard item.links.indices.contains(fileIndex) else {
+            throw RealDebridError.noDownloadableLinks
+        }
         let link = item.links[fileIndex]
         let unrestricted = try await rd.unrestrictLink(link)
         guard let url = unrestricted.directURL else { throw RealDebridError.badResponse }

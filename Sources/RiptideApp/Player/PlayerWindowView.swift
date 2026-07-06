@@ -64,6 +64,13 @@ struct PlayerWindowView: View {
         } message: {
             Text("You stopped at \(format(item.resumeFrom ?? 0)).")
         }
+        .onChange(of: showResumePrompt) {
+            // Alert dismissed without a choice (Esc / click-away): default to
+            // resuming rather than leaving the window black forever.
+            if !showResumePrompt && resolvedStart == nil {
+                resolvedStart = .some(item.resumeFrom)
+            }
+        }
         .onHover { hovering in
             controlsVisible = hovering || model.paused
         }
@@ -71,7 +78,7 @@ struct PlayerWindowView: View {
             if case .active = phase { controlsVisible = true }
         }
         .navigationTitle(item.title)
-        .onDisappear { model.flushProgress() }
+        .onDisappear { model.shutdown() }
         .sheet(isPresented: $showSubtitleSearch) {
             SubtitleSearchSheet(query: item.subtitleQuery,
                                 season: item.season, episode: item.episode) { path in

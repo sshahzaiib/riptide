@@ -62,6 +62,12 @@ final class PlayerModel {
         try? store.saveProgress(itemKey: itemKey, position: position, duration: duration)
     }
 
+    /// Window closing: persist position, then destroy the mpv instance.
+    func shutdown() {
+        flushProgress()
+        controller?.shutdown()
+    }
+
     // MARK: User intents
 
     func togglePause() { controller?.togglePause() }

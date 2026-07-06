@@ -61,13 +61,31 @@ final class MPVPlayerController: NSViewController {
                                          height: size.height * scale)
     }
 
+    /// Explicit teardown — MUST be called when the player window closes.
+    /// The wakeup callback holds a retained reference to self, so deinit can
+    /// never run while mpv is alive; this is the only reliable destruction
+    /// point. Safe to call twice (second call no-ops on the nil guard).
+    func shutdown() {
+        guard mpv != nil else { return }
+        mpv_set_wakeup_callback(mpv, nil, nil)
+        queue.sync {
+            if self.mpv != nil {
+                mpv_terminate_destroy(self.mpv)
+                self.mpv = nil
+            }
+        }
+        Unmanaged.passUnretained(self).release()
+    }
+
     private func setupMpv() {
         mpv = mpv_create()
         guard mpv != nil else { fatalError("mpv_create failed") }
 
         checkError(mpv_request_log_messages(mpv, "warn"))
         checkError(mpv_set_option_string(mpv, "input-media-keys", "yes"))
-        checkError(mpv_set_option(mpv, "wid", MPV_FORMAT_INT64, &metalLayer))
+        // metalLayer is kept alive by self; mpv only needs the pointer value.
+        var wid = Int64(Int(bitPattern: Unmanaged.passUnretained(metalLayer).toOpaque()))
+        checkError(mpv_set_option(mpv, "wid", MPV_FORMAT_INT64, &wid))
         checkError(mpv_set_option_string(mpv, "vo", "gpu-next"))
         checkError(mpv_set_option_string(mpv, "gpu-api", "vulkan"))
         checkError(mpv_set_option_string(mpv, "gpu-context", "moltenvk"))
@@ -216,10 +234,7 @@ final class MPVPlayerController: NSViewController {
                         self.emit(.ended)
                     }
                 case MPV_EVENT_SHUTDOWN:
-                    if self.mpv != nil {
-                        mpv_terminate_destroy(self.mpv)
-                        self.mpv = nil
-                    }
+                    break   // destruction is owned by shutdown()
                 default:
                     break
                 }
@@ -261,16 +276,9 @@ final class MPVPlayerController: NSViewController {
     }
 
     deinit {
-        if mpv != nil {
-            mpv_set_wakeup_callback(mpv, nil, nil)
-            queue.sync {
-                if self.mpv != nil {
-                    mpv_terminate_destroy(self.mpv)
-                    self.mpv = nil
-                }
-            }
-            Unmanaged.passUnretained(self).release()
-        }
+        // Unreachable while mpv is alive (the callback retains self); after
+        // shutdown() this no-ops on the nil guard.
+        shutdown()
     }
 
     private func checkError(_ status: CInt) {
