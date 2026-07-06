@@ -94,6 +94,13 @@ public struct TorrentListItem: Sendable, Equatable, Decodable {
     public let added: String           // raw ISO-8601
     public let links: [String]
     public let ended: String?
+
+    public init(id: String, filename: String, bytes: Int64, progress: Double,
+                status: String, added: String, links: [String], ended: String?) {
+        self.id = id; self.filename = filename; self.bytes = bytes
+        self.progress = progress; self.status = status; self.added = added
+        self.links = links; self.ended = ended
+    }
 }
 
 /// One entry from `GET /downloads` (previously unrestricted links).
