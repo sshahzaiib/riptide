@@ -62,6 +62,7 @@ struct ItemDetailView: View {
     }
 
     private func play(_ index: Int) async {
+        playError = nil
         busyIndex = index
         defer { busyIndex = nil }
         do {
