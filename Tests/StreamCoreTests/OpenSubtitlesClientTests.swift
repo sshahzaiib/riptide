@@ -70,4 +70,39 @@ final class OpenSubtitlesClientTests: XCTestCase {
             XCTAssertEqual(e, .quotaExceeded)
         } catch { XCTFail("wrong error: \(error)") }
     }
+
+    func testDownloadSanitizesTraversalFileName() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("riptide-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        MockURLProtocol.setHandler { request in
+            if request.url!.path.hasSuffix("/download") {
+                return .json(#"{"link":"https://dl.opensubtitles.com/f/1.srt","file_name":"../../evil.srt"}"#)
+            }
+            return .json("subs")
+        }
+        let fileURL = try await client().downloadSubtitle(fileID: 1, into: dir)
+        XCTAssertEqual(fileURL.lastPathComponent, "evil.srt")
+        XCTAssertEqual(fileURL.deletingLastPathComponent().standardizedFileURL,
+                       dir.standardizedFileURL)
+    }
+
+    func testDownloadFallsBackWhenFileNameIsBare() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("riptide-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        MockURLProtocol.setHandler { request in
+            if request.url!.path.hasSuffix("/download") {
+                return .json(#"{"link":"https://dl.opensubtitles.com/f/7.srt","file_name":".."}"#)
+            }
+            return .json("subs")
+        }
+        let fileURL = try await client().downloadSubtitle(fileID: 7, into: dir)
+        XCTAssertEqual(fileURL.lastPathComponent, "subtitle-7.srt")
+    }
 }
+

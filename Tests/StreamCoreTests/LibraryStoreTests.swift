@@ -87,4 +87,24 @@ final class LibraryStoreTests: XCTestCase {
         // "new" was written later -> more recent lastWatchedAt -> first.
         XCTAssertEqual(try store.continueWatching().map(\.itemKey), ["new", "old"])
     }
+
+    func testUpsertIgnoresDuplicateIDsInInput() throws {
+        let store = try LibraryStore.inMemory()
+        let summary = try store.upsert(torrents: [
+            torrent(id: "T1", filename: "A.2020.mkv"),
+            torrent(id: "T1", filename: "A.2020.mkv"),
+        ])
+        XCTAssertEqual(summary, UpsertSummary(inserted: 1, updated: 0, deleted: 0))
+        XCTAssertEqual(try store.items().count, 1)
+    }
+
+    func testDeletingItemRemovesItsWatchStates() throws {
+        let store = try LibraryStore.inMemory()
+        _ = try store.upsert(torrents: [torrent(id: "T1", filename: "A.2020.mkv"),
+                                        torrent(id: "T2", filename: "B.2021.mkv")])
+        try store.saveProgress(itemKey: "T2#0", position: 100, duration: 7200)
+        try store.saveProgress(itemKey: "T1#0", position: 100, duration: 7200)
+        _ = try store.upsert(torrents: [torrent(id: "T1", filename: "A.2020.mkv")])  // T2 vanished
+        XCTAssertEqual(try store.continueWatching().map(\.itemKey), ["T1#0"])
+    }
 }

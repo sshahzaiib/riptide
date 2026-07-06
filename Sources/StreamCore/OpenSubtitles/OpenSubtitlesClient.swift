@@ -134,7 +134,13 @@ public struct OpenSubtitlesClient: Sendable {
         let (fileData, response) = try await session.data(from: link)
         guard let http = response as? HTTPURLResponse,
               (200..<300).contains(http.statusCode) else { throw OpenSubtitlesError.badResponse }
-        let target = directory.appendingPathComponent(resolved.fileName)
+        // fileName is attacker-influencable: keep only the last path component and
+        // refuse traversal tokens so we can never write outside `directory`.
+        var safeName = (resolved.fileName as NSString).lastPathComponent
+        if safeName.isEmpty || safeName == "." || safeName == ".." {
+            safeName = "subtitle-\(fileID).srt"
+        }
+        let target = directory.appendingPathComponent(safeName)
         try fileData.write(to: target, options: .atomic)
         return target
     }

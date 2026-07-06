@@ -45,8 +45,10 @@ public final class LibraryStore {
         let existing = try context.fetch(FetchDescriptor<LibraryItem>())
         var byID = Dictionary(uniqueKeysWithValues: existing.map { ($0.torrentID, $0) })
         var summary = UpsertSummary(inserted: 0, updated: 0, deleted: 0)
+        var processed = Set<String>()
 
         for t in torrents {
+            guard processed.insert(t.id).inserted else { continue }
             if let item = byID.removeValue(forKey: t.id) {
                 if item.filename != t.filename || item.links != t.links
                     || item.sizeBytes != t.bytes {
@@ -76,10 +78,19 @@ public final class LibraryStore {
                 summary.inserted += 1
             }
         }
-        // Anything left in byID no longer exists on RD.
-        for (_, orphan) in byID {
-            context.delete(orphan)
-            summary.deleted += 1
+        // Anything left in byID no longer exists on RD. Drop its watch states too,
+        // or Continue Watching would keep offering torrents that no longer exist.
+        if !byID.isEmpty {
+            let allStates = try context.fetch(FetchDescriptor<WatchState>())
+            for (_, orphan) in byID {
+                let prefix = orphan.torrentID + "#"
+                for state in allStates
+                where state.itemKey == orphan.torrentID || state.itemKey.hasPrefix(prefix) {
+                    context.delete(state)
+                }
+                context.delete(orphan)
+                summary.deleted += 1
+            }
         }
         try context.save()
         return summary
