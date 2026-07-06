@@ -22,6 +22,13 @@ public enum ReleaseNameParser {
     private static let videoExtensions: Set<String> =
         ["mkv", "mp4", "avi", "m4v", "mov", "wmv", "ts", "webm", "flv", "mpg", "mpeg"]
 
+    // Bare "WEB" is case-sensitive: scene tags are uppercase, and a case-insensitive
+    // match would eat legitimate title words ("Charlotte's Web").
+    private static let sourcePatterns = [
+        #"(?i)\b(BluRay|Blu-Ray|BDRip|BRRip|WEB-?DL|WEBRip|HDTV|DVDRip)\b"#,
+        #"\b(WEB)\b"#,
+    ]
+
     public static func parse(_ name: String) -> ParsedRelease {
         var s = name
 
@@ -56,7 +63,8 @@ public enum ReleaseNameParser {
 
         // 5. Source.
         var source: String?
-        if let m = firstMatch(#"(?i)\b(BluRay|Blu-Ray|BDRip|BRRip|WEB-?DL|WEBRip|WEB|HDTV|DVDRip)\b"#, in: s) {
+        for pattern in sourcePatterns {
+            guard let m = firstMatch(pattern, in: s) else { continue }
             switch m[1].lowercased() {
             case "bluray", "blu-ray", "bdrip", "brrip": source = "BluRay"
             case "web-dl", "webdl":                     source = "WEB-DL"
@@ -66,6 +74,7 @@ public enum ReleaseNameParser {
             case "dvdrip":                              source = "DVDRip"
             default: break
             }
+            break
         }
 
         // 6. Season/episode. Order: SxxExx, then NxNN, then anime " - NN".
@@ -89,7 +98,7 @@ public enum ReleaseNameParser {
         } ?? false
         let candidates = leadingIsYear ? Array(yearMatches.dropFirst()) : yearMatches
         // Ignore year tokens after the S/E marker (episode-title years).
-        if let m = candidates.first(where: { seRange == nil || $0.range.lowerBound < seRange!.lowerBound }) {
+        if let m = candidates.filter({ seRange == nil || $0.range.lowerBound < seRange!.lowerBound }).last {
             year = Int(s[m.range]); yearRange = m.range
         }
 
@@ -99,8 +108,7 @@ public enum ReleaseNameParser {
         for r in [seRange, yearRange].compactMap({ $0 }) where r.lowerBound < boundary {
             boundary = r.lowerBound
         }
-        for pattern in [#"(?i)\b(2160p|1080p|720p|480p|4K)\b"#,
-                        #"(?i)\b(BluRay|Blu-Ray|BDRip|BRRip|WEB-?DL|WEBRip|WEB|HDTV|DVDRip)\b"#] {
+        for pattern in [#"(?i)\b(2160p|1080p|720p|480p|4K)\b"#] + sourcePatterns {
             if let m = firstMatchWithRange(pattern, in: s), m.range.lowerBound < boundary {
                 boundary = m.range.lowerBound
             }

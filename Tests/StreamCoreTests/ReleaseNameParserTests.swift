@@ -48,6 +48,12 @@ final class ReleaseNameParserTests: XCTestCase {
             Case("no extension at all", p("no extension at all")),
             Case("Snowpiercer.1x09.HDTV.mp4",
                  p("Snowpiercer", season: 1, episode: 9, source: "HDTV")),
+            Case("Charlottes.Web.2006.1080p.BluRay.mkv",             // title contains "Web"
+                 p("Charlottes Web", year: 2006, quality: "1080p", source: "BluRay")),
+            Case("Charlottes.Web.1080p.mkv",                          // no year, still no WEB source
+                 p("Charlottes Web", quality: "1080p")),
+            Case("Blade.Runner.2049.2017.1080p.WEB-DL.mkv",           // year-like number in title
+                 p("Blade Runner 2049", year: 2017, quality: "1080p", source: "WEB-DL")),
         ]
         for c in cases {
             let got = ReleaseNameParser.parse(c.input)
