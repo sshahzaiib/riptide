@@ -69,3 +69,72 @@ public enum TMDB {
         URL(string: "https://image.tmdb.org/t/p/w\(width)\(path)")!
     }
 }
+
+public struct TMDBShowDetails: Sendable, Equatable, Decodable {
+    public let id: Int
+    public let name: String
+    public let backdropPath: String?
+    public let overview: String
+    public let voteAverage: Double
+    public let firstAirDate: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, overview
+        case backdropPath = "backdrop_path"
+        case voteAverage = "vote_average"
+        case firstAirDate = "first_air_date"
+    }
+}
+
+public struct TMDBSeasonEpisode: Sendable, Equatable, Decodable {
+    public let episodeNumber: Int
+    public let name: String
+    public let overview: String
+    public let stillPath: String?
+    public let airDate: String?
+    public let runtime: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case name, overview, runtime
+        case episodeNumber = "episode_number"
+        case stillPath = "still_path"
+        case airDate = "air_date"
+    }
+}
+
+public struct TMDBCastMember: Sendable, Equatable, Decodable {
+    public let id: Int
+    public let name: String
+    public let character: String?
+    public let profilePath: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, character
+        case profilePath = "profile_path"
+    }
+}
+
+public struct TMDBMovieDetails: Sendable, Equatable, Decodable {
+    public let id: Int
+    public let title: String
+    public let backdropPath: String?
+    public let overview: String
+    public let voteAverage: Double
+    public let releaseDate: String?
+    public let runtime: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, overview, runtime
+        case backdropPath = "backdrop_path"
+        case voteAverage = "vote_average"
+        case releaseDate = "release_date"
+    }
+}
+
+struct TMDBSeasonEnvelope: Decodable {
+    let episodes: [TMDBSeasonEpisode]
+}
+
+struct TMDBCreditsEnvelope: Decodable {
+    let cast: [TMDBCastMember]
+}

@@ -57,4 +57,27 @@ public struct TMDBClient: Sendable {
         let data = try await get("tv/\(showID)/season/\(season)/episode/\(episode)", query: [:])
         return try decode(TMDBEpisode.self, from: data)
     }
+
+    public func showDetails(id: Int) async throws -> TMDBShowDetails {
+        try decode(TMDBShowDetails.self, from: try await get("tv/\(id)", query: [:]))
+    }
+
+    public func seasonEpisodes(showID: Int, season: Int) async throws -> [TMDBSeasonEpisode] {
+        let data = try await get("tv/\(showID)/season/\(season)", query: [:])
+        return try decode(TMDBSeasonEnvelope.self, from: data).episodes
+    }
+
+    public func showCredits(id: Int) async throws -> [TMDBCastMember] {
+        let data = try await get("tv/\(id)/credits", query: [:])
+        return Array(try decode(TMDBCreditsEnvelope.self, from: data).cast.prefix(12))
+    }
+
+    public func movieCredits(id: Int) async throws -> [TMDBCastMember] {
+        let data = try await get("movie/\(id)/credits", query: [:])
+        return Array(try decode(TMDBCreditsEnvelope.self, from: data).cast.prefix(12))
+    }
+
+    public func movieDetails(id: Int) async throws -> TMDBMovieDetails {
+        try decode(TMDBMovieDetails.self, from: try await get("movie/\(id)", query: [:]))
+    }
 }

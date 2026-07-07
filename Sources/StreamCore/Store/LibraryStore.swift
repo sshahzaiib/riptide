@@ -30,32 +30,44 @@ public final class LibraryStore {
         return LibraryStore(container: container)
     }
 
-    /// On-disk store in Application Support (Plan 2 app entry point uses this).
+    /// On-disk store in Application Support. Pre-1.0 schema policy: if the
+    /// container fails to open (schema changed), wipe and recreate rather
+    /// than migrate.
     public static func onDisk() throws -> LibraryStore {
-        let container = try ModelContainer(for: LibraryItem.self, WatchState.self)
-        return LibraryStore(container: container)
+        do {
+            let container = try ModelContainer(for: LibraryItem.self, WatchState.self)
+            return LibraryStore(container: container)
+        } catch {
+            let support = URL.applicationSupportDirectory
+            for suffix in ["", "-shm", "-wal"] {
+                try? FileManager.default.removeItem(
+                    at: support.appendingPathComponent("default.store\(suffix)"))
+            }
+            let container = try ModelContainer(for: LibraryItem.self, WatchState.self)
+            return LibraryStore(container: container)
+        }
     }
 
     // MARK: Library sync
 
-    /// Mirror the RD torrent list into the cache: insert new, update changed
-    /// (by filename/links/size), delete vanished. Parsing happens here so the
-    /// UI never sees an unparsed item.
-    public func upsert(torrents: [TorrentListItem]) throws -> UpsertSummary {
+    /// Mirror the flattened RD file list into the cache: insert new, update
+    /// changed (filename/link/size), delete vanished. Parsing happens here so
+    /// the UI never sees an unparsed item.
+    public func upsert(entries: [LibraryFileEntry]) throws -> UpsertSummary {
         let existing = try context.fetch(FetchDescriptor<LibraryItem>())
-        var byID = Dictionary(uniqueKeysWithValues: existing.map { ($0.torrentID, $0) })
+        var byKey = Dictionary(uniqueKeysWithValues: existing.map { ($0.itemKey, $0) })
         var summary = UpsertSummary(inserted: 0, updated: 0, deleted: 0)
         var processed = Set<String>()
 
-        for t in torrents {
-            guard processed.insert(t.id).inserted else { continue }
-            if let item = byID.removeValue(forKey: t.id) {
-                if item.filename != t.filename || item.links != t.links
-                    || item.sizeBytes != t.bytes {
-                    let parsed = ReleaseNameParser.parse(t.filename)
-                    item.filename = t.filename
-                    item.sizeBytes = t.bytes
-                    item.links = t.links
+        for entry in entries {
+            guard processed.insert(entry.itemKey).inserted else { continue }
+            if let item = byKey.removeValue(forKey: entry.itemKey) {
+                if item.filename != entry.filename || item.link != entry.link
+                    || item.sizeBytes != entry.bytes {
+                    let parsed = ReleaseNameParser.parse(entry.filename)
+                    item.filename = entry.filename
+                    item.sizeBytes = entry.bytes
+                    item.link = entry.link
                     item.title = parsed.title
                     item.year = parsed.year
                     item.season = parsed.season
@@ -71,21 +83,17 @@ public final class LibraryStore {
                     summary.updated += 1
                 }
             } else {
-                context.insert(LibraryItem(torrentID: t.id, filename: t.filename,
-                                           sizeBytes: t.bytes, addedAt: t.added,
-                                           links: t.links,
-                                           parsed: ReleaseNameParser.parse(t.filename)))
+                context.insert(LibraryItem(entry: entry,
+                                           parsed: ReleaseNameParser.parse(entry.filename)))
                 summary.inserted += 1
             }
         }
-        // Anything left in byID no longer exists on RD. Drop its watch states too,
-        // or Continue Watching would keep offering torrents that no longer exist.
-        if !byID.isEmpty {
+        // Anything left in byKey no longer exists on RD. Drop its watch state
+        // too, or Continue Watching would keep offering dead entries.
+        if !byKey.isEmpty {
             let allStates = try context.fetch(FetchDescriptor<WatchState>())
-            for (_, orphan) in byID {
-                let prefix = orphan.torrentID + "#"
-                for state in allStates
-                where state.itemKey == orphan.torrentID || state.itemKey.hasPrefix(prefix) {
+            for (_, orphan) in byKey {
+                for state in allStates where state.itemKey == orphan.itemKey {
                     context.delete(state)
                 }
                 context.delete(orphan)
@@ -101,10 +109,32 @@ public final class LibraryStore {
             sortBy: [SortDescriptor(\.addedAt, order: .reverse)]))
     }
 
-    public func applyMatch(torrentID: String, tmdbID: Int, mediaKind: String,
-                           posterPath: String?, overview: String?, rating: Double?) throws {
+    /// Item count per torrent — lets the refresher skip torrentInfo calls for
+    /// packs it has already expanded.
+    public func entryCounts() throws -> [String: Int] {
+        var counts: [String: Int] = [:]
+        for item in try context.fetch(FetchDescriptor<LibraryItem>()) {
+            counts[item.torrentID, default: 0] += 1
+        }
+        return counts
+    }
+
+    /// Reconstruct the sync entries for one torrent from cached items (so a
+    /// skipped torrentInfo call still contributes to the upsert input).
+    public func cachedEntries(torrentID: String) throws -> [LibraryFileEntry] {
         let descriptor = FetchDescriptor<LibraryItem>(
             predicate: #Predicate { $0.torrentID == torrentID })
+        return try context.fetch(descriptor).map {
+            LibraryFileEntry(torrentID: $0.torrentID, fileIndex: $0.fileIndex,
+                             filename: $0.filename, bytes: $0.sizeBytes,
+                             added: $0.addedAt, link: $0.link)
+        }
+    }
+
+    public func applyMatch(itemKey: String, tmdbID: Int, mediaKind: String,
+                           posterPath: String?, overview: String?, rating: Double?) throws {
+        let descriptor = FetchDescriptor<LibraryItem>(
+            predicate: #Predicate { $0.itemKey == itemKey })
         guard let item = try context.fetch(descriptor).first else { return }
         item.tmdbID = tmdbID
         item.mediaKind = mediaKind
@@ -117,7 +147,7 @@ public final class LibraryStore {
 
     // MARK: Watch state
 
-    /// Upsert playback position. >= 95% watched marks the item finished (spec).
+    /// Playback position. >= 95% watched marks the item finished (spec).
     public func saveProgress(itemKey: String, position: Double, duration: Double) throws {
         let descriptor = FetchDescriptor<WatchState>(
             predicate: #Predicate { $0.itemKey == itemKey })
@@ -139,5 +169,11 @@ public final class LibraryStore {
         try context.fetch(FetchDescriptor<WatchState>(
             predicate: #Predicate { !$0.finished && $0.positionSeconds > 0 },
             sortBy: [SortDescriptor(\.lastWatchedAt, order: .reverse)]))
+    }
+
+    /// Every stored watch state (finished included) — show pages badge
+    /// finished episodes with it.
+    public func allWatchStates() throws -> [WatchState] {
+        try context.fetch(FetchDescriptor<WatchState>())
     }
 }
