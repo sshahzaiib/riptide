@@ -82,6 +82,8 @@ final class MPVVideoView: NSView {
 }
 
 final class MPVPlayerController: NSViewController {
+    nonisolated(unsafe) static let mpvLogFile: UnsafeMutablePointer<FILE>? =
+        ProcessInfo.processInfo.environment["RIPTIDE_MPV_LOG"].flatMap { fopen($0, "w") }
     private let videoView = MPVVideoView(frame: .init(x: 0, y: 0, width: 1280, height: 720))
     var metalLayer: MetalLayer { videoView.metalLayer }
     var mpv: OpaquePointer!
@@ -95,23 +97,32 @@ final class MPVPlayerController: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         videoView.onDoubleClick = { [weak self] in self?.toggleFullscreen() }
-        videoView.onResize = { [weak self] in self?.scheduleRedrawIfPaused() }
+        videoView.onResize = { [weak self] in self?.scheduleSurfaceAdopt() }
         setupMpv()
     }
 
-    /// Paused mpv never presents a frame, so it can't pick up drawableSize
-    /// changes until playback resumes — the video appears stuck at its old
-    /// size. Re-render the current frame shortly after the last resize.
-    private var resizeRedraw: DispatchWorkItem?
-    private func scheduleRedrawIfPaused() {
+    /// MPVKit's 'moltenvk' gpu-context reads the layer's drawableSize ONLY at
+    /// VO reconfig and implements no resize event path (its control handler is
+    /// VO_NOTIMPL), so mpv keeps its old swapchain forever after a window
+    /// resize. Force a reconfig by nudging the aspect override 0.1% and
+    /// reverting — imperceptible, and each reconfig re-reads drawableSize.
+    private var resizeKick: DispatchWorkItem?
+    private func scheduleSurfaceAdopt() {
         guard mpv != nil else { return }
-        resizeRedraw?.cancel()
+        resizeKick?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            guard let self, self.mpv != nil, self.getFlag("pause") else { return }
-            self.command("seek", args: ["0", "relative+exact"])
+            guard let self, self.mpv != nil else { return }
+            let dar = self.getDouble("video-params/aspect")
+            guard dar > 0 else { return }
+            mpv_set_property_string(self.mpv, "video-aspect-override",
+                                    String(format: "%.6f", dar * 1.001))
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                guard let self, self.mpv != nil else { return }
+                mpv_set_property_string(self.mpv, "video-aspect-override", "no")
+            }
         }
-        resizeRedraw = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: work)
+        resizeKick = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
     }
 
     /// Explicit teardown — MUST be called when the player window closes.
@@ -134,7 +145,8 @@ final class MPVPlayerController: NSViewController {
         mpv = mpv_create()
         guard mpv != nil else { fatalError("mpv_create failed") }
 
-        checkError(mpv_request_log_messages(mpv, "warn"))
+        // Full mpv log capture for debugging: set RIPTIDE_MPV_LOG=<file path>.
+        checkError(mpv_request_log_messages(mpv, Self.mpvLogFile != nil ? "debug" : "warn"))
         checkError(mpv_set_option_string(mpv, "input-media-keys", "yes"))
         // metalLayer is kept alive by self; mpv only needs the pointer value.
         var wid = Int64(Int(bitPattern: Unmanaged.passUnretained(metalLayer).toOpaque()))
@@ -145,6 +157,9 @@ final class MPVPlayerController: NSViewController {
         checkError(mpv_set_option_string(mpv, "hwdec", "videotoolbox"))
         checkError(mpv_set_option_string(mpv, "ytdl", "no"))
         checkError(mpv_set_option_string(mpv, "keep-open", "yes"))
+        if ProcessInfo.processInfo.environment["RIPTIDE_DEBUG_URL"] != nil {
+            checkError(mpv_set_option_string(mpv, "loop-file", "inf"))
+        }
 
         checkError(mpv_initialize(mpv))
 
@@ -321,6 +336,12 @@ final class MPVPlayerController: NSViewController {
                         self.emit(.error(String(cString: mpv_error_string(end.error))))
                     } else {
                         self.emit(.ended)
+                    }
+                case MPV_EVENT_LOG_MESSAGE:
+                    if let msg = UnsafePointer<mpv_event_log_message>(OpaquePointer(event.pointee.data))?.pointee,
+                       let f = Self.mpvLogFile {
+                        fputs("[\(String(cString: msg.prefix))] \(String(cString: msg.text))", f)
+                        fflush(f)
                     }
                 case MPV_EVENT_SHUTDOWN:
                     break   // destruction is owned by shutdown()
