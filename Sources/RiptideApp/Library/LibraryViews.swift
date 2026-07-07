@@ -228,7 +228,7 @@ struct PlayableCard: View {
     private func play() async {
         busy = true
         defer { busy = false }
-        if let playItem = try? await model.playItem(for: item) {
+        if let playItem = try? await model.playItem(for: item, autoResume: true) {
             openWindow(value: playItem)
         }
     }
