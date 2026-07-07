@@ -86,7 +86,7 @@ struct MovieGrid: View {
     var body: some View {
         ScrollView {
             LazyVGrid(columns: posterColumns, spacing: 20) {
-                ForEach(model.movies, id: \.torrentID) { item in
+                ForEach(model.movies, id: \.itemKey) { item in
                     NavigationLink(destination: ItemDetailView(item: item)) {
                         PosterCard(title: item.title, subtitle: item.year.map(String.init),
                                    posterPath: item.posterPath)
@@ -140,7 +140,6 @@ struct ContinueWatchingGrid: View {
             LazyVGrid(columns: posterColumns, spacing: 20) {
                 ForEach(model.continueWatching) { entry in
                     PlayableCard(item: entry.item,
-                                 fileIndex: fileIndex(of: entry),
                                  progress: entry.state.durationSeconds > 0
                                      ? entry.state.positionSeconds / entry.state.durationSeconds : 0)
                 }
@@ -154,17 +153,13 @@ struct ContinueWatchingGrid: View {
             }
         }
     }
-
-    private func fileIndex(of entry: ContinueEntry) -> Int {
-        Int(entry.state.itemKey.split(separator: "#").last.map(String.init) ?? "0") ?? 0
-    }
 }
 
 struct FileList: View {
     @Environment(LibraryModel.self) private var model
 
     var body: some View {
-        List(model.unmatched, id: \.torrentID) { item in
+        List(model.unmatched, id: \.itemKey) { item in
             PlayableFileRow(item: item)
         }
         .overlay {
@@ -207,7 +202,6 @@ struct PlayableCard: View {
     @Environment(LibraryModel.self) private var model
     @Environment(\.openWindow) private var openWindow
     let item: LibraryItem
-    let fileIndex: Int
     let progress: Double
     @State private var busy = false
 
@@ -228,7 +222,7 @@ struct PlayableCard: View {
     private func play() async {
         busy = true
         defer { busy = false }
-        if let playItem = try? await model.playItem(for: item, fileIndex: fileIndex) {
+        if let playItem = try? await model.playItem(for: item) {
             openWindow(value: playItem)
         }
     }
@@ -255,7 +249,7 @@ struct PlayableFileRow: View {
                 if busy { ProgressView().controlSize(.small) }
                 else { Image(systemName: "play.fill") }
             }
-            .disabled(busy || item.links.isEmpty)
+            .disabled(busy || item.link.isEmpty)
         }
         .padding(.vertical, 2)
     }
@@ -263,7 +257,7 @@ struct PlayableFileRow: View {
     private func play() async {
         busy = true
         defer { busy = false }
-        if let playItem = try? await model.playItem(for: item, fileIndex: 0) {
+        if let playItem = try? await model.playItem(for: item) {
             openWindow(value: playItem)
         }
     }
