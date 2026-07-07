@@ -17,8 +17,6 @@ struct PlayerWindowView: View {
     @State private var showResumePrompt = false
     @FocusState private var focused: Bool
 
-    private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
-
     init(item: PlayItem, store: LibraryStore) {
         self.item = item
         self.store = store
@@ -86,7 +84,7 @@ struct PlayerWindowView: View {
         }
         .onAppear {
             focused = true
-            if let resume = item.resumeFrom, item.autoResume {
+            if let resume = item.resumeFrom, item.autoResume, resume > 60 {
                 resolvedStart = .some(resume)
             } else if let resume = item.resumeFrom, resume > 60 {
                 showResumePrompt = true
@@ -105,17 +103,23 @@ struct PlayerWindowView: View {
                 resolvedStart = .some(item.resumeFrom)
             }
         }
+        .onChange(of: showSubtitleSearch) {
+            if !showSubtitleSearch { focused = true }   // sheet dismissed: reclaim keys
+        }
         .onContinuousHover { phase in
             if case .active = phase {
                 lastActivity = Date()
                 controlsVisible = true
             }
         }
-        .onReceive(tick) { _ in
-            if !model.paused && controlsVisible
-                && Date().timeIntervalSince(lastActivity) > 3 && !scrubbing {
-                controlsVisible = false
-                NSCursor.setHiddenUntilMouseMoves(true)
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                if !model.paused && controlsVisible
+                    && Date().timeIntervalSince(lastActivity) > 3 && !scrubbing {
+                    controlsVisible = false
+                    NSCursor.setHiddenUntilMouseMoves(true)
+                }
             }
         }
         .animation(.easeInOut(duration: 0.2), value: controlsVisible)
@@ -154,6 +158,7 @@ struct PlayerWindowView: View {
                     onEditingChanged: { editing in
                         scrubbing = editing
                         if !editing { model.seek(to: scrubPosition) }
+                        if !editing { focused = true }
                     }
                 )
             }
@@ -216,6 +221,7 @@ struct PlayerWindowView: View {
                 Slider(value: $volume, in: 0...100)
                     .frame(width: 90)
                     .onChange(of: volume) { model.setVolume(volume) }
+                    .simultaneousGesture(DragGesture().onEnded { _ in focused = true })
 
                 Button(action: { model.toggleFullscreen() }) {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
