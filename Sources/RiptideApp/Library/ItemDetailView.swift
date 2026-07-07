@@ -150,6 +150,11 @@ struct ShowDetailView: View {
             guard !token.isEmpty else { return }
             await pageModel.load(tmdb: TMDBClient(bearerToken: token))
         }
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSWindow.didBecomeKeyNotification)) { _ in
+            // Player window closed / library window refocused: refresh progress badges.
+            model?.refreshWatchStates()
+        }
     }
 
     // MARK: Hero
@@ -309,9 +314,9 @@ struct ShowDetailView: View {
                 .frame(width: 200, alignment: .leading)
         }
         .contentShape(Rectangle())
-        .onTapGesture { model.selected = episode }
+        .onTapGesture { model.userDidSelect(episode) }
         .simultaneousGesture(TapGesture(count: 2).onEnded {
-            model.selected = episode
+            model.userDidSelect(episode)
             Task { await play(model, resume: false) }
         })
     }

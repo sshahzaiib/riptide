@@ -57,6 +57,11 @@ final class MPVVideoView: NSView {
         syncLayer()
     }
 
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        syncLayer()
+    }
+
     private func syncLayer() {
         let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
         metalLayer.frame = bounds

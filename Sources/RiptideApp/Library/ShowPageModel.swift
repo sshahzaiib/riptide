@@ -16,10 +16,13 @@ final class ShowPageModel {
     // season -> episodeNumber -> metadata
     private(set) var seasonMeta: [Int: [Int: TMDBSeasonEpisode]] = [:]
     var selected: LibraryItem?
+    private var stateByKey: [String: WatchState] = [:]
+    private var userSelected = false
 
     init(show: ShowGroup, store: LibraryStore) {
         self.show = show
         self.store = store
+        refreshWatchStates()
         self.selected = resumeTarget?.item ?? show.episodes.first
     }
 
@@ -33,18 +36,18 @@ final class ShowPageModel {
 
     /// Most recently watched, unfinished episode of this show.
     var resumeTarget: (item: LibraryItem, position: Double)? {
-        let keys = Dictionary(uniqueKeysWithValues: show.episodes.map { ($0.itemKey, $0) })
-        guard let state = (try? store.continueWatching())?
-            .first(where: { keys[$0.itemKey] != nil }),
-              let item = keys[state.itemKey] else { return nil }
-        return (item, state.positionSeconds)
+        show.episodes
+            .compactMap { item -> (LibraryItem, WatchState)? in
+                guard let state = stateByKey[item.itemKey],
+                      !state.finished, state.positionSeconds > 0 else { return nil }
+                return (item, state)
+            }
+            .max { $0.1.lastWatchedAt < $1.1.lastWatchedAt }
+            .map { ($0.0, $0.1.positionSeconds) }
     }
 
     func watchState(for item: LibraryItem) -> (progress: Double, finished: Bool)? {
-        // continueWatching() excludes finished; fetch all states via progress query.
-        guard let states = try? store.allWatchStates() else { return nil }
-        guard let state = states.first(where: { $0.itemKey == item.itemKey }),
-              state.durationSeconds > 0 else { return nil }
+        guard let state = stateByKey[item.itemKey], state.durationSeconds > 0 else { return nil }
         return (state.positionSeconds / state.durationSeconds, state.finished)
     }
 
@@ -57,7 +60,7 @@ final class ShowPageModel {
         guard let showID else { return }
         if let fetched = try? await tmdb.showDetails(id: showID) { details = fetched }
         if let fetched = try? await tmdb.showCredits(id: showID) { cast = fetched }
-        for season in seasons where season.number > 0 {
+        for season in seasons {
             guard seasonMeta[season.number] == nil,
                   let episodes = try? await tmdb.seasonEpisodes(showID: showID,
                                                                 season: season.number)
@@ -65,5 +68,20 @@ final class ShowPageModel {
             seasonMeta[season.number] = Dictionary(
                 uniqueKeysWithValues: episodes.map { ($0.episodeNumber, $0) })
         }
+    }
+
+    /// One store query; every card reads the dictionary.
+    func refreshWatchStates() {
+        let states = (try? store.allWatchStates()) ?? []
+        stateByKey = Dictionary(uniqueKeysWithValues: states.map { ($0.itemKey, $0) })
+        // Follow playback progress unless the user picked an episode manually.
+        if !userSelected {
+            selected = resumeTarget?.item ?? selected ?? show.episodes.first
+        }
+    }
+
+    func userDidSelect(_ item: LibraryItem) {
+        userSelected = true
+        selected = item
     }
 }
