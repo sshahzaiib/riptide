@@ -34,6 +34,8 @@ struct MPVTrack: Identifiable, Equatable {
 /// keeps the metal layer glued to its bounds and backing scale.
 final class MPVVideoView: NSView {
     let metalLayer = MetalLayer()
+    var onResize: (() -> Void)?
+    var onDoubleClick: (() -> Void)?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -62,12 +64,20 @@ final class MPVVideoView: NSView {
         syncLayer()
     }
 
+    // SwiftUI gestures never see clicks on this AppKit view, so double-click
+    // is handled at the AppKit level.
+    override func mouseUp(with event: NSEvent) {
+        if event.clickCount == 2 { onDoubleClick?() }
+        super.mouseUp(with: event)
+    }
+
     private func syncLayer() {
         let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
         metalLayer.frame = bounds
         metalLayer.contentsScale = scale
         metalLayer.drawableSize = CGSize(width: bounds.width * scale,
                                          height: bounds.height * scale)
+        onResize?()
     }
 }
 
@@ -84,7 +94,24 @@ final class MPVPlayerController: NSViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        videoView.onDoubleClick = { [weak self] in self?.toggleFullscreen() }
+        videoView.onResize = { [weak self] in self?.scheduleRedrawIfPaused() }
         setupMpv()
+    }
+
+    /// Paused mpv never presents a frame, so it can't pick up drawableSize
+    /// changes until playback resumes — the video appears stuck at its old
+    /// size. Re-render the current frame shortly after the last resize.
+    private var resizeRedraw: DispatchWorkItem?
+    private func scheduleRedrawIfPaused() {
+        guard mpv != nil else { return }
+        resizeRedraw?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.mpv != nil, self.getFlag("pause") else { return }
+            self.command("seek", args: ["0", "relative+exact"])
+        }
+        resizeRedraw = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: work)
     }
 
     /// Explicit teardown — MUST be called when the player window closes.
@@ -170,7 +197,14 @@ final class MPVPlayerController: NSViewController {
     }
 
     func toggleFullscreen() {
-        view.window?.toggleFullScreen(nil)
+        guard let window = view.window else { return }
+        // SwiftUI windows don't advertise fullscreen capability by default;
+        // without this, toggleFullScreen(nil) silently does nothing.
+        // SwiftUI stamps data-driven WindowGroup windows .fullScreenNone,
+        // which makes toggleFullScreen a silent no-op.
+        window.collectionBehavior.remove(.fullScreenNone)
+        window.collectionBehavior.insert(.fullScreenPrimary)
+        window.toggleFullScreen(nil)
     }
 
     func seek(relative seconds: Double) {

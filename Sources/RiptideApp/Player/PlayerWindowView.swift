@@ -15,7 +15,7 @@ struct PlayerWindowView: View {
     // Double-optional: nil = resume decision pending, .some(start) = decided.
     @State private var resolvedStart: Double??
     @State private var showResumePrompt = false
-    @FocusState private var focused: Bool
+    @State private var keyMonitor: Any?
 
     init(item: PlayItem, store: LibraryStore) {
         self.item = item
@@ -32,7 +32,6 @@ struct PlayerWindowView: View {
             if let start = resolvedStart {
                 MPVPlayerView(model: model, url: item.url, startAt: start)
                     .ignoresSafeArea()
-                    .onTapGesture(count: 2) { model.toggleFullscreen() }
             } else {
                 Color.black.ignoresSafeArea()
             }
@@ -68,22 +67,16 @@ struct PlayerWindowView: View {
                 .transition(.opacity)
             }
         }
-        .focusable()
-        .focusEffectDisabled()
-        .focused($focused)
-        .onKeyPress(.space) { model.togglePause(); return .handled }
-        .onKeyPress(.leftArrow) { model.seek(relative: -10); return .handled }
-        .onKeyPress(.rightArrow) { model.seek(relative: 10); return .handled }
-        .onKeyPress(.upArrow) { bumpVolume(5); return .handled }
-        .onKeyPress(.downArrow) { bumpVolume(-5); return .handled }
-        .onKeyPress(KeyEquivalent("f")) { model.toggleFullscreen(); return .handled }
-        .onKeyPress(KeyEquivalent("m")) { model.toggleMute(); return .handled }
-        .onKeyPress(KeyEquivalent("s")) {
-            if showSkipIntro { model.skipIntro() }
-            return .handled
-        }
         .onAppear {
-            focused = true
+            // SwiftUI onKeyPress never fires in this NSView-hosting window
+            // (first responder stays on the video view), so shortcuts are an
+            // AppKit local monitor scoped to this window.
+            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                guard event.window === model.hostWindow,
+                      event.modifierFlags.intersection([.command, .option, .control]).isEmpty
+                else { return event }
+                return handleKey(event) ? nil : event
+            }
             if let resume = item.resumeFrom, item.autoResume, resume > 60 {
                 resolvedStart = .some(resume)
             } else if let resume = item.resumeFrom, resume > 60 {
@@ -103,9 +96,6 @@ struct PlayerWindowView: View {
                 resolvedStart = .some(item.resumeFrom)
             }
         }
-        .onChange(of: showSubtitleSearch) {
-            if !showSubtitleSearch { focused = true }   // sheet dismissed: reclaim keys
-        }
         .onContinuousHover { phase in
             if case .active = phase {
                 lastActivity = Date()
@@ -124,7 +114,11 @@ struct PlayerWindowView: View {
         }
         .animation(.easeInOut(duration: 0.2), value: controlsVisible)
         .navigationTitle(item.title)
-        .onDisappear { model.shutdown() }
+        .onDisappear {
+            if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+            keyMonitor = nil
+            model.shutdown()
+        }
         .sheet(isPresented: $showSubtitleSearch) {
             SubtitleSearchSheet(query: item.subtitleQuery,
                                 season: item.season, episode: item.episode) { path in
@@ -136,6 +130,27 @@ struct PlayerWindowView: View {
     private func bumpVolume(_ delta: Double) {
         volume = min(max(volume + delta, 0), 100)
         model.setVolume(volume)
+    }
+
+    /// Returns true when the event was consumed as a shortcut.
+    private func handleKey(_ event: NSEvent) -> Bool {
+        switch event.keyCode {
+        case 49:  model.togglePause()          // space
+        case 123: model.seek(relative: -10)    // ←
+        case 124: model.seek(relative: 10)     // →
+        case 126: bumpVolume(5)                // ↑
+        case 125: bumpVolume(-5)               // ↓
+        default:
+            switch event.charactersIgnoringModifiers?.lowercased() {
+            case "f": model.toggleFullscreen()
+            case "m": model.toggleMute()
+            case "s": if showSkipIntro { model.skipIntro() }
+            default: return false
+            }
+        }
+        lastActivity = Date()
+        controlsVisible = true
+        return true
     }
 
     private var controls: some View {
@@ -158,7 +173,6 @@ struct PlayerWindowView: View {
                     onEditingChanged: { editing in
                         scrubbing = editing
                         if !editing { model.seek(to: scrubPosition) }
-                        if !editing { focused = true }
                     }
                 )
             }
@@ -221,7 +235,6 @@ struct PlayerWindowView: View {
                 Slider(value: $volume, in: 0...100)
                     .frame(width: 90)
                     .onChange(of: volume) { model.setVolume(volume) }
-                    .simultaneousGesture(DragGesture().onEnded { _ in focused = true })
 
                 Button(action: { model.toggleFullscreen() }) {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")

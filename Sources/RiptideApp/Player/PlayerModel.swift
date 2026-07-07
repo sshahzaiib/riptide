@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 import StreamCore
@@ -28,6 +29,9 @@ final class PlayerModel {
         self.store = store
         self.itemKey = itemKey
     }
+
+    /// The player's NSWindow — scopes the keyboard event monitor.
+    var hostWindow: NSWindow? { controller?.view.window }
 
     func attach(_ controller: MPVPlayerController) {
         self.controller = controller
