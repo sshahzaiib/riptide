@@ -10,11 +10,14 @@ struct PlayerWindowView: View {
     @State private var scrubbing = false
     @State private var scrubPosition: Double = 0
     @State private var controlsVisible = true
+    @State private var lastActivity = Date()
     @State private var showSubtitleSearch = false
     // Double-optional: nil = resume decision pending, .some(start) = decided.
-    // Spec: an unfinished WatchState gets a Resume / Start Over prompt.
     @State private var resolvedStart: Double??
     @State private var showResumePrompt = false
+    @FocusState private var focused: Bool
+
+    private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     init(item: PlayItem, store: LibraryStore) {
         self.item = item
@@ -22,11 +25,16 @@ struct PlayerWindowView: View {
         _model = State(initialValue: PlayerModel(store: store, itemKey: item.itemKey))
     }
 
+    private var showSkipIntro: Bool {
+        item.season != nil && model.position > 0 && model.position < 360
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             if let start = resolvedStart {
                 MPVPlayerView(model: model, url: item.url, startAt: start)
                     .ignoresSafeArea()
+                    .onTapGesture(count: 2) { model.toggleFullscreen() }
             } else {
                 Color.black.ignoresSafeArea()
             }
@@ -44,18 +52,46 @@ struct PlayerWindowView: View {
             }
 
             if controlsVisible {
-                controls
-                    .padding(12)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-                    .padding(16)
-                    .transition(.opacity)
+                VStack(alignment: .trailing, spacing: 8) {
+                    if showSkipIntro {
+                        Button(action: { model.skipIntro() }) {
+                            Label("Skip Intro", systemImage: "forward.frame")
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                                .background(.ultraThinMaterial, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.trailing, 16)
+                    }
+                    controls
+                        .padding(12)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        .padding(16)
+                }
+                .transition(.opacity)
             }
         }
+        .focusable()
+        .focusEffectDisabled()
+        .focused($focused)
+        .onKeyPress(.space) { model.togglePause(); return .handled }
+        .onKeyPress(.leftArrow) { model.seek(relative: -10); return .handled }
+        .onKeyPress(.rightArrow) { model.seek(relative: 10); return .handled }
+        .onKeyPress(.upArrow) { bumpVolume(5); return .handled }
+        .onKeyPress(.downArrow) { bumpVolume(-5); return .handled }
+        .onKeyPress(KeyEquivalent("f")) { model.toggleFullscreen(); return .handled }
+        .onKeyPress(KeyEquivalent("m")) { model.toggleMute(); return .handled }
+        .onKeyPress(KeyEquivalent("s")) {
+            if showSkipIntro { model.skipIntro() }
+            return .handled
+        }
         .onAppear {
-            if let resume = item.resumeFrom, resume > 60 {
+            focused = true
+            if let resume = item.resumeFrom, item.autoResume {
+                resolvedStart = .some(resume)
+            } else if let resume = item.resumeFrom, resume > 60 {
                 showResumePrompt = true
             } else {
-                resolvedStart = .some(nil)      // start from the beginning
+                resolvedStart = .some(nil)
             }
         }
         .alert("Resume playback?", isPresented: $showResumePrompt) {
@@ -65,18 +101,24 @@ struct PlayerWindowView: View {
             Text("You stopped at \(format(item.resumeFrom ?? 0)).")
         }
         .onChange(of: showResumePrompt) {
-            // Alert dismissed without a choice (Esc / click-away): default to
-            // resuming rather than leaving the window black forever.
             if !showResumePrompt && resolvedStart == nil {
                 resolvedStart = .some(item.resumeFrom)
             }
         }
-        .onHover { hovering in
-            controlsVisible = hovering || model.paused
-        }
         .onContinuousHover { phase in
-            if case .active = phase { controlsVisible = true }
+            if case .active = phase {
+                lastActivity = Date()
+                controlsVisible = true
+            }
         }
+        .onReceive(tick) { _ in
+            if !model.paused && controlsVisible
+                && Date().timeIntervalSince(lastActivity) > 3 && !scrubbing {
+                controlsVisible = false
+                NSCursor.setHiddenUntilMouseMoves(true)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: controlsVisible)
         .navigationTitle(item.title)
         .onDisappear { model.shutdown() }
         .sheet(isPresented: $showSubtitleSearch) {
@@ -87,9 +129,13 @@ struct PlayerWindowView: View {
         }
     }
 
+    private func bumpVolume(_ delta: Double) {
+        volume = min(max(volume + delta, 0), 100)
+        model.setVolume(volume)
+    }
+
     private var controls: some View {
         VStack(spacing: 8) {
-            // Seek bar with buffered range behind it.
             ZStack {
                 GeometryReader { geo in
                     let buffered = model.duration > 0
@@ -119,12 +165,22 @@ struct PlayerWindowView: View {
                         .font(.title2)
                 }
                 .buttonStyle(.plain)
-                .keyboardShortcut(.space, modifiers: [])
 
                 Text("\(format(model.position)) / \(format(model.duration))")
                     .font(.callout.monospacedDigit())
 
                 Spacer()
+
+                Menu {
+                    ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { rate in
+                        Button(action: { model.setSpeed(rate) }) {
+                            if model.speed == rate { Image(systemName: "checkmark") }
+                            Text(rate == 1.0 ? "Normal" : String(format: "%g×", rate))
+                        }
+                    }
+                } label: { Image(systemName: "gauge.with.needle") }
+                .menuStyle(.borderlessButton)
+                .frame(width: 44)
 
                 Menu {
                     ForEach(model.audioTracks) { track in
@@ -152,16 +208,16 @@ struct PlayerWindowView: View {
                 .menuStyle(.borderlessButton)
                 .frame(width: 44)
 
-                HStack(spacing: 4) {
-                    Image(systemName: "speaker.wave.2")
-                    Slider(value: $volume, in: 0...100)
-                        .frame(width: 90)
-                        .onChange(of: volume) { model.setVolume(volume) }
+                Button(action: { model.toggleMute() }) {
+                    Image(systemName: model.muted ? "speaker.slash" : "speaker.wave.2")
                 }
+                .buttonStyle(.plain)
 
-                Button(action: {
-                    NSApp.keyWindow?.toggleFullScreen(nil)
-                }) {
+                Slider(value: $volume, in: 0...100)
+                    .frame(width: 90)
+                    .onChange(of: volume) { model.setVolume(volume) }
+
+                Button(action: { model.toggleFullscreen() }) {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
                 }
                 .buttonStyle(.plain)

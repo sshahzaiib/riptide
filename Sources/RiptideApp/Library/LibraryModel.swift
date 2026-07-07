@@ -94,7 +94,7 @@ final class LibraryModel {
     }
 
     /// Unrestrict this file's link and build its PlayItem.
-    func playItem(for item: LibraryItem) async throws -> PlayItem {
+    func playItem(for item: LibraryItem, autoResume: Bool = false) async throws -> PlayItem {
         guard !item.link.isEmpty else { throw RealDebridError.noDownloadableLinks }
         let settings = AppSettings.shared
         let rd = RealDebridClient(token: settings.rdToken)
@@ -111,6 +111,7 @@ final class LibraryModel {
                         resumeFrom: resume,
                         subtitleQuery: item.title,
                         season: item.season,
-                        episode: item.episode)
+                        episode: item.episode,
+                        autoResume: autoResume)
     }
 }
