@@ -16,6 +16,7 @@ struct PlayerWindowView: View {
     @State private var resolvedStart: Double??
     @State private var showResumePrompt = false
     @State private var keyMonitor: Any?
+    @State private var skipIntroUsed = false
 
     init(item: PlayItem, store: LibraryStore) {
         self.item = item
@@ -23,8 +24,9 @@ struct PlayerWindowView: View {
         _model = State(initialValue: PlayerModel(store: store, itemKey: item.itemKey))
     }
 
+    // Episodes only, once per playback, and only during the first 6 minutes.
     private var showSkipIntro: Bool {
-        item.season != nil && model.position > 0 && model.position < 360
+        item.season != nil && !skipIntroUsed && model.position > 0 && model.position < 360
     }
 
     var body: some View {
@@ -51,7 +53,7 @@ struct PlayerWindowView: View {
             if controlsVisible {
                 VStack(alignment: .trailing, spacing: 8) {
                     if showSkipIntro {
-                        Button(action: { model.skipIntro() }) {
+                        Button(action: { model.skipIntro(); skipIntroUsed = true }) {
                             Label("Skip Intro", systemImage: "forward.frame")
                                 .padding(.horizontal, 12).padding(.vertical, 6)
                                 .background(.ultraThinMaterial, in: Capsule())
@@ -144,7 +146,7 @@ struct PlayerWindowView: View {
             switch event.charactersIgnoringModifiers?.lowercased() {
             case "f": model.toggleFullscreen()
             case "m": model.toggleMute()
-            case "s": if showSkipIntro { model.skipIntro() }
+            case "s": if showSkipIntro { model.skipIntro(); skipIntroUsed = true }
             default: return false
             }
         }

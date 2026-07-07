@@ -61,6 +61,8 @@ struct LibraryRootView: View {
             SettingsView()
         }
         .task {
+            // Debug playback session: don't touch Keychain-backed settings.
+            guard ProcessInfo.processInfo.environment["RIPTIDE_DEBUG_URL"] == nil else { return }
             if !AppSettings.shared.isConfigured { showSettings = true }
             else if model.items.isEmpty { await model.refresh() }
         }
