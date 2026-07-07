@@ -29,36 +29,57 @@ struct MPVTrack: Identifiable, Equatable {
 /// macOS demo (MPVMetalViewController.swift): CAMetalLayer handed to mpv as
 /// `wid`, vo=gpu-next over MoltenVK, wakeup-callback event loop drained on a
 /// serial queue.
+/// Layer-hosting video view. SwiftUI does not reliably drive
+/// NSViewController.viewDidLayout for layer-hosting views, so the view itself
+/// keeps the metal layer glued to its bounds and backing scale.
+final class MPVVideoView: NSView {
+    let metalLayer = MetalLayer()
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        metalLayer.frame = bounds
+        metalLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
+        metalLayer.framebufferOnly = true
+        metalLayer.backgroundColor = NSColor.black.cgColor
+        layer = metalLayer
+    }
+
+    required init?(coder: NSCoder) { fatalError("unused") }
+
+    override func layout() {
+        super.layout()
+        syncLayer()
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        syncLayer()
+    }
+
+    private func syncLayer() {
+        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        metalLayer.frame = bounds
+        metalLayer.contentsScale = scale
+        metalLayer.drawableSize = CGSize(width: bounds.width * scale,
+                                         height: bounds.height * scale)
+    }
+}
+
 final class MPVPlayerController: NSViewController {
-    var metalLayer = MetalLayer()
+    private let videoView = MPVVideoView(frame: .init(x: 0, y: 0, width: 1280, height: 720))
+    var metalLayer: MetalLayer { videoView.metalLayer }
     var mpv: OpaquePointer!
     var onEvent: ((PlayerEvent) -> Void)?
     private lazy var queue = DispatchQueue(label: "mpv", qos: .userInitiated)
 
     override func loadView() {
-        view = NSView(frame: .init(x: 0, y: 0, width: 1280, height: 720))
-        view.wantsLayer = true
+        view = videoView
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        metalLayer.frame = view.frame
-        metalLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
-        metalLayer.framebufferOnly = true
-        metalLayer.backgroundColor = NSColor.black.cgColor
-        view.layer = metalLayer
-        view.wantsLayer = true
         setupMpv()
-    }
-
-    override func viewDidLayout() {
-        super.viewDidLayout()
-        guard let window = view.window else { return }
-        let scale = window.screen?.backingScaleFactor ?? 2
-        let size = view.bounds.size
-        metalLayer.frame = CGRect(origin: .zero, size: size)
-        metalLayer.drawableSize = CGSize(width: size.width * scale,
-                                         height: size.height * scale)
     }
 
     /// Explicit teardown — MUST be called when the player window closes.
@@ -132,6 +153,35 @@ final class MPVPlayerController: NSViewController {
     func setVolume(_ volume: Double) {
         var v = min(max(volume, 0), 100)
         mpv_set_property(mpv, "volume", MPV_FORMAT_DOUBLE, &v)
+    }
+
+    func setSpeed(_ speed: Double) {
+        var s = speed
+        mpv_set_property(mpv, "speed", MPV_FORMAT_DOUBLE, &s)
+    }
+
+    func setMuted(_ muted: Bool) {
+        setFlag("mute", muted)
+    }
+
+    func toggleFullscreen() {
+        view.window?.toggleFullScreen(nil)
+    }
+
+    func seek(relative seconds: Double) {
+        command("seek", args: [String(seconds), "relative"])
+    }
+
+    /// Next chapter if the file has one ahead; otherwise +90s.
+    func skipIntro() {
+        let chapterCount = getInt("chapter-list/count")
+        let current = getInt("chapter")
+        if chapterCount > 0, current + 1 < chapterCount {
+            var next = Int64(current + 1)
+            mpv_set_property(mpv, "chapter", MPV_FORMAT_INT64, &next)
+        } else {
+            seek(relative: 90)
+        }
     }
 
     func setAudioTrack(id: Int) {
