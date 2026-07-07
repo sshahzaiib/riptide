@@ -13,6 +13,8 @@ final class PlayerModel {
     private(set) var cacheTime: Double = 0
     private(set) var tracks: [MPVTrack] = []
     private(set) var playbackError: String?
+    private(set) var muted = false
+    private(set) var speed: Double = 1.0
 
     var audioTracks: [MPVTrack] { tracks.filter { $0.type == "audio" } }
     var subTracks: [MPVTrack] { tracks.filter { $0.type == "sub" } }
@@ -76,4 +78,16 @@ final class PlayerModel {
     func setAudioTrack(_ id: Int) { controller?.setAudioTrack(id: id) }
     func setSubtitleTrack(_ id: Int?) { controller?.setSubtitleTrack(id: id) }
     func addSubtitle(path: String) { controller?.addSubtitle(path: path) }
+
+    func seek(relative seconds: Double) { controller?.seek(relative: seconds) }
+    func toggleMute() {
+        muted.toggle()
+        controller?.setMuted(muted)
+    }
+    func setSpeed(_ newSpeed: Double) {
+        speed = newSpeed
+        controller?.setSpeed(newSpeed)
+    }
+    func toggleFullscreen() { controller?.toggleFullscreen() }
+    func skipIntro() { controller?.skipIntro() }
 }
