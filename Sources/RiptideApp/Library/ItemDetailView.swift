@@ -6,7 +6,7 @@ struct ItemDetailView: View {
     @Environment(LibraryModel.self) private var model
     @Environment(\.openWindow) private var openWindow
     let item: LibraryItem
-    @State private var busyIndex: Int?
+    @State private var busy = false
     @State private var playError: String?
 
     var body: some View {
@@ -23,6 +23,9 @@ struct ItemDetailView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text(item.title).font(.largeTitle.bold())
                     HStack(spacing: 12) {
+                        if let season = item.season {
+                            Text("S\(season) · E\(item.episode ?? 0)")
+                        }
                         if let year = item.year { Text(String(year)) }
                         if let quality = item.quality { Text(quality.uppercased()) }
                         if let rating = item.rating {
@@ -37,19 +40,14 @@ struct ItemDetailView: View {
 
                     Divider().frame(maxWidth: 520)
 
-                    // A torrent can hold several files; RD gives us opaque links,
-                    // so label by index. ponytail: per-file names need a
-                    // torrentInfo call — add when multi-file packs feel blind.
-                    ForEach(Array(item.links.enumerated()), id: \.offset) { index, _ in
-                        Button(action: { Task { await play(index) } }) {
-                            HStack {
-                                if busyIndex == index { ProgressView().controlSize(.small) }
-                                else { Image(systemName: "play.fill") }
-                                Text(item.links.count == 1 ? "Play" : "Play file \(index + 1)")
-                            }
+                    Button(action: { Task { await play() } }) {
+                        HStack {
+                            if busy { ProgressView().controlSize(.small) }
+                            else { Image(systemName: "play.fill") }
+                            Text("Play")
                         }
-                        .disabled(busyIndex != nil)
                     }
+                    .disabled(busy || item.link.isEmpty)
                     if let playError {
                         Text(playError).foregroundStyle(.red).font(.callout)
                     }
@@ -61,12 +59,12 @@ struct ItemDetailView: View {
         .navigationTitle(item.title)
     }
 
-    private func play(_ index: Int) async {
+    private func play() async {
         playError = nil
-        busyIndex = index
-        defer { busyIndex = nil }
+        busy = true
+        defer { busy = false }
         do {
-            let playItem = try await model.playItem(for: item, fileIndex: index)
+            let playItem = try await model.playItem(for: item)
             openWindow(value: playItem)
         } catch {
             playError = "Could not start stream: \(error)"
@@ -87,7 +85,7 @@ struct ShowDetailView: View {
         List {
             ForEach(seasons, id: \.number) { season in
                 Section("Season \(season.number)") {
-                    ForEach(season.episodes, id: \.torrentID) { episode in
+                    ForEach(season.episodes, id: \.itemKey) { episode in
                         NavigationLink(destination: ItemDetailView(item: episode)) {
                             HStack {
                                 Text("E\(episode.episode ?? 0)")

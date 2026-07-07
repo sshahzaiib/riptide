@@ -67,8 +67,7 @@ final class LibraryModel {
         items = (try? store.items()) ?? []
         let states = (try? store.continueWatching()) ?? []
         continueWatching = states.compactMap { state in
-            let torrentID = String(state.itemKey.split(separator: "#")[0])
-            guard let item = items.first(where: { $0.torrentID == torrentID }) else { return nil }
+            guard let item = items.first(where: { $0.itemKey == state.itemKey }) else { return nil }
             return ContinueEntry(state: state, item: item)
         }
     }
@@ -94,22 +93,20 @@ final class LibraryModel {
         }
     }
 
-    /// Unrestrict and build the PlayItem for one file of a library item.
-    func playItem(for item: LibraryItem, fileIndex: Int) async throws -> PlayItem {
+    /// Unrestrict this file's link and build its PlayItem.
+    func playItem(for item: LibraryItem) async throws -> PlayItem {
+        guard !item.link.isEmpty else { throw RealDebridError.noDownloadableLinks }
         let settings = AppSettings.shared
         let rd = RealDebridClient(token: settings.rdToken)
-        // itemKey can outlive a torrent's link layout (RD re-sync); never trust it.
-        guard item.links.indices.contains(fileIndex) else {
-            throw RealDebridError.noDownloadableLinks
-        }
-        let link = item.links[fileIndex]
-        let unrestricted = try await rd.unrestrictLink(link)
+        let unrestricted = try await rd.unrestrictLink(item.link)
         guard let url = unrestricted.directURL else { throw RealDebridError.badResponse }
-        let itemKey = "\(item.torrentID)#\(fileIndex)"
         let resume = (try? store.continueWatching())?
-            .first { $0.itemKey == itemKey }?.positionSeconds
-        return PlayItem(itemKey: itemKey,
-                        title: item.title,
+            .first { $0.itemKey == item.itemKey }?.positionSeconds
+        let title = item.season != nil
+            ? "\(item.title) S\(item.season!)E\(item.episode ?? 0)"
+            : item.title
+        return PlayItem(itemKey: item.itemKey,
+                        title: title,
                         url: url,
                         resumeFrom: resume,
                         subtitleQuery: item.title,
