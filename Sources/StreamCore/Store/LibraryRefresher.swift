@@ -10,9 +10,10 @@ public struct RefreshSummary: Equatable, Sendable {
     }
 }
 
-/// Full library sync: RD torrent list → store diff → TMDB match for unmatched
-/// items. Matching is best-effort — any TMDB failure just leaves that item as
-/// a plain (still playable) file card; refresh never throws for TMDB reasons.
+/// Full library sync: RD torrent list → flatten to per-file entries (calling
+/// torrentInfo only for packs not already expanded) → store diff → grouped
+/// TMDB matching. Matching is best-effort — any TMDB failure just leaves those
+/// items as plain (still playable) file cards.
 @MainActor
 public struct LibraryRefresher {
     let rd: RealDebridClient
@@ -24,39 +25,72 @@ public struct LibraryRefresher {
     }
 
     public func refresh() async throws -> RefreshSummary {
-        // Only finished torrents are streamable.
-        let torrents = try await rd.allTorrents().filter { $0.status == "downloaded" }
-        let upsert = try store.upsert(torrents: torrents)
+        // Only finished torrents with at least one link are streamable.
+        let torrents = try await rd.allTorrents()
+            .filter { $0.status == "downloaded" && !$0.links.isEmpty }
+        let knownCounts = try store.entryCounts()
 
-        var matched = 0, failed = 0
-        for item in try store.items() where item.tmdbID == nil {
-            do {
-                if item.mediaKind == "episode" {
-                    guard let show = try await tmdb.searchTV(title: item.title,
-                                                             year: item.year).first else {
-                        failed += 1; continue
-                    }
-                    try store.applyMatch(torrentID: item.torrentID, tmdbID: show.id,
-                                         mediaKind: "episode",
-                                         posterPath: show.posterPath,
-                                         overview: show.overview,
-                                         rating: show.voteAverage)
-                } else {
-                    guard let movie = try await tmdb.searchMovie(title: item.title,
-                                                                 year: item.year).first else {
-                        failed += 1; continue
-                    }
-                    try store.applyMatch(torrentID: item.torrentID, tmdbID: movie.id,
-                                         mediaKind: "movie",
-                                         posterPath: movie.posterPath,
-                                         overview: movie.overview,
-                                         rating: movie.voteAverage)
+        var entries: [LibraryFileEntry] = []
+        for t in torrents {
+            if t.links.count <= 1 {
+                entries.append(LibraryFileEntry(torrentID: t.id, fileIndex: 0,
+                                                filename: t.filename, bytes: t.bytes,
+                                                added: t.added, link: t.links[0]))
+            } else if knownCounts[t.id] == t.links.count {
+                // Already expanded on a previous refresh — no torrentInfo call.
+                entries.append(contentsOf: try store.cachedEntries(torrentID: t.id))
+            } else {
+                // Season pack / multi-file: real names live in files[].path.
+                let info = try await rd.torrentInfo(t.id)
+                let selected = info.files.filter { $0.selected == 1 }
+                for (i, file) in selected.enumerated() where i < t.links.count {
+                    let base = (file.path as NSString).lastPathComponent
+                    entries.append(LibraryFileEntry(torrentID: t.id, fileIndex: i,
+                                                    filename: base, bytes: file.bytes,
+                                                    added: t.added, link: t.links[i]))
                 }
-                matched += 1
+            }
+        }
+        let upsert = try store.upsert(entries: entries)
+
+        // Grouped matching: one TMDB search per distinct (kind, title, year) —
+        // a 23-episode pack costs one API call.
+        var matched = 0, failed = 0
+        let unmatched = try store.items().filter { $0.tmdbID == nil }
+        let groups = Dictionary(grouping: unmatched) {
+            "\($0.mediaKind)|\($0.title.lowercased())|\($0.year.map(String.init) ?? "")"
+        }
+        for (_, members) in groups {
+            let rep = members[0]
+            do {
+                if rep.mediaKind == "episode" {
+                    guard let show = try await tmdb.searchTV(title: rep.title,
+                                                             year: rep.year).first else {
+                        failed += members.count; continue
+                    }
+                    for member in members {
+                        try store.applyMatch(itemKey: member.itemKey, tmdbID: show.id,
+                                             mediaKind: "episode",
+                                             posterPath: show.posterPath,
+                                             overview: show.overview,
+                                             rating: show.voteAverage)
+                    }
+                } else {
+                    guard let movie = try await tmdb.searchMovie(title: rep.title,
+                                                                 year: rep.year).first else {
+                        failed += members.count; continue
+                    }
+                    for member in members {
+                        try store.applyMatch(itemKey: member.itemKey, tmdbID: movie.id,
+                                             mediaKind: "movie",
+                                             posterPath: movie.posterPath,
+                                             overview: movie.overview,
+                                             rating: movie.voteAverage)
+                    }
+                }
+                matched += members.count
             } catch {
-                // ponytail: per-item error detail dropped; summary count is enough
-                // for v1's "N items unmatched" toast. Item stays as a file card.
-                failed += 1
+                failed += members.count
             }
         }
         return RefreshSummary(upsert: upsert, matched: matched, matchFailed: failed)

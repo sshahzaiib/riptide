@@ -1,15 +1,40 @@
 import Foundation
 import SwiftData
 
-/// One RD torrent surfaced in the library. `torrentID` mirrors RD; parsed and
-/// TMDB fields are denormalized here so shelves render offline from cache.
+/// Input for library sync: one playable file, already flattened from RD's
+/// torrent + file layout by the refresher.
+public struct LibraryFileEntry: Sendable, Equatable {
+    public let torrentID: String
+    public let fileIndex: Int
+    public let filename: String        // per-file basename (or torrent name)
+    public let bytes: Int64
+    public let added: String           // raw ISO-8601 from the torrent
+    public let link: String            // RD hoster link for THIS file
+
+    public var itemKey: String { "\(torrentID)#\(fileIndex)" }
+
+    public init(torrentID: String, fileIndex: Int, filename: String,
+                bytes: Int64, added: String, link: String) {
+        self.torrentID = torrentID
+        self.fileIndex = fileIndex
+        self.filename = filename
+        self.bytes = bytes
+        self.added = added
+        self.link = link
+    }
+}
+
+/// One playable file surfaced in the library. Parsed and TMDB fields are
+/// denormalized so shelves render offline from cache.
 @Model
 public final class LibraryItem {
-    @Attribute(.unique) public var torrentID: String
+    @Attribute(.unique) public var itemKey: String   // "<torrentID>#<fileIndex>"
+    public var torrentID: String
+    public var fileIndex: Int
     public var filename: String
     public var sizeBytes: Int64
-    public var addedAt: String            // raw ISO-8601 from RD, sortable as string
-    public var links: [String]
+    public var addedAt: String
+    public var link: String
     // Parsed from filename
     public var title: String
     public var year: Int?
@@ -18,19 +43,20 @@ public final class LibraryItem {
     public var quality: String?
     // TMDB match (nil until matched; item renders as plain file card)
     public var tmdbID: Int?
-    public var mediaKind: String          // "movie" | "episode" | "unknown"
+    public var mediaKind: String          // "movie" | "episode"
     public var posterPath: String?
     public var overview: String?
     public var rating: Double?
     public var lastRefreshed: Date
 
-    public init(torrentID: String, filename: String, sizeBytes: Int64, addedAt: String,
-                links: [String], parsed: ParsedRelease, lastRefreshed: Date = .now) {
-        self.torrentID = torrentID
-        self.filename = filename
-        self.sizeBytes = sizeBytes
-        self.addedAt = addedAt
-        self.links = links
+    public init(entry: LibraryFileEntry, parsed: ParsedRelease, lastRefreshed: Date = .now) {
+        self.itemKey = entry.itemKey
+        self.torrentID = entry.torrentID
+        self.fileIndex = entry.fileIndex
+        self.filename = entry.filename
+        self.sizeBytes = entry.bytes
+        self.addedAt = entry.added
+        self.link = entry.link
         self.title = parsed.title
         self.year = parsed.year
         self.season = parsed.season
@@ -45,8 +71,7 @@ public final class LibraryItem {
     }
 }
 
-/// Playback position for one file. `itemKey` = "<torrentID>#<fileIndex>" so
-/// multi-file packs track per-file progress.
+/// Playback position for one file. `itemKey` matches `LibraryItem.itemKey`.
 @Model
 public final class WatchState {
     @Attribute(.unique) public var itemKey: String
