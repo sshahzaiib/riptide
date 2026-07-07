@@ -34,22 +34,28 @@ struct LibraryRootView: View {
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: 200)
         } detail: {
-            detailView
-                .searchable(text: $model.searchText, placement: .toolbar)
-                .toolbar {
-                    ToolbarItem {
-                        Button(action: { Task { await model.refresh() } }) {
-                            if model.refreshing { ProgressView().controlSize(.small) }
-                            else { Image(systemName: "arrow.clockwise") }
+            // Explicit stack, recreated on sidebar change (.id) — otherwise a
+            // pushed detail view survives selection changes and the sidebar
+            // appears dead.
+            NavigationStack {
+                detailView
+                    .searchable(text: $model.searchText, placement: .toolbar)
+                    .toolbar {
+                        ToolbarItem {
+                            Button(action: { Task { await model.refresh() } }) {
+                                if model.refreshing { ProgressView().controlSize(.small) }
+                                else { Image(systemName: "arrow.clockwise") }
+                            }
+                            .disabled(model.refreshing)
                         }
-                        .disabled(model.refreshing)
-                    }
-                    ToolbarItem {
-                        Button(action: { showSettings = true }) {
-                            Image(systemName: "gearshape")
+                        ToolbarItem {
+                            Button(action: { showSettings = true }) {
+                                Image(systemName: "gearshape")
+                            }
                         }
                     }
-                }
+            }
+            .id(selection)
         }
         .sheet(isPresented: $showSettings, onDismiss: { Task { await model.refresh() } }) {
             SettingsView()
