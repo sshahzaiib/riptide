@@ -8,67 +8,113 @@ struct ItemDetailView: View {
     let item: LibraryItem
     @State private var busy = false
     @State private var playError: String?
+    @State private var details: TMDBMovieDetails?
+    @State private var cast: [TMDBCastMember] = []
+
+    private var resumePosition: Double? {
+        (try? model.store.continueWatching())?
+            .first { $0.itemKey == item.itemKey }?.positionSeconds
+    }
 
     var body: some View {
         ScrollView {
-            HStack(alignment: .top, spacing: 20) {
-                AsyncImage(url: item.posterPath.map { TMDB.imageURL(path: $0) }) { image in
-                    image.resizable().aspectRatio(contentMode: .fit)
-                } placeholder: {
-                    Rectangle().fill(.quaternary)
+            VStack(alignment: .leading, spacing: 24) {
+                hero
+                CastRow(cast: cast).padding(.horizontal, 24)
+            }
+            .padding(.bottom, 24)
+        }
+        .ignoresSafeArea(edges: .top)
+        .navigationTitle(item.title)
+        .task {
+            let token = AppSettings.shared.tmdbToken
+            guard let tmdbID = item.tmdbID, item.mediaKind == "movie",
+                  !token.isEmpty else { return }
+            let tmdb = TMDBClient(bearerToken: token)
+            details = try? await tmdb.movieDetails(id: tmdbID)
+            cast = (try? await tmdb.movieCredits(id: tmdbID)) ?? []
+        }
+    }
+
+    @ViewBuilder
+    private var hero: some View {
+        ZStack(alignment: .bottomLeading) {
+            AsyncImage(url: (details?.backdropPath ?? item.posterPath).map {
+                TMDB.imageURL(path: $0, width: 1280)
+            }) { image in
+                image.resizable().aspectRatio(contentMode: .fill)
+            } placeholder: {
+                Rectangle().fill(.quaternary)
+            }
+            .frame(height: 380)
+            .frame(maxWidth: .infinity)
+            .clipped()
+            .overlay {
+                LinearGradient(colors: [.clear, .clear, .black.opacity(0.85)],
+                               startPoint: .top, endPoint: .bottom)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(details?.title ?? item.title)
+                    .font(.system(size: 34, weight: .bold))
+                HStack(spacing: 12) {
+                    if let year = item.year { Text(String(year)) }
+                    if let runtime = details?.runtime { Text("\(runtime) min") }
+                    if let quality = item.quality { Text(quality.uppercased()) }
+                    if let rating = details?.voteAverage ?? item.rating {
+                        Label(String(format: "%.1f", rating), systemImage: "star.fill")
+                            .foregroundStyle(.yellow)
+                    }
                 }
-                .frame(width: 220, height: 330)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .foregroundStyle(.secondary)
 
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(item.title).font(.largeTitle.bold())
-                    HStack(spacing: 12) {
-                        if let season = item.season {
-                            Text("S\(season) · E\(item.episode ?? 0)")
-                        }
-                        if let year = item.year { Text(String(year)) }
-                        if let quality = item.quality { Text(quality.uppercased()) }
-                        if let rating = item.rating {
-                            Label(String(format: "%.1f", rating), systemImage: "star.fill")
-                        }
-                    }
-                    .foregroundStyle(.secondary)
+                if let overview = details?.overview ?? item.overview, !overview.isEmpty {
+                    Text(overview).lineLimit(4)
+                        .frame(maxWidth: 640, alignment: .leading)
+                }
 
-                    if let overview = item.overview, !overview.isEmpty {
-                        Text(overview).frame(maxWidth: 520, alignment: .leading)
-                    }
-
-                    Divider().frame(maxWidth: 520)
-
-                    Button(action: { Task { await play() } }) {
+                HStack(spacing: 12) {
+                    Button(action: { Task { await play(resume: resumePosition != nil) } }) {
                         HStack {
                             if busy { ProgressView().controlSize(.small) }
                             else { Image(systemName: "play.fill") }
-                            Text("Play")
+                            if let resume = resumePosition {
+                                Text("Resume · \(format(resume))")
+                            } else {
+                                Text("Play")
+                            }
                         }
+                        .padding(.horizontal, 20).padding(.vertical, 8)
                     }
+                    .buttonStyle(.borderedProminent)
                     .disabled(busy || item.link.isEmpty)
+
                     if let playError {
                         Text(playError).foregroundStyle(.red).font(.callout)
                     }
                 }
-                Spacer()
             }
             .padding(24)
         }
-        .navigationTitle(item.title)
     }
 
-    private func play() async {
+    private func play(resume: Bool) async {
         playError = nil
         busy = true
         defer { busy = false }
         do {
-            let playItem = try await model.playItem(for: item)
+            let playItem = try await model.playItem(for: item, autoResume: resume)
             openWindow(value: playItem)
         } catch {
             playError = "Could not start stream: \(error)"
         }
+    }
+
+    private func format(_ seconds: Double) -> String {
+        let s = Int(seconds)
+        return s >= 3600
+            ? String(format: "%d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60)
+            : String(format: "%d:%02d", s / 60, s % 60)
     }
 }
 
