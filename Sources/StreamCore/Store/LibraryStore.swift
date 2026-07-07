@@ -170,4 +170,10 @@ public final class LibraryStore {
             predicate: #Predicate { !$0.finished && $0.positionSeconds > 0 },
             sortBy: [SortDescriptor(\.lastWatchedAt, order: .reverse)]))
     }
+
+    /// Every stored watch state (finished included) — show pages badge
+    /// finished episodes with it.
+    public func allWatchStates() throws -> [WatchState] {
+        try context.fetch(FetchDescriptor<WatchState>())
+    }
 }
