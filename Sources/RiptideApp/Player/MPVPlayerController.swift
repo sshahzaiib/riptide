@@ -169,6 +169,9 @@ final class MPVPlayerController: NSViewController {
         mpv_observe_property(mpv, 0, "paused-for-cache", MPV_FORMAT_FLAG)
         mpv_observe_property(mpv, 0, "demuxer-cache-time", MPV_FORMAT_DOUBLE)
         mpv_observe_property(mpv, 0, "eof-reached", MPV_FORMAT_FLAG)
+        // NONE: fires on any change (tracks added, selection moved); we re-read
+        // the whole list, so the payload doesn't matter.
+        mpv_observe_property(mpv, 0, "track-list", MPV_FORMAT_NONE)
 
         mpv_set_wakeup_callback(mpv, { ctx in
             guard let ctx else { return }
@@ -374,6 +377,8 @@ final class MPVPlayerController: NSViewController {
             guard let value = UnsafePointer<Int32>(OpaquePointer(property.data))?.pointee,
                   value != 0 else { return }
             emit(.ended)
+        case "track-list":
+            emit(.tracksChanged(currentTracks()))
         default:
             break
         }
