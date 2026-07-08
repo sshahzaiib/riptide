@@ -106,6 +106,16 @@ struct PlayerWindowView: View {
             }
         }
         .task {
+            // Diagnostics: RIPTIDE_DEBUG_SUB=<path.srt> exercises sub-add +
+            // deselect without UI interaction (like RIPTIDE_DEBUG_URL).
+            if let sub = ProcessInfo.processInfo.environment["RIPTIDE_DEBUG_SUB"] {
+                Task {
+                    try? await Task.sleep(for: .seconds(3))
+                    model.addSubtitle(path: sub)
+                    try? await Task.sleep(for: .seconds(3))
+                    model.setSubtitleTrack(nil)
+                }
+            }
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
                 if !model.paused && controlsVisible

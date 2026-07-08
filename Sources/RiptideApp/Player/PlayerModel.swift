@@ -99,7 +99,11 @@ final class PlayerModel {
             setSleepDisabled(!p && duration > 0)
         case .buffering(let b):  buffering = b
         case .cacheTime(let t):  cacheTime = t
-        case .tracksChanged(let t): tracks = t
+        case .tracksChanged(let t):
+            tracks = t
+            if ProcessInfo.processInfo.environment["RIPTIDE_DEBUG_SUB"] != nil {
+                NSLog("RIPTRACKS: \(t.map { "\($0.type)#\($0.id)\($0.selected ? "*" : "")" }.joined(separator: " "))")
+            }
         case .ended:
             if duration > 0 {
                 try? store.saveProgress(itemKey: itemKey, position: duration, duration: duration)
