@@ -11,5 +11,6 @@ struct PlayItem: Identifiable, Hashable, Codable {
     let subtitleQuery: String      // parsed title for OpenSubtitles search
     let season: Int?
     let episode: Int?
+    let tmdbID: Int?               // TMDB match (movie or show) — nil if unmatched
     let autoResume: Bool           // explicit resume intent: skip the prompt
 }
