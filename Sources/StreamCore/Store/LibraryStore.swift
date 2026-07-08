@@ -164,6 +164,42 @@ public final class LibraryStore {
         try context.save()
     }
 
+    /// Remote (Trakt) playback position. Unlike saveProgress this keeps the
+    /// caller's timestamp so newer-wins comparisons stay correct.
+    public func applyRemoteProgress(itemKey: String, position: Double,
+                                    duration: Double, watchedAt: Date) throws {
+        let descriptor = FetchDescriptor<WatchState>(
+            predicate: #Predicate { $0.itemKey == itemKey })
+        if let state = try context.fetch(descriptor).first {
+            state.positionSeconds = position
+            state.durationSeconds = duration
+            state.lastWatchedAt = watchedAt
+            state.finished = false
+        } else {
+            let state = WatchState(itemKey: itemKey, positionSeconds: position,
+                                   durationSeconds: duration, finished: false)
+            state.lastWatchedAt = watchedAt
+            context.insert(state)
+        }
+        try context.save()
+    }
+
+    /// Remote (Trakt) watched marker: finished, position/duration preserved.
+    public func applyRemoteWatched(itemKey: String, watchedAt: Date) throws {
+        let descriptor = FetchDescriptor<WatchState>(
+            predicate: #Predicate { $0.itemKey == itemKey })
+        if let state = try context.fetch(descriptor).first {
+            state.finished = true
+            state.lastWatchedAt = watchedAt
+        } else {
+            let state = WatchState(itemKey: itemKey, positionSeconds: 0,
+                                   durationSeconds: 0, finished: true)
+            state.lastWatchedAt = watchedAt
+            context.insert(state)
+        }
+        try context.save()
+    }
+
     /// Unfinished, started items, most recently watched first.
     public func continueWatching() throws -> [WatchState] {
         try context.fetch(FetchDescriptor<WatchState>(
