@@ -141,8 +141,11 @@ public final class TraktClient {
 
     // MARK: Scrobbling
 
+    /// Returns Trakt's raw response so callers can log what it resolved
+    /// the media to.
+    @discardableResult
     public func scrobble(_ action: TraktScrobbleAction, media: TraktMedia,
-                         progress: Double) async throws {
+                         progress: Double) async throws -> Data {
         var body = ScrobbleBody(progress: progress)
         switch media {
         case .movie(let id), .show(let id):
@@ -151,8 +154,8 @@ public final class TraktClient {
             body.show = TraktRefPayload(ids: TraktIDsPayload(tmdb: showID))
             body.episode = TraktEpisodePayload(season: season, number: episode)
         }
-        _ = try await send(path: "/scrobble/\(action.rawValue)", method: "POST",
-                           body: try JSONEncoder().encode(body))
+        return try await send(path: "/scrobble/\(action.rawValue)", method: "POST",
+                              body: try JSONEncoder().encode(body))
     }
 
     // MARK: Sync pulls
