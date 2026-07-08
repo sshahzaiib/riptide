@@ -43,8 +43,10 @@ final class PlayerModel {
         }
     }
 
+    /// Clamped: seeks/EOF can push position past duration, and Trakt 400s
+    /// on progress outside 0...100.
     private var progressPercent: Double {
-        duration > 0 ? position / duration * 100 : 0
+        duration > 0 ? min(max(position / duration * 100, 0), 100) : 0
     }
 
     private func scrobble(_ action: TraktScrobbleAction) {

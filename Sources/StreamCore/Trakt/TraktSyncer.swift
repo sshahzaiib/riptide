@@ -58,7 +58,9 @@ public struct TraktSyncer {
 
         func markWatched(key: String, at watchedAt: Date) throws {
             let local = states[key]
-            guard local?.2 != true, watchedAt > (local?.0 ?? .distantPast) else { return }
+            // Already-finished items still take a newer timestamp (re-watch on
+            // Trakt should reorder Recently Watched here too).
+            guard watchedAt > (local?.0 ?? .distantPast) else { return }
             try store.applyRemoteWatched(itemKey: key, watchedAt: watchedAt)
             states[key] = (watchedAt, local?.1 ?? 0, true)
             summary.watchedApplied += 1

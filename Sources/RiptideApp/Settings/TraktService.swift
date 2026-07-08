@@ -17,6 +17,8 @@ final class TraktService {
     private var client: TraktClient?
     /// Session cache: "movie-603"/"show-1399" -> user rating.
     private var ratingsCache: [String: Int]?
+    /// Dedupes the initial ratings fetch when several menus appear at once.
+    private var ratingsFetch: Task<[String: Int], Never>?
 
     init() {
         clientID = keychain.get("trakt-client-id") ?? ""
@@ -49,7 +51,11 @@ final class TraktService {
     }
 
     func saveCredentials(clientID: String, clientSecret: String) {
-        self.clientID = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newID = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Tokens belong to the old app registration — stale ones can never
+        // refresh and would wedge the service in needsReauth.
+        if newID != self.clientID, isConnected { persist(tokens: nil) }
+        self.clientID = newID
         self.clientSecret = clientSecret.trimmingCharacters(in: .whitespacesAndNewlines)
         keychain.set(self.clientID, account: "trakt-client-id")
         keychain.set(self.clientSecret, account: "trakt-client-secret")
@@ -60,6 +66,8 @@ final class TraktService {
         persist(tokens: nil)
         needsReauth = false
         ratingsCache = nil
+        ratingsFetch?.cancel()
+        ratingsFetch = nil
         rebuildClient()
     }
 
@@ -71,6 +79,7 @@ final class TraktService {
     }
 
     /// Polls until authorized, denied, or the code expires. True on success.
+    /// Transient network/server errors keep polling; only denial aborts.
     func awaitAuthorization(code: TraktDeviceCode) async -> Bool {
         guard let client else { return false }
         let deadline = Date().addingTimeInterval(TimeInterval(code.expiresIn))
@@ -81,8 +90,10 @@ final class TraktService {
                     needsReauth = false
                     return true
                 }
-            } catch {
+            } catch TraktError.denied {
                 return false
+            } catch {
+                // Transient failure — sleep and retry until the code expires.
             }
             try? await Task.sleep(for: .seconds(code.interval))
         }
@@ -114,18 +125,24 @@ final class TraktService {
     func rating(for media: TraktMedia) async -> Int? {
         guard let client, isConnected else { return nil }
         if ratingsCache == nil {
-            var cache: [String: Int] = [:]
-            if let movies = try? await client.ratedMovies() {
-                for entry in movies {
-                    if let id = entry.movie?.ids.tmdb { cache["movie-\(id)"] = entry.rating }
+            if ratingsFetch == nil {
+                ratingsFetch = Task {
+                    var cache: [String: Int] = [:]
+                    if let movies = try? await client.ratedMovies() {
+                        for entry in movies {
+                            if let id = entry.movie?.ids.tmdb { cache["movie-\(id)"] = entry.rating }
+                        }
+                    }
+                    if let shows = try? await client.ratedShows() {
+                        for entry in shows {
+                            if let id = entry.show?.ids.tmdb { cache["show-\(id)"] = entry.rating }
+                        }
+                    }
+                    return cache
                 }
             }
-            if let shows = try? await client.ratedShows() {
-                for entry in shows {
-                    if let id = entry.show?.ids.tmdb { cache["show-\(id)"] = entry.rating }
-                }
-            }
-            ratingsCache = cache
+            ratingsCache = await ratingsFetch?.value
+            ratingsFetch = nil
         }
         return ratingsCache?[cacheKey(media)]
     }
