@@ -77,6 +77,43 @@ final class TraktClientTests: XCTestCase {
         XCTAssertEqual(refreshed?.accessToken, "new")
     }
 
+    func testConcurrent401sShareOneRefresh() async throws {
+        let start = TraktTokens(accessToken: "old", refreshToken: "rt-old",
+                                createdAt: 0, expiresIn: 1)
+        let client = makeClient(tokens: start)
+        nonisolated(unsafe) var refreshCount = 0
+        MockURLProtocol.setHandler { req in
+            if req.url!.path == "/oauth/token" {
+                refreshCount += 1
+                return .json(#"{"access_token":"new","refresh_token":"rt-new","created_at":200,"expires_in":7200}"#)
+            }
+            // Old token 401s, refreshed token succeeds.
+            let auth = req.value(forHTTPHeaderField: "Authorization")
+            return .json("[]", status: auth == "Bearer old" ? 401 : 200)
+        }
+        async let a = client.send(path: "/sync/playback")
+        async let b = client.send(path: "/sync/watched/movies")
+        _ = try await (a, b)
+        XCTAssertEqual(refreshCount, 1)
+    }
+
+    func testServerErrorAfterRefreshIsNotUnauthorized() async {
+        let start = TraktTokens(accessToken: "old", refreshToken: "rt-old",
+                                createdAt: 0, expiresIn: 1)
+        let client = makeClient(tokens: start)
+        MockURLProtocol.setHandler { req in
+            if req.url!.path == "/oauth/token" {
+                return .json(#"{"access_token":"new","refresh_token":"rt-new","created_at":200,"expires_in":7200}"#)
+            }
+            let auth = req.value(forHTTPHeaderField: "Authorization")
+            return .json("{}", status: auth == "Bearer old" ? 401 : 502)
+        }
+        do {
+            _ = try await client.send(path: "/sync/playback")
+            XCTFail("expected throw")
+        } catch { XCTAssertEqual(error as? TraktError, .http(502)) }
+    }
+
     // MARK: Task 2 — scrobble / pulls / ratings
 
     private func tok() -> TraktTokens {

@@ -34,12 +34,12 @@ public final class TraktClient {
 
     static let decoder: JSONDecoder = {
         let decoder = JSONDecoder()
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let plain = ISO8601DateFormatter()
         decoder.dateDecodingStrategy = .custom { d in
             let raw = try d.singleValueContainer().decode(String.self)
-            if let date = fractional.date(from: raw) ?? plain.date(from: raw) { return date }
+            // Trakt mixes fractional ("….000Z") and plain ISO 8601 timestamps.
+            if let date = try? Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+                .parse(raw) { return date }
+            if let date = try? Date.ISO8601FormatStyle().parse(raw) { return date }
             throw DecodingError.dataCorrupted(.init(codingPath: d.codingPath,
                                                     debugDescription: "Bad date: \(raw)"))
         }
@@ -80,8 +80,20 @@ public final class TraktClient {
         }
     }
 
+    /// Concurrent 401s must share one refresh — Trakt refresh tokens are
+    /// single-use, so a second refresh with the same token kills the session.
+    private var refreshInFlight: Task<TraktTokens, Error>?
+
     @discardableResult
     public func refreshTokens() async throws -> TraktTokens {
+        if let refreshInFlight { return try await refreshInFlight.value }
+        let task = Task { try await performRefresh() }
+        refreshInFlight = task
+        defer { refreshInFlight = nil }
+        return try await task.value
+    }
+
+    private func performRefresh() async throws -> TraktTokens {
         guard let tokens else { throw TraktError.unauthorized }
         let (data, status) = try await postRaw(path: "/oauth/token",
                                                body: ["refresh_token": tokens.refreshToken,
@@ -198,11 +210,13 @@ public final class TraktClient {
             try await refreshTokens()   // throws .unauthorized on failure
             let (data2, response2) = try await session.data(
                 for: request(path: path, method: method, body: body, authorized: true))
-            guard let http2 = response2 as? HTTPURLResponse,
-                  (200...299).contains(http2.statusCode) else {
-                throw TraktError.unauthorized
+            guard let http2 = response2 as? HTTPURLResponse else { throw TraktError.badResponse }
+            switch http2.statusCode {
+            case 200...299: return data2
+            case 401: throw TraktError.unauthorized
+            // Transient server error after a good refresh is not an auth failure.
+            default: throw TraktError.http(http2.statusCode)
             }
-            return data2
         default: throw TraktError.http(http.statusCode)
         }
     }
