@@ -26,6 +26,7 @@ final class PlayerModel {
     private let traktMedia: TraktMedia?
     private var lastSaved: Double = 0
     private var scrobbleStarted = false
+    private var sleepActivity: NSObjectProtocol?
 
     init(store: LibraryStore, itemKey: String, traktMedia: TraktMedia? = nil) {
         self.store = store
@@ -64,6 +65,18 @@ final class PlayerModel {
         TraktService.shared.scrobble(action, media: traktMedia, progress: progress)
     }
 
+    /// Hold a display-sleep assertion while video is actually playing.
+    private func setSleepDisabled(_ disabled: Bool) {
+        if disabled, sleepActivity == nil {
+            sleepActivity = ProcessInfo.processInfo.beginActivity(
+                options: .idleDisplaySleepDisabled,
+                reason: "Video playback")
+        } else if !disabled, let activity = sleepActivity {
+            ProcessInfo.processInfo.endActivity(activity)
+            sleepActivity = nil
+        }
+    }
+
     private func handle(_ event: PlayerEvent) {
         switch event {
         case .position(let t):
@@ -71,6 +84,7 @@ final class PlayerModel {
             if !scrobbleStarted, duration > 0 {
                 scrobbleStarted = true
                 scrobble(.start)
+                setSleepDisabled(!paused)
             }
             if abs(t - lastSaved) >= 5 {          // spec: autosave every 5 s
                 lastSaved = t
@@ -82,6 +96,7 @@ final class PlayerModel {
                 scrobble(p ? .pause : .start)
             }
             paused = p
+            setSleepDisabled(!p && duration > 0)
         case .buffering(let b):  buffering = b
         case .cacheTime(let t):  cacheTime = t
         case .tracksChanged(let t): tracks = t
@@ -93,8 +108,10 @@ final class PlayerModel {
                 scrobbleStarted = false
                 scrobble(.stop)
             }
+            setSleepDisabled(false)
         case .error(let message):
             playbackError = message
+            setSleepDisabled(false)
         }
     }
 
@@ -110,6 +127,7 @@ final class PlayerModel {
             scrobbleStarted = false
             scrobble(.stop)
         }
+        setSleepDisabled(false)
         flushProgress()
         controller?.shutdown()
     }
