@@ -174,33 +174,35 @@ final class TraktClientTests: XCTestCase {
         XCTAssertNotNil(entries[0].pausedAt)
     }
 
-    func testWatchedShowsDecodes() async throws {
+    func testWatchedShowsDecodesShallowEntries() async throws {
+        // Live API shape: no `seasons` key at all (docs are stale) — episode
+        // data comes from the separate progress endpoint.
         MockURLProtocol.setHandler { _ in .json(#"""
-        [{"show":{"ids":{"tmdb":1399}},
-          "seasons":[{"number":1,"episodes":[
-            {"number":1,"last_watched_at":"2026-06-30T21:00:00.000Z"},
-            {"number":2,"last_watched_at":"2026-07-01T21:00:00.000Z"}]}]}]
+        [{"plays":5,"last_watched_at":"2026-07-08T08:09:00.000Z",
+          "show":{"ids":{"tmdb":1399,"trakt":1390}}}]
         """#) }
         let shows = try await makeClient(tokens: tok()).watchedShows()
         XCTAssertEqual(shows[0].show.ids.tmdb, 1399)
-        XCTAssertEqual(shows[0].seasons[0].episodes.count, 2)
+        XCTAssertEqual(shows[0].show.ids.trakt, 1390)
     }
 
-    func testWatchedShowsMissingSeasonsDecodes() async throws {
-        // Regression: a real account returned an entry with no `seasons` key,
-        // which used to fail the whole pull with keyNotFound.
-        MockURLProtocol.setHandler { _ in .json(#"""
-        [{"show":{"ids":{"tmdb":777}}},
-         {"show":{"ids":{"tmdb":1399}},
-          "seasons":[{"number":1},
-                     {"number":2,"episodes":[
-                       {"number":1,"last_watched_at":"2026-07-01T21:00:00.000Z"}]}]}]
-        """#) }
-        let shows = try await makeClient(tokens: tok()).watchedShows()
-        XCTAssertEqual(shows.count, 2)
-        XCTAssertEqual(shows[0].seasons, [])
-        XCTAssertEqual(shows[1].seasons[0].episodes, [])
-        XCTAssertEqual(shows[1].seasons[1].episodes.count, 1)
+    func testShowProgressDecodesAndUsesTraktID() async throws {
+        nonisolated(unsafe) var capturedPath: String?
+        MockURLProtocol.setHandler { req in
+            capturedPath = req.url?.path
+            return .json(#"""
+            {"aired":73,"completed":2,"seasons":[
+              {"number":1,"aired":10,"episodes":[
+                {"number":1,"completed":true,"last_watched_at":"2026-07-01T21:00:00.000Z"},
+                {"number":2,"completed":false,"last_watched_at":null}]}]}
+            """#)
+        }
+        let progress = try await makeClient(tokens: tok()).showProgress(traktID: 1390)
+        XCTAssertEqual(capturedPath, "/shows/1390/progress/watched")
+        XCTAssertEqual(progress.seasons[0].episodes[0].completed, true)
+        XCTAssertNotNil(progress.seasons[0].episodes[0].lastWatchedAt)
+        XCTAssertEqual(progress.seasons[0].episodes[1].completed, false)
+        XCTAssertNil(progress.seasons[0].episodes[1].lastWatchedAt)
     }
 
     func testRateShowPayload() async throws {

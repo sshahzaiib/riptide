@@ -65,6 +65,9 @@ struct LibraryRootView: View {
             guard ProcessInfo.processInfo.environment["RIPTIDE_DEBUG_URL"] == nil else { return }
             if !AppSettings.shared.isConfigured { showSettings = true }
             else if model.items.isEmpty { await model.refresh() }
+            // Populated library: no full RD refresh on launch, but watched
+            // state should still flow in from Trakt.
+            else { await TraktService.shared.pullSync(store: model.store) }
         }
         .alert("Real-Debrid authorization failed", isPresented: $model.needsAuth) {
             Button("Open Settings") { showSettings = true }

@@ -172,6 +172,13 @@ public final class TraktClient {
                                 from: try await send(path: "/sync/watched/shows"))
     }
 
+    /// NOTE: takes the TRAKT id (not TMDB) — /shows/{id} resolves ids in
+    /// Trakt's namespace.
+    public func showProgress(traktID: Int) async throws -> TraktShowProgress {
+        try Self.decoder.decode(TraktShowProgress.self,
+                                from: try await send(path: "/shows/\(traktID)/progress/watched"))
+    }
+
     // MARK: Ratings
 
     /// Episodes rate their show (spec: episode-level ratings out of v1).
