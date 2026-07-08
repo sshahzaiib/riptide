@@ -50,7 +50,10 @@ final class PlayerModel {
     }
 
     private func scrobble(_ action: TraktScrobbleAction) {
-        guard let traktMedia else { return }
+        guard let traktMedia else {
+            NSLog("Trakt scrobble \(action.rawValue) SKIPPED — item '\(itemKey)' has no TMDB match")
+            return
+        }
         TraktService.shared.scrobble(action, media: traktMedia, progress: progressPercent)
     }
 
