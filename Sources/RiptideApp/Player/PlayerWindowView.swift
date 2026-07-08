@@ -21,7 +21,8 @@ struct PlayerWindowView: View {
     init(item: PlayItem, store: LibraryStore) {
         self.item = item
         self.store = store
-        _model = State(initialValue: PlayerModel(store: store, itemKey: item.itemKey))
+        _model = State(initialValue: PlayerModel(store: store, itemKey: item.itemKey,
+                                                 traktMedia: TraktMedia(playItem: item)))
     }
 
     // Episodes only, once per playback, and only during the first 6 minutes.
