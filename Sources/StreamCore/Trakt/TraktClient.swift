@@ -2,6 +2,25 @@ import Foundation
 
 /// Trakt.tv API v2 client. MainActor because tokens mutate and the app is
 /// MainActor-driven; all I/O is async URLSession.
+// MARK: Payload encoding
+
+struct TraktIDsPayload: Encodable { let tmdb: Int }
+struct TraktRefPayload: Encodable { let ids: TraktIDsPayload }
+struct TraktEpisodePayload: Encodable { let season: Int; let number: Int }
+
+struct ScrobbleBody: Encodable {
+    var movie: TraktRefPayload?
+    var show: TraktRefPayload?
+    var episode: TraktEpisodePayload?
+    let progress: Double
+}
+
+struct RatingsBody: Encodable {
+    struct Item: Encodable { let rating: Int; let ids: TraktIDsPayload }
+    var movies: [Item]?
+    var shows: [Item]?
+}
+
 @MainActor
 public final class TraktClient {
     public var tokens: TraktTokens?
@@ -106,6 +125,65 @@ public final class TraktClient {
         let (data, status) = try await postRaw(path: path, body: body)
         guard allowedStatus.contains(status) else { throw TraktError.http(status) }
         return data
+    }
+
+    // MARK: Scrobbling
+
+    public func scrobble(_ action: TraktScrobbleAction, media: TraktMedia,
+                         progress: Double) async throws {
+        var body = ScrobbleBody(progress: progress)
+        switch media {
+        case .movie(let id), .show(let id):
+            body.movie = TraktRefPayload(ids: TraktIDsPayload(tmdb: id))
+        case .episode(let showID, let season, let episode):
+            body.show = TraktRefPayload(ids: TraktIDsPayload(tmdb: showID))
+            body.episode = TraktEpisodePayload(season: season, number: episode)
+        }
+        _ = try await send(path: "/scrobble/\(action.rawValue)", method: "POST",
+                           body: try JSONEncoder().encode(body))
+    }
+
+    // MARK: Sync pulls
+
+    public func playback() async throws -> [TraktPlaybackEntry] {
+        try Self.decoder.decode([TraktPlaybackEntry].self,
+                                from: try await send(path: "/sync/playback"))
+    }
+
+    public func watchedMovies() async throws -> [TraktWatchedMovie] {
+        try Self.decoder.decode([TraktWatchedMovie].self,
+                                from: try await send(path: "/sync/watched/movies"))
+    }
+
+    public func watchedShows() async throws -> [TraktWatchedShow] {
+        try Self.decoder.decode([TraktWatchedShow].self,
+                                from: try await send(path: "/sync/watched/shows"))
+    }
+
+    // MARK: Ratings
+
+    /// Episodes rate their show (spec: episode-level ratings out of v1).
+    public func rate(media: TraktMedia, rating: Int) async throws {
+        var body = RatingsBody()
+        let clamped = min(max(rating, 1), 10)
+        switch media {
+        case .movie(let id):
+            body.movies = [.init(rating: clamped, ids: TraktIDsPayload(tmdb: id))]
+        case .show(let id), .episode(let id, _, _):
+            body.shows = [.init(rating: clamped, ids: TraktIDsPayload(tmdb: id))]
+        }
+        _ = try await send(path: "/sync/ratings", method: "POST",
+                           body: try JSONEncoder().encode(body))
+    }
+
+    public func ratedMovies() async throws -> [TraktRatingEntry] {
+        try Self.decoder.decode([TraktRatingEntry].self,
+                                from: try await send(path: "/sync/ratings/movies"))
+    }
+
+    public func ratedShows() async throws -> [TraktRatingEntry] {
+        try Self.decoder.decode([TraktRatingEntry].self,
+                                from: try await send(path: "/sync/ratings/shows"))
     }
 
     /// Authorized call with a single automatic token refresh on 401.
