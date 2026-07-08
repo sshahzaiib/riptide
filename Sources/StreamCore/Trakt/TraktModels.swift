@@ -90,9 +90,25 @@ public struct TraktWatchedShow: Decodable, Equatable, Sendable {
     public let show: TraktShowRef
     public let seasons: [Season]
 
+    // Trakt omits `seasons`/`episodes` on some entries — absent means "none",
+    // and one such entry must not sink the whole sync pull.
+    enum CodingKeys: String, CodingKey { case show, seasons }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        show = try c.decode(TraktShowRef.self, forKey: .show)
+        seasons = try c.decodeIfPresent([Season].self, forKey: .seasons) ?? []
+    }
+
     public struct Season: Decodable, Equatable, Sendable {
         public let number: Int
         public let episodes: [Episode]
+
+        enum CodingKeys: String, CodingKey { case number, episodes }
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            number = try c.decode(Int.self, forKey: .number)
+            episodes = try c.decodeIfPresent([Episode].self, forKey: .episodes) ?? []
+        }
     }
     public struct Episode: Decodable, Equatable, Sendable {
         public let number: Int
