@@ -84,6 +84,7 @@ final class LibraryModel {
                 tmdb: TMDBClient(bearerToken: settings.tmdbToken),
                 store: store)
             let summary = try await refresher.refresh()
+            await TraktService.shared.pullSync(store: store)
             errorMessage = summary.matchFailed > 0
                 ? "\(summary.matchFailed) item(s) could not be matched on TMDB." : nil
         } catch let e as RealDebridError where e == .unauthorized {
@@ -112,6 +113,7 @@ final class LibraryModel {
                         subtitleQuery: item.title,
                         season: item.season,
                         episode: item.episode,
+                        tmdbID: item.tmdbID,
                         autoResume: autoResume)
     }
 }

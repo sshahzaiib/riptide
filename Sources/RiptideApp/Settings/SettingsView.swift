@@ -5,6 +5,11 @@ struct SettingsView: View {
     @State private var rdToken = AppSettings.shared.rdToken
     @State private var tmdbToken = AppSettings.shared.tmdbToken
     @State private var openSubsKey = AppSettings.shared.openSubsKey
+    @State private var traktClientID = TraktService.shared.clientID
+    @State private var traktClientSecret = TraktService.shared.clientSecret
+    @State private var showTraktConnect = false
+
+    private var trakt: TraktService { TraktService.shared }
 
     var body: some View {
         Form {
@@ -26,11 +31,34 @@ struct SettingsView: View {
                      destination: URL(string: "https://www.opensubtitles.com/en/consumers")!)
                     .font(.caption)
             }
+            Section("Trakt (optional)") {
+                SecureField("Client ID", text: $traktClientID)
+                SecureField("Client Secret", text: $traktClientSecret)
+                Link("Create an app at trakt.tv/oauth/applications",
+                     destination: URL(string: "https://trakt.tv/oauth/applications")!)
+                    .font(.caption)
+                HStack {
+                    if trakt.isConnected {
+                        Label(trakt.needsReauth ? "Reconnect needed" : "Connected",
+                              systemImage: trakt.needsReauth
+                                ? "exclamationmark.triangle" : "checkmark.circle.fill")
+                            .foregroundStyle(trakt.needsReauth ? .orange : .green)
+                        Spacer()
+                        Button("Disconnect") { trakt.disconnect() }
+                        if trakt.needsReauth { connectButton }
+                    } else {
+                        Spacer()
+                        connectButton
+                    }
+                }
+            }
             HStack {
                 Spacer()
                 Button("Save") {
                     AppSettings.shared.save(rdToken: rdToken, tmdbToken: tmdbToken,
                                             openSubsKey: openSubsKey)
+                    TraktService.shared.saveCredentials(clientID: traktClientID,
+                                                        clientSecret: traktClientSecret)
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
@@ -38,7 +66,17 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .sheet(isPresented: $showTraktConnect) { TraktConnectSheet() }
         .frame(width: 480)
         .padding(.bottom, 12)
+    }
+
+    private var connectButton: some View {
+        Button("Connect…") {
+            TraktService.shared.saveCredentials(clientID: traktClientID,
+                                                clientSecret: traktClientSecret)
+            showTraktConnect = true
+        }
+        .disabled(traktClientID.isEmpty || traktClientSecret.isEmpty)
     }
 }

@@ -65,6 +65,9 @@ struct ItemDetailView: View {
                         Label(String(format: "%.1f", rating), systemImage: "star.fill")
                             .foregroundStyle(.yellow)
                     }
+                    if let tmdbID = item.tmdbID, item.mediaKind == "movie" {
+                        TraktRatingMenu(media: .movie(tmdbID: tmdbID))
+                    }
                 }
                 .foregroundStyle(.secondary)
 
@@ -188,6 +191,9 @@ struct ShowDetailView: View {
                         ?? show.episodes.compactMap(\.rating).first {
                         Label(String(format: "%.1f", rating), systemImage: "star.fill")
                             .foregroundStyle(.yellow)
+                    }
+                    if let showID = model.showID {
+                        TraktRatingMenu(media: .show(tmdbID: showID))
                     }
                 }
                 .foregroundStyle(.secondary)

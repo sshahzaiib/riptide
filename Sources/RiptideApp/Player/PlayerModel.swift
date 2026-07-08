@@ -23,11 +23,14 @@ final class PlayerModel {
     private weak var controller: MPVPlayerController?
     private let store: LibraryStore
     private let itemKey: String
+    private let traktMedia: TraktMedia?
     private var lastSaved: Double = 0
+    private var scrobbleStarted = false
 
-    init(store: LibraryStore, itemKey: String) {
+    init(store: LibraryStore, itemKey: String, traktMedia: TraktMedia? = nil) {
         self.store = store
         self.itemKey = itemKey
+        self.traktMedia = traktMedia
     }
 
     /// The player's NSWindow — scopes the keyboard event monitor.
@@ -40,22 +43,45 @@ final class PlayerModel {
         }
     }
 
+    /// Clamped: seeks/EOF can push position past duration, and Trakt 400s
+    /// on progress outside 0...100.
+    private var progressPercent: Double {
+        duration > 0 ? min(max(position / duration * 100, 0), 100) : 0
+    }
+
+    private func scrobble(_ action: TraktScrobbleAction) {
+        guard let traktMedia else { return }
+        TraktService.shared.scrobble(action, media: traktMedia, progress: progressPercent)
+    }
+
     private func handle(_ event: PlayerEvent) {
         switch event {
         case .position(let t):
             position = t
+            if !scrobbleStarted, duration > 0 {
+                scrobbleStarted = true
+                scrobble(.start)
+            }
             if abs(t - lastSaved) >= 5 {          // spec: autosave every 5 s
                 lastSaved = t
                 try? store.saveProgress(itemKey: itemKey, position: t, duration: duration)
             }
         case .duration(let d):   duration = d
-        case .paused(let p):     paused = p
+        case .paused(let p):
+            if scrobbleStarted, p != paused {
+                scrobble(p ? .pause : .start)
+            }
+            paused = p
         case .buffering(let b):  buffering = b
         case .cacheTime(let t):  cacheTime = t
         case .tracksChanged(let t): tracks = t
         case .ended:
             if duration > 0 {
                 try? store.saveProgress(itemKey: itemKey, position: duration, duration: duration)
+            }
+            if scrobbleStarted {
+                scrobbleStarted = false
+                scrobble(.stop)
             }
         case .error(let message):
             playbackError = message
@@ -70,6 +96,10 @@ final class PlayerModel {
 
     /// Window closing: persist position, then destroy the mpv instance.
     func shutdown() {
+        if scrobbleStarted {
+            scrobbleStarted = false
+            scrobble(.stop)
+        }
         flushProgress()
         controller?.shutdown()
     }
