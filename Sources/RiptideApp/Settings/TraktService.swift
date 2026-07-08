@@ -103,20 +103,45 @@ final class TraktService {
     // MARK: Best-effort wrappers
 
     func scrobble(_ action: TraktScrobbleAction, media: TraktMedia, progress: Double) {
-        guard let client, isConnected else { return }
+        guard let client, isConnected else {
+            NSLog("Trakt scrobble \(action.rawValue) SKIPPED — not connected")
+            return
+        }
+        NSLog("Trakt scrobble \(action.rawValue) \(media) @\(String(format: "%.1f", progress))%")
         Task {
-            do { try await client.scrobble(action, media: media, progress: progress) }
-            catch TraktError.unauthorized { needsReauth = true }
-            catch { NSLog("Trakt scrobble failed: \(error)") }
+            do {
+                let response = try await client.scrobble(action, media: media, progress: progress)
+                NSLog("Trakt scrobble \(action.rawValue) OK: \(String(data: response, encoding: .utf8)?.prefix(400) ?? "")")
+            }
+            catch TraktError.unauthorized {
+                needsReauth = true
+                NSLog("Trakt scrobble \(action.rawValue) FAILED: unauthorized (reconnect needed)")
+            }
+            catch { NSLog("Trakt scrobble \(action.rawValue) FAILED: \(error)") }
         }
     }
 
-    func pullSync(store: LibraryStore) async {
+    /// TEMP: dump Trakt's current playback-progress state (RIPTIDE_TRAKT_PROBE=1).
+    func probePlayback() async {
         guard let client, isConnected else { return }
         do {
-            _ = try await TraktSyncer(client: client, store: store).pull()
+            for p in try await client.playback() {
+                NSLog("PROBE playback: type=\(p.type) show=\(p.show?.ids.tmdb ?? -1) ep=\(p.episode.map { "S\($0.season)E\($0.number)" } ?? "-") movie=\(p.movie?.ids.tmdb ?? -1) progress=\(p.progress) pausedAt=\(p.pausedAt.map(String.init(describing:)) ?? "nil")")
+            }
+        } catch { NSLog("PROBE playback failed: \(error)") }
+    }
+
+    func pullSync(store: LibraryStore) async {
+        guard let client, isConnected else {
+            NSLog("Trakt pull SKIPPED — not connected")
+            return
+        }
+        do {
+            let summary = try await TraktSyncer(client: client, store: store).pull()
+            NSLog("Trakt pull OK: playbackApplied=\(summary.playbackApplied) watchedApplied=\(summary.watchedApplied)")
         } catch TraktError.unauthorized {
             needsReauth = true
+            NSLog("Trakt pull FAILED: unauthorized (reconnect needed)")
         } catch {
             NSLog("Trakt sync failed: \(error)")
         }

@@ -23,12 +23,14 @@ public struct TraktSyncer {
         let items = try store.items()
         var movieKeys: [Int: String] = [:]          // movie tmdb -> itemKey
         var episodeKeys: [String: String] = [:]     // "showTmdb#s#e" -> itemKey
+        var localShowIDs: Set<Int> = []             // show tmdb ids in library
         for item in items {
             guard let id = item.tmdbID else { continue }
             if item.mediaKind == "movie" {
                 movieKeys[id] = item.itemKey
             } else if let s = item.season, let e = item.episode {
                 episodeKeys["\(id)#\(s)#\(e)"] = item.itemKey
+                localShowIDs.insert(id)
             }
         }
         // Snapshot: itemKey -> (lastWatchedAt, duration, finished).
@@ -70,13 +72,17 @@ public struct TraktSyncer {
             guard let id = watched.movie.ids.tmdb, let key = movieKeys[id] else { continue }
             try markWatched(key: key, at: watched.lastWatchedAt)
         }
+        // The watched list is shallow (Trakt stopped inlining seasons); fetch
+        // per-episode progress only for shows that exist in the local library.
         for show in try await client.watchedShows() {
-            guard let showID = show.show.ids.tmdb else { continue }
-            for season in show.seasons {
-                for episode in season.episodes {
+            guard let showID = show.show.ids.tmdb, localShowIDs.contains(showID),
+                  let traktID = show.show.ids.trakt else { continue }
+            let progress = try await client.showProgress(traktID: traktID)
+            for season in progress.seasons {
+                for episode in season.episodes where episode.completed {
                     guard let key = episodeKeys["\(showID)#\(season.number)#\(episode.number)"]
                     else { continue }
-                    try markWatched(key: key, at: episode.lastWatchedAt)
+                    try markWatched(key: key, at: episode.lastWatchedAt ?? show.lastWatchedAt)
                 }
             }
         }

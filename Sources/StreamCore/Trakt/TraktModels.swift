@@ -46,6 +46,7 @@ public enum TraktMedia: Equatable, Sendable {
 
 public struct TraktIDs: Decodable, Equatable, Sendable {
     public let tmdb: Int?
+    public let trakt: Int?
 }
 
 public struct TraktMovieRef: Decodable, Equatable, Sendable {
@@ -86,8 +87,21 @@ public struct TraktWatchedMovie: Decodable, Equatable, Sendable {
     }
 }
 
+/// Shallow entry from /sync/watched/shows. The live API no longer inlines
+/// `seasons` (despite the docs) — per-episode data comes from a follow-up
+/// /shows/{trakt-id}/progress/watched call.
 public struct TraktWatchedShow: Decodable, Equatable, Sendable {
     public let show: TraktShowRef
+    public let lastWatchedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case show
+        case lastWatchedAt = "last_watched_at"
+    }
+}
+
+/// Per-episode watched state from /shows/{trakt-id}/progress/watched.
+public struct TraktShowProgress: Decodable, Equatable, Sendable {
     public let seasons: [Season]
 
     public struct Season: Decodable, Equatable, Sendable {
@@ -96,10 +110,11 @@ public struct TraktWatchedShow: Decodable, Equatable, Sendable {
     }
     public struct Episode: Decodable, Equatable, Sendable {
         public let number: Int
-        public let lastWatchedAt: Date
+        public let completed: Bool
+        public let lastWatchedAt: Date?
 
         enum CodingKeys: String, CodingKey {
-            case number
+            case number, completed
             case lastWatchedAt = "last_watched_at"
         }
     }

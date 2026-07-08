@@ -33,17 +33,23 @@ final class TraktSyncerTests: XCTestCase {
     }
 
     private func respond(playback: String = "[]", watchedMovies: String = "[]",
-                         watchedShows: String = "[]") {
+                         watchedShows: String = "[]", gotProgress: String = "{\"seasons\":[]}") {
         MockURLProtocol.setHandler { req in
             let json: String = switch req.url!.path {
             case "/sync/playback": playback
             case "/sync/watched/movies": watchedMovies
             case "/sync/watched/shows": watchedShows
+            case "/shows/1390/progress/watched": gotProgress
             default: "[]"
             }
             return .json(json)
         }
     }
+
+    /// Shallow watched-shows entry for GoT (tmdb 1399, trakt 1390) — the live
+    /// API returns no seasons; episode data comes from the progress endpoint.
+    private let gotWatched =
+        #"[{"last_watched_at":"2099-01-01T00:00:00.000Z","show":{"ids":{"tmdb":1399,"trakt":1390}}}]"#
 
     private func state(_ key: String) throws -> WatchState? {
         try store.allWatchStates().first { $0.itemKey == key }
@@ -74,18 +80,44 @@ final class TraktSyncerTests: XCTestCase {
     }
 
     func testWatchedEpisodeMarksFinished() async throws {
-        respond(watchedShows: #"[{"show":{"ids":{"tmdb":1399}},"seasons":[{"number":1,"episodes":[{"number":5,"last_watched_at":"2099-01-01T00:00:00.000Z"}]}]}]"#)
+        respond(watchedShows: gotWatched,
+                gotProgress: #"{"seasons":[{"number":1,"episodes":[{"number":5,"completed":true,"last_watched_at":"2099-01-01T00:00:00.000Z"}]}]}"#)
         let summary = try await TraktSyncer(client: client, store: store).pull()
         XCTAssertEqual(summary.watchedApplied, 1)
         XCTAssertEqual(try state("t2#3")?.finished, true)
     }
 
+    func testUncompletedEpisodeNotMarked() async throws {
+        respond(watchedShows: gotWatched,
+                gotProgress: #"{"seasons":[{"number":1,"episodes":[{"number":5,"completed":false,"last_watched_at":null}]}]}"#)
+        let summary = try await TraktSyncer(client: client, store: store).pull()
+        XCTAssertEqual(summary.watchedApplied, 0)
+        XCTAssertNil(try state("t2#3"))
+    }
+
     func testWatchedOlderThanLocalUnfinishedSkipped() async throws {
         try store.saveProgress(itemKey: "t2#3", position: 500, duration: 3000) // now, unfinished
-        respond(watchedShows: #"[{"show":{"ids":{"tmdb":1399}},"seasons":[{"number":1,"episodes":[{"number":5,"last_watched_at":"2020-01-01T00:00:00.000Z"}]}]}]"#)
+        respond(watchedShows: gotWatched,
+                gotProgress: #"{"seasons":[{"number":1,"episodes":[{"number":5,"completed":true,"last_watched_at":"2020-01-01T00:00:00.000Z"}]}]}"#)
         let summary = try await TraktSyncer(client: client, store: store).pull()
         XCTAssertEqual(summary.watchedApplied, 0)
         XCTAssertEqual(try state("t2#3")?.finished, false)
+    }
+
+    func testShowsNotInLibrarySkipProgressFetch() async throws {
+        // Foreign show (tmdb 4607): no local episodes -> progress endpoint
+        // must not be called at all.
+        nonisolated(unsafe) var progressCalls = 0
+        MockURLProtocol.setHandler { req in
+            if req.url!.path.hasPrefix("/shows/") { progressCalls += 1 }
+            if req.url!.path == "/sync/watched/shows" {
+                return .json(#"[{"last_watched_at":"2099-01-01T00:00:00.000Z","show":{"ids":{"tmdb":4607,"trakt":4583}}}]"#)
+            }
+            return .json(req.url!.path == "/sync/playback" ? "[]" : "[]")
+        }
+        let summary = try await TraktSyncer(client: client, store: store).pull()
+        XCTAssertEqual(summary.watchedApplied, 0)
+        XCTAssertEqual(progressCalls, 0)
     }
 
     func testUnmatchedEntriesIgnored() async throws {
