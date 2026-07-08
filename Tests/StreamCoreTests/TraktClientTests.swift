@@ -186,6 +186,23 @@ final class TraktClientTests: XCTestCase {
         XCTAssertEqual(shows[0].seasons[0].episodes.count, 2)
     }
 
+    func testWatchedShowsMissingSeasonsDecodes() async throws {
+        // Regression: a real account returned an entry with no `seasons` key,
+        // which used to fail the whole pull with keyNotFound.
+        MockURLProtocol.setHandler { _ in .json(#"""
+        [{"show":{"ids":{"tmdb":777}}},
+         {"show":{"ids":{"tmdb":1399}},
+          "seasons":[{"number":1},
+                     {"number":2,"episodes":[
+                       {"number":1,"last_watched_at":"2026-07-01T21:00:00.000Z"}]}]}]
+        """#) }
+        let shows = try await makeClient(tokens: tok()).watchedShows()
+        XCTAssertEqual(shows.count, 2)
+        XCTAssertEqual(shows[0].seasons, [])
+        XCTAssertEqual(shows[1].seasons[0].episodes, [])
+        XCTAssertEqual(shows[1].seasons[1].episodes.count, 1)
+    }
+
     func testRateShowPayload() async throws {
         nonisolated(unsafe) var capturedPath: String?
         nonisolated(unsafe) var capturedBody: Data?
