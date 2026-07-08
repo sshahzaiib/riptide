@@ -50,8 +50,18 @@ final class PlayerModel {
     }
 
     private func scrobble(_ action: TraktScrobbleAction) {
-        guard let traktMedia else { return }
-        TraktService.shared.scrobble(action, media: traktMedia, progress: progressPercent)
+        guard let traktMedia else {
+            NSLog("Trakt scrobble \(action.rawValue) SKIPPED — item '\(itemKey)' has no TMDB match")
+            return
+        }
+        let progress = progressPercent
+        // Trakt 422s on any scrobble under 1% and on pause at >= 80% (past the
+        // watched threshold it expects stop, which we send on ended/shutdown).
+        if progress < 1 || (action == .pause && progress >= 80) {
+            NSLog("Trakt scrobble \(action.rawValue) SKIPPED — progress \(String(format: "%.1f", progress))% outside Trakt's accepted range")
+            return
+        }
+        TraktService.shared.scrobble(action, media: traktMedia, progress: progress)
     }
 
     private func handle(_ event: PlayerEvent) {
