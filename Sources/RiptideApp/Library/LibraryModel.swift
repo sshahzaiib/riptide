@@ -112,6 +112,7 @@ final class LibraryModel {
                         subtitleQuery: item.title,
                         season: item.season,
                         episode: item.episode,
+                        tmdbID: item.tmdbID,
                         autoResume: autoResume)
     }
 }

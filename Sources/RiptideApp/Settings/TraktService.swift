@@ -1,0 +1,161 @@
+import Foundation
+import Observation
+import StreamCore
+
+/// App-side Trakt facade: Keychain-backed credentials/tokens, one shared
+/// client, best-effort wrappers that never throw into UI code.
+@Observable
+@MainActor
+final class TraktService {
+    static let shared = TraktService()
+
+    private let keychain = KeychainStore()
+    private(set) var clientID: String
+    private(set) var clientSecret: String
+    private(set) var tokens: TraktTokens?
+    private(set) var needsReauth = false
+    private var client: TraktClient?
+    /// Session cache: "movie-603"/"show-1399" -> user rating.
+    private var ratingsCache: [String: Int]?
+
+    init() {
+        clientID = keychain.get("trakt-client-id") ?? ""
+        clientSecret = keychain.get("trakt-client-secret") ?? ""
+        if let raw = keychain.get("trakt-tokens"),
+           let decoded = try? JSONDecoder().decode(TraktTokens.self, from: Data(raw.utf8)) {
+            tokens = decoded
+        }
+        rebuildClient()
+    }
+
+    var isConfigured: Bool { !clientID.isEmpty && !clientSecret.isEmpty }
+    var isConnected: Bool { tokens != nil }
+
+    private func rebuildClient() {
+        guard isConfigured else { client = nil; return }
+        let built = TraktClient(clientID: clientID, clientSecret: clientSecret, tokens: tokens)
+        built.onTokensRefreshed = { [weak self] fresh in self?.persist(tokens: fresh) }
+        client = built
+    }
+
+    private func persist(tokens: TraktTokens?) {
+        self.tokens = tokens
+        if let tokens, let data = try? JSONEncoder().encode(tokens),
+           let raw = String(data: data, encoding: .utf8) {
+            keychain.set(raw, account: "trakt-tokens")
+        } else {
+            keychain.delete(account: "trakt-tokens")
+        }
+    }
+
+    func saveCredentials(clientID: String, clientSecret: String) {
+        self.clientID = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.clientSecret = clientSecret.trimmingCharacters(in: .whitespacesAndNewlines)
+        keychain.set(self.clientID, account: "trakt-client-id")
+        keychain.set(self.clientSecret, account: "trakt-client-secret")
+        rebuildClient()
+    }
+
+    func disconnect() {
+        persist(tokens: nil)
+        needsReauth = false
+        ratingsCache = nil
+        rebuildClient()
+    }
+
+    // MARK: Device flow
+
+    func requestDeviceCode() async throws -> TraktDeviceCode {
+        guard let client else { throw TraktError.unauthorized }
+        return try await client.requestDeviceCode()
+    }
+
+    /// Polls until authorized, denied, or the code expires. True on success.
+    func awaitAuthorization(code: TraktDeviceCode) async -> Bool {
+        guard let client else { return false }
+        let deadline = Date().addingTimeInterval(TimeInterval(code.expiresIn))
+        while Date() < deadline, !Task.isCancelled {
+            do {
+                if let fetched = try await client.pollDeviceToken(deviceCode: code.deviceCode) {
+                    persist(tokens: fetched)
+                    needsReauth = false
+                    return true
+                }
+            } catch {
+                return false
+            }
+            try? await Task.sleep(for: .seconds(code.interval))
+        }
+        return false
+    }
+
+    // MARK: Best-effort wrappers
+
+    func scrobble(_ action: TraktScrobbleAction, media: TraktMedia, progress: Double) {
+        guard let client, isConnected else { return }
+        Task {
+            do { try await client.scrobble(action, media: media, progress: progress) }
+            catch TraktError.unauthorized { needsReauth = true }
+            catch { NSLog("Trakt scrobble failed: \(error)") }
+        }
+    }
+
+    func pullSync(store: LibraryStore) async {
+        guard let client, isConnected else { return }
+        do {
+            _ = try await TraktSyncer(client: client, store: store).pull()
+        } catch TraktError.unauthorized {
+            needsReauth = true
+        } catch {
+            NSLog("Trakt sync failed: \(error)")
+        }
+    }
+
+    func rating(for media: TraktMedia) async -> Int? {
+        guard let client, isConnected else { return nil }
+        if ratingsCache == nil {
+            var cache: [String: Int] = [:]
+            if let movies = try? await client.ratedMovies() {
+                for entry in movies {
+                    if let id = entry.movie?.ids.tmdb { cache["movie-\(id)"] = entry.rating }
+                }
+            }
+            if let shows = try? await client.ratedShows() {
+                for entry in shows {
+                    if let id = entry.show?.ids.tmdb { cache["show-\(id)"] = entry.rating }
+                }
+            }
+            ratingsCache = cache
+        }
+        return ratingsCache?[cacheKey(media)]
+    }
+
+    func rate(media: TraktMedia, rating: Int) {
+        guard let client, isConnected else { return }
+        ratingsCache?[cacheKey(media)] = rating
+        Task {
+            do { try await client.rate(media: media, rating: rating) }
+            catch TraktError.unauthorized { needsReauth = true }
+            catch { NSLog("Trakt rate failed: \(error)") }
+        }
+    }
+
+    private func cacheKey(_ media: TraktMedia) -> String {
+        switch media {
+        case .movie(let id): "movie-\(id)"
+        case .show(let id), .episode(let id, _, _): "show-\(id)"
+        }
+    }
+}
+
+extension TraktMedia {
+    /// nil when the item is unmatched (invisible to Trakt).
+    init?(playItem: PlayItem) {
+        guard let id = playItem.tmdbID else { return nil }
+        if let season = playItem.season, let episode = playItem.episode {
+            self = .episode(showTMDBID: id, season: season, episode: episode)
+        } else {
+            self = .movie(tmdbID: id)
+        }
+    }
+}

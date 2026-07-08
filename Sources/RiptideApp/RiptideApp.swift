@@ -11,7 +11,7 @@ private struct DebugAutoplay: ViewModifier {
                   let url = URL(string: raw) else { return }
             openWindow(value: PlayItem(itemKey: "debug#0", title: "Debug", url: url,
                                        resumeFrom: nil, subtitleQuery: "debug",
-                                       season: 1, episode: 1, autoResume: false))
+                                       season: 1, episode: 1, tmdbID: nil, autoResume: false))
         }
     }
 }
