@@ -121,6 +121,16 @@ final class TraktService {
         }
     }
 
+    /// TEMP: dump Trakt's current playback-progress state (RIPTIDE_TRAKT_PROBE=1).
+    func probePlayback() async {
+        guard let client, isConnected else { return }
+        do {
+            for p in try await client.playback() {
+                NSLog("PROBE playback: type=\(p.type) show=\(p.show?.ids.tmdb ?? -1) ep=\(p.episode.map { "S\($0.season)E\($0.number)" } ?? "-") movie=\(p.movie?.ids.tmdb ?? -1) progress=\(p.progress) pausedAt=\(p.pausedAt.map(String.init(describing:)) ?? "nil")")
+            }
+        } catch { NSLog("PROBE playback failed: \(error)") }
+    }
+
     func pullSync(store: LibraryStore) async {
         guard let client, isConnected else {
             NSLog("Trakt pull SKIPPED — not connected")

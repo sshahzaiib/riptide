@@ -63,6 +63,10 @@ struct LibraryRootView: View {
         .task {
             // Debug playback session: don't touch Keychain-backed settings.
             guard ProcessInfo.processInfo.environment["RIPTIDE_DEBUG_URL"] == nil else { return }
+            if ProcessInfo.processInfo.environment["RIPTIDE_TRAKT_PROBE"] != nil {
+                await TraktService.shared.probePlayback()
+                return
+            }
             if !AppSettings.shared.isConfigured { showSettings = true }
             else if model.items.isEmpty { await model.refresh() }
             // Populated library: no full RD refresh on launch, but watched
