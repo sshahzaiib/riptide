@@ -77,12 +77,14 @@ public struct TMDBShowDetails: Sendable, Equatable, Decodable {
     public let overview: String
     public let voteAverage: Double
     public let firstAirDate: String?
+    public let numberOfSeasons: Int?
 
     enum CodingKeys: String, CodingKey {
         case id, name, overview
         case backdropPath = "backdrop_path"
         case voteAverage = "vote_average"
         case firstAirDate = "first_air_date"
+        case numberOfSeasons = "number_of_seasons"
     }
 }
 
@@ -137,4 +139,12 @@ struct TMDBSeasonEnvelope: Decodable {
 
 struct TMDBCreditsEnvelope: Decodable {
     let cast: [TMDBCastMember]
+}
+
+public struct TMDBExternalIDs: Sendable, Equatable, Decodable {
+    public let imdbID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case imdbID = "imdb_id"
+    }
 }

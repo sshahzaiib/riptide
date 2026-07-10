@@ -80,4 +80,12 @@ public struct TMDBClient: Sendable {
     public func movieDetails(id: Int) async throws -> TMDBMovieDetails {
         try decode(TMDBMovieDetails.self, from: try await get("movie/\(id)", query: [:]))
     }
+
+    public func externalIDs(movieID: Int) async throws -> TMDBExternalIDs {
+        try decode(TMDBExternalIDs.self, from: try await get("movie/\(movieID)/external_ids", query: [:]))
+    }
+
+    public func externalIDs(showID: Int) async throws -> TMDBExternalIDs {
+        try decode(TMDBExternalIDs.self, from: try await get("tv/\(showID)/external_ids", query: [:]))
+    }
 }
