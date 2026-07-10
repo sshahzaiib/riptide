@@ -110,13 +110,7 @@ struct LibraryRootView: View {
             Text("Your Real-Debrid API token is missing or expired.")
         }
         .environment(model)
-        .dropDestination(for: String.self) { strings, _ in
-            guard let s = strings.first, s.hasPrefix("magnet:") else { return false }
-            droppedTorrentFile = nil
-            addTorrentPrefill = s
-            showAddTorrent = true
-            return true
-        }
+        // ponytail: dropped support for dragging raw magnet TEXT (not a link) — needs a custom multi-representation Transferable to safely coexist with the URL dropDestination; ⌘V paste and dragging an actual magnet: link both already work.
         .dropDestination(for: URL.self) { urls, _ in
             guard let url = urls.first else { return false }
             if url.scheme == "magnet" {
