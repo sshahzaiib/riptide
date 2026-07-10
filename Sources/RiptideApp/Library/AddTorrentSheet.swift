@@ -75,6 +75,7 @@ struct AddTorrentSheet: View {
     @State private var model = TorrentAddModel()
     @State private var showFilePicker = false
     let prefill: String?
+    var torrentFile: URL? = nil
     let onAdded: (TorrentAdder.Added) -> Void
 
     var body: some View {
@@ -92,7 +93,9 @@ struct AddTorrentSheet: View {
             }
         }
         .task {
-            if let prefill {
+            if let torrentFile {
+                await model.submit(fileURL: torrentFile)
+            } else if let prefill {
                 model.magnetText = prefill
                 await model.submitMagnet()
             } else if let clip = NSPasteboard.general.string(forType: .string),
