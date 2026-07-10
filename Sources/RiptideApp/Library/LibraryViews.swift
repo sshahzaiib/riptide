@@ -26,6 +26,8 @@ struct LibraryRootView: View {
     @State private var showAddTorrent = false
     @State private var addTorrentPrefill: String?
     @State private var path = NavigationPath()
+    @State private var suppressPathReset = false
+    @State private var toastTask: Task<Void, Never>?
     @State private var toast: String?
     @State private var droppedTorrentFile: URL?
 
@@ -139,6 +141,13 @@ struct LibraryRootView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .onChange(of: selection) {
+            if suppressPathReset {
+                suppressPathReset = false
+            } else {
+                path = NavigationPath()
+            }
+        }
     }
 
     @ViewBuilder
@@ -156,9 +165,10 @@ struct LibraryRootView: View {
         switch added.outcome {
         case .ready, .alreadyInLibrary:
             if let item = model.firstItem(torrentID: added.torrentID) {
+                suppressPathReset = true
                 selection = item.mediaKind == "episode" ? .shows
                     : (item.tmdbID != nil ? .movies : .files)
-                path.append(item.itemKey)
+                path = NavigationPath([item.itemKey])
             } else {
                 showToast("Added — refresh again once Real-Debrid finishes.")
             }
@@ -168,9 +178,11 @@ struct LibraryRootView: View {
     }
 
     private func showToast(_ message: String) {
+        toastTask?.cancel()
         withAnimation { toast = message }
-        Task {
+        toastTask = Task {
             try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
             withAnimation { toast = nil }
         }
     }
