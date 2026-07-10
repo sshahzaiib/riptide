@@ -43,4 +43,10 @@ final class TorrentAdderTests: XCTestCase {
         XCTAssertEqual(captured.method, "DELETE")
         XCTAssertEqual(captured.path, "/rest/1.0/torrents/delete/TID")
     }
+
+    func testTorrentListItemDecodesHash() throws {
+        let json = #"{"id":"T1","filename":"x.mkv","hash":"ABCDEF0123","bytes":1,"progress":100,"status":"downloaded","added":"2026-01-01T00:00:00.000Z","links":[]}"#
+        let item = try JSONDecoder().decode(TorrentListItem.self, from: Data(json.utf8))
+        XCTAssertEqual(item.hash, "ABCDEF0123")
+    }
 }

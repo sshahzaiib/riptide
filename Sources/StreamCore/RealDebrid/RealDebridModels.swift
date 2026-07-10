@@ -88,6 +88,7 @@ struct RealDebridAPIError: Decodable, Equatable {
 public struct TorrentListItem: Sendable, Equatable, Decodable {
     public let id: String
     public let filename: String
+    public let hash: String?           // infohash (lowercase/uppercase hex as RD sends it)
     public let bytes: Int64
     public let progress: Double
     public let status: String
@@ -96,10 +97,11 @@ public struct TorrentListItem: Sendable, Equatable, Decodable {
     public let ended: String?
 
     public init(id: String, filename: String, bytes: Int64, progress: Double,
-                status: String, added: String, links: [String], ended: String?) {
+                status: String, added: String, links: [String], ended: String?,
+                hash: String? = nil) {
         self.id = id; self.filename = filename; self.bytes = bytes
         self.progress = progress; self.status = status; self.added = added
-        self.links = links; self.ended = ended
+        self.links = links; self.ended = ended; self.hash = hash
     }
 }
 
