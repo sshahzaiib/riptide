@@ -76,6 +76,7 @@ struct AddTorrentSheet: View {
     @State private var showFilePicker = false
     @State private var showEditFiles = false
     @State private var autoDismissTask: Task<Void, Never>?
+    @State private var hasSubmitted = false
     let prefill: String?
     var torrentFile: URL? = nil
     let onAdded: (TorrentAdder.Added) -> Void
@@ -118,6 +119,8 @@ struct AddTorrentSheet: View {
                 autoDismissTask = Task {
                     try? await Task.sleep(for: .seconds(2.5))
                     guard !Task.isCancelled else { return }
+                    guard !hasSubmitted else { return }
+                    hasSubmitted = true
                     onAdded(added)
                     dismiss()
                 }
@@ -185,6 +188,8 @@ struct AddTorrentSheet: View {
                 }
                 Spacer()
                 Button("Done") {
+                    guard !hasSubmitted else { return }
+                    hasSubmitted = true
                     autoDismissTask?.cancel()
                     autoDismissTask = nil
                     onAdded(added)
