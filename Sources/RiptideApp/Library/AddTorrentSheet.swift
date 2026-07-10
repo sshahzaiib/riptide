@@ -74,6 +74,7 @@ struct AddTorrentSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var model = TorrentAddModel()
     @State private var showFilePicker = false
+    @State private var showEditFiles = false
     let prefill: String?
     var torrentFile: URL? = nil
     let onAdded: (TorrentAdder.Added) -> Void
@@ -90,6 +91,14 @@ struct AddTorrentSheet: View {
                                             ?? .data]) { result in
             if case .success(let url) = result {
                 Task { await model.submit(fileURL: url) }
+            }
+        }
+        .sheet(isPresented: $showEditFiles) {
+            if let added = model.lastAdded {
+                EditFilesSheet(files: added.files,
+                               selected: Set(added.selectedFileIDs)) { ids in
+                    Task { await model.reselect(fileIDs: Array(ids).sorted()) }
+                }
             }
         }
         .task {
@@ -153,7 +162,9 @@ struct AddTorrentSheet: View {
                 }
             }
             HStack {
-                // Task 6 replaces this stub with the edit-files sheet trigger.
+                if !added.files.isEmpty {
+                    Button("Edit Files…") { showEditFiles = true }
+                }
                 Spacer()
                 Button("Done") {
                     onAdded(added)
@@ -162,5 +173,55 @@ struct AddTorrentSheet: View {
                 .keyboardShortcut(.defaultAction)
             }
         }
+    }
+}
+
+/// Checklist over a torrent's files; confirming re-adds the torrent with
+/// the chosen selection (RD can't change selection in place).
+private struct EditFilesSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let files: [TorrentFile]
+    @State var selected: Set<Int>
+    let onConfirm: (Set<Int>) -> Void
+
+    init(files: [TorrentFile], selected: Set<Int>, onConfirm: @escaping (Set<Int>) -> Void) {
+        self.files = files
+        _selected = State(initialValue: selected)
+        self.onConfirm = onConfirm
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Select Files").font(.headline)
+            List(files, id: \.id) { file in
+                Toggle(isOn: Binding(
+                    get: { selected.contains(file.id) },
+                    set: { on in if on { selected.insert(file.id) } else { selected.remove(file.id) } }
+                )) {
+                    HStack {
+                        Text((file.path as NSString).lastPathComponent).lineLimit(1)
+                        Spacer()
+                        Text(ByteCountFormatter.string(fromByteCount: file.bytes,
+                                                       countStyle: .file))
+                            .foregroundStyle(.secondary).font(.caption)
+                    }
+                }
+            }
+            .frame(minHeight: 200)
+            Text("Changing the selection re-adds the torrent on Real-Debrid.")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Apply") {
+                    onConfirm(selected)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(selected.isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
     }
 }
