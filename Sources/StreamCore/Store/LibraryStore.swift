@@ -109,6 +109,17 @@ public final class LibraryStore {
             sortBy: [SortDescriptor(\.addedAt, order: .reverse)]))
     }
 
+    /// Library-priority lookup for addon search: is this TMDB title (or this
+    /// specific episode) already in the account? Movies pass nil/nil.
+    public func item(tmdbID: Int, season: Int?, episode: Int?) throws -> LibraryItem? {
+        let id: Int? = tmdbID
+        let descriptor = FetchDescriptor<LibraryItem>(
+            predicate: #Predicate {
+                $0.tmdbID == id && $0.season == season && $0.episode == episode
+            })
+        return try context.fetch(descriptor).first
+    }
+
     /// Item count per torrent — lets the refresher skip torrentInfo calls for
     /// packs it has already expanded.
     public func entryCounts() throws -> [String: Int] {

@@ -108,4 +108,22 @@ final class LibraryStoreTests: XCTestCase {
         try store.saveProgress(itemKey: "T1#0", position: 6900, duration: 7200)
         XCTAssertTrue(try store.continueWatching().isEmpty)
     }
+
+    func testItemLookupByTMDBIdentity() throws {
+        let store = try LibraryStore.inMemory()
+        _ = try store.upsert(entries: [
+            entry(torrentID: "T1", filename: "The.Matrix.1999.1080p.mkv"),
+            entry(torrentID: "T2", fileIndex: 3, filename: "Breaking.Bad.S05E14.720p.mkv"),
+        ])
+        try store.applyMatch(itemKey: "T1#0", tmdbID: 603, mediaKind: "movie",
+                             posterPath: nil, overview: nil, rating: nil)
+        try store.applyMatch(itemKey: "T2#3", tmdbID: 1396, mediaKind: "episode",
+                             posterPath: nil, overview: nil, rating: nil)
+
+        XCTAssertEqual(try store.item(tmdbID: 603, season: nil, episode: nil)?.itemKey, "T1#0")
+        XCTAssertEqual(try store.item(tmdbID: 1396, season: 5, episode: 14)?.itemKey, "T2#3")
+        XCTAssertNil(try store.item(tmdbID: 1396, season: 5, episode: 99))   // other episode
+        XCTAssertNil(try store.item(tmdbID: 603, season: 1, episode: 1))     // movie ≠ episode
+        XCTAssertNil(try store.item(tmdbID: 42, season: nil, episode: nil))  // unknown id
+    }
 }
