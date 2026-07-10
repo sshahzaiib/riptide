@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import StreamCore
 import class StreamCore.LibraryItem
 
@@ -22,6 +23,13 @@ struct LibraryRootView: View {
     @State private var model: LibraryModel
     @State private var selection: SidebarSection = .movies
     @State private var showSettings = false
+    @State private var showAddTorrent = false
+    @State private var addTorrentPrefill: String?
+    @State private var path = NavigationPath()
+    @State private var suppressPathReset = false
+    @State private var toastTask: Task<Void, Never>?
+    @State private var toast: String?
+    @State private var droppedTorrentFile: URL?
 
     init(store: LibraryStore) {
         _model = State(initialValue: LibraryModel(store: store))
@@ -37,10 +45,27 @@ struct LibraryRootView: View {
             // Explicit stack, recreated on sidebar change (.id) — otherwise a
             // pushed detail view survives selection changes and the sidebar
             // appears dead.
-            NavigationStack {
+            NavigationStack(path: $path) {
                 detailView
                     .searchable(text: $model.searchText, placement: .toolbar)
+                    .navigationDestination(for: String.self) { itemKey in
+                        AddedItemDestination(itemKey: itemKey)
+                    }
+                    .onPasteCommand(of: [.plainText, .url]) { _ in
+                        if let s = NSPasteboard.general.string(forType: .string),
+                           s.hasPrefix("magnet:") {
+                            droppedTorrentFile = nil
+                            addTorrentPrefill = s
+                            showAddTorrent = true
+                        }
+                    }
                     .toolbar {
+                        ToolbarItem {
+                            Button(action: { addTorrentPrefill = nil; droppedTorrentFile = nil; showAddTorrent = true }) {
+                                Image(systemName: "plus")
+                            }
+                            .help("Add magnet or .torrent")
+                        }
                         ToolbarItem {
                             Button(action: { Task { await model.refresh() } }) {
                                 if model.refreshing { ProgressView().controlSize(.small) }
@@ -59,6 +84,11 @@ struct LibraryRootView: View {
         }
         .sheet(isPresented: $showSettings, onDismiss: { Task { await model.refresh() } }) {
             SettingsView()
+        }
+        .sheet(isPresented: $showAddTorrent, onDismiss: { droppedTorrentFile = nil }) {
+            AddTorrentSheet(prefill: addTorrentPrefill, torrentFile: droppedTorrentFile) { added in
+                Task { await handleAdded(added) }
+            }
         }
         .task {
             // Debug playback session: don't touch Keychain-backed settings.
@@ -80,6 +110,49 @@ struct LibraryRootView: View {
             Text("Your Real-Debrid API token is missing or expired.")
         }
         .environment(model)
+        // ponytail: dropped support for dragging raw magnet TEXT (not a link) — needs a custom multi-representation Transferable to safely coexist with the URL dropDestination; ⌘V paste and dragging an actual magnet: link both already work.
+        .dropDestination(for: URL.self) { urls, _ in
+            guard let url = urls.first else { return false }
+            if url.scheme == "magnet" {
+                droppedTorrentFile = nil
+                addTorrentPrefill = url.absoluteString
+                showAddTorrent = true
+                return true
+            }
+            if url.isFileURL, url.pathExtension.lowercased() == "torrent" {
+                // Reuse the sheet: no prefill; submit the file directly after present.
+                addTorrentPrefill = nil
+                droppedTorrentFile = url
+                showAddTorrent = true
+                return true
+            }
+            return false
+        }
+        .onOpenURL { url in
+            // magnet: scheme handler. Registration requires a packaged .app
+            // (CFBundleURLTypes) — inert under the unbundled run.sh binary,
+            // active once the app ships as a bundle.
+            guard url.scheme == "magnet" else { return }
+            droppedTorrentFile = nil
+            addTorrentPrefill = url.absoluteString
+            showAddTorrent = true
+        }
+        .overlay(alignment: .bottom) {
+            if let toast {
+                Text(toast)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(.regularMaterial, in: Capsule())
+                    .padding(.bottom, 16)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .onChange(of: selection) {
+            if suppressPathReset {
+                suppressPathReset = false
+            } else {
+                path = NavigationPath()
+            }
+        }
     }
 
     @ViewBuilder
@@ -89,6 +162,34 @@ struct LibraryRootView: View {
         case .movies: MovieGrid()
         case .shows: ShowsList()
         case .files: FileList()
+        }
+    }
+
+    private func handleAdded(_ added: TorrentAdder.Added) async {
+        await model.refresh()
+        switch added.outcome {
+        case .ready, .alreadyInLibrary:
+            if let item = model.firstItem(torrentID: added.torrentID) {
+                let newSelection: SidebarSection = item.mediaKind == "episode" ? .shows
+                    : (item.tmdbID != nil ? .movies : .files)
+                if selection != newSelection { suppressPathReset = true }
+                selection = newSelection
+                path = NavigationPath([item.itemKey])
+            } else {
+                showToast("Added — refresh again once Real-Debrid finishes.")
+            }
+        case .downloading:
+            showToast("Added — downloading on Real-Debrid.")
+        }
+    }
+
+    private func showToast(_ message: String) {
+        toastTask?.cancel()
+        withAnimation { toast = message }
+        toastTask = Task {
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            withAnimation { toast = nil }
         }
     }
 }
@@ -274,6 +375,27 @@ struct PlayableFileRow: View {
         defer { busy = false }
         if let playItem = try? await model.playItem(for: item) {
             openWindow(value: playItem)
+        }
+    }
+}
+
+/// Resolves an itemKey pushed after an add: movie → detail, episode → its show page.
+struct AddedItemDestination: View {
+    @Environment(LibraryModel.self) private var model
+    let itemKey: String
+
+    var body: some View {
+        if let item = model.items.first(where: { $0.itemKey == itemKey }) {
+            if item.mediaKind == "episode",
+               let show = model.shows.first(where: { group in
+                   group.episodes.contains { $0.itemKey == itemKey }
+               }) {
+                ShowDetailView(show: show)
+            } else {
+                ItemDetailView(item: item)
+            }
+        } else {
+            ContentUnavailableView("Item not in library yet", systemImage: "clock")
         }
     }
 }

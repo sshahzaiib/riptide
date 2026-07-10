@@ -19,7 +19,7 @@ public struct ParsedRelease: Sendable, Equatable {
 }
 
 public enum ReleaseNameParser {
-    private static let videoExtensions: Set<String> =
+    public static let videoExtensions: Set<String> =
         ["mkv", "mp4", "avi", "m4v", "mov", "wmv", "ts", "webm", "flv", "mpg", "mpeg"]
 
     // Bare "WEB" is case-sensitive: scene tags are uppercase, and a case-insensitive
