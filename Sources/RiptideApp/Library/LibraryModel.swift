@@ -116,4 +116,9 @@ final class LibraryModel {
                         tmdbID: item.tmdbID,
                         autoResume: autoResume)
     }
+
+    /// First library item belonging to a torrent (itemKeys are "torrentID#fileIndex").
+    func firstItem(torrentID: String) -> LibraryItem? {
+        items.first { $0.itemKey.hasPrefix("\(torrentID)#") }
+    }
 }
