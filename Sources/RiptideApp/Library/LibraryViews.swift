@@ -165,9 +165,10 @@ struct LibraryRootView: View {
         switch added.outcome {
         case .ready, .alreadyInLibrary:
             if let item = model.firstItem(torrentID: added.torrentID) {
-                suppressPathReset = true
-                selection = item.mediaKind == "episode" ? .shows
+                let newSelection: SidebarSection = item.mediaKind == "episode" ? .shows
                     : (item.tmdbID != nil ? .movies : .files)
+                if selection != newSelection { suppressPathReset = true }
+                selection = newSelection
                 path = NavigationPath([item.itemKey])
             } else {
                 showToast("Added — refresh again once Real-Debrid finishes.")
