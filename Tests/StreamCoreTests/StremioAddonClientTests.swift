@@ -101,6 +101,24 @@ final class StremioAddonClientTests: XCTestCase {
         XCTAssertEqual(streams[0].description, "Movie 2023 1080p BluRay\n📦 8.5 GB")
     }
 
+    /// Some addons emit stream URLs with unencoded spaces; those must still
+    /// yield a playable URL instead of being silently dropped.
+    func testHTTPURLPercentEncodesUnencodedSpaces() throws {
+        let json = #"{"name":"T","url":"https://resolver.example/My Movie (2023).mkv"}"#
+        let stream = try JSONDecoder().decode(AddonStream.self, from: Data(json.utf8))
+        let url = try XCTUnwrap(stream.httpURL)
+        XCTAssertEqual(url.absoluteString,
+                       "https://resolver.example/My%20Movie%20(2023).mkv")
+    }
+
+    /// Already-encoded URLs must not be double-encoded.
+    func testHTTPURLLeavesEncodedURLsAlone() throws {
+        let json = #"{"name":"T","url":"https://resolver.example/My%20Movie.mkv"}"#
+        let stream = try JSONDecoder().decode(AddonStream.self, from: Data(json.utf8))
+        XCTAssertEqual(try XCTUnwrap(stream.httpURL).absoluteString,
+                       "https://resolver.example/My%20Movie.mkv")
+    }
+
     func testErrorMapping() async {
         MockURLProtocol.setHandler { _ in .json("oops", status: 500) }
         do {

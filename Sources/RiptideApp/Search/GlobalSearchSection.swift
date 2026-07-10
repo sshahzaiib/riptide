@@ -19,6 +19,14 @@ struct GlobalSearchSection: View {
         }
     }
 
+    /// The local library grid above this shelf has no hits for the query.
+    private var localIsEmpty: Bool {
+        switch kind {
+        case .movies: model.movies.isEmpty
+        case .shows: model.shows.isEmpty
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if !results.isEmpty {
@@ -46,6 +54,9 @@ struct GlobalSearchSection: View {
                 ProgressView()
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 20)
+            } else if search.completedQuery != nil, localIsEmpty {
+                // 0 local + 0 TMDB hits would otherwise render a blank page.
+                ContentUnavailableView.search(text: model.searchText)
             }
         }
         .padding(.horizontal)

@@ -78,9 +78,23 @@ public struct TMDBShowDetails: Sendable, Equatable, Decodable {
     public let voteAverage: Double
     public let firstAirDate: String?
     public let numberOfSeasons: Int?
+    public let seasons: [SeasonRef]?
+
+    public struct SeasonRef: Sendable, Equatable, Decodable {
+        public let seasonNumber: Int
+        enum CodingKeys: String, CodingKey { case seasonNumber = "season_number" }
+    }
+
+    /// Selectable season numbers, including Season 0 ("Specials") when TMDB
+    /// lists it. Falls back to 1...numberOfSeasons for payloads without the
+    /// seasons array.
+    public var seasonNumbers: [Int] {
+        if let seasons, !seasons.isEmpty { return seasons.map(\.seasonNumber).sorted() }
+        return Array(1...max(numberOfSeasons ?? 1, 1))
+    }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, overview
+        case id, name, overview, seasons
         case backdropPath = "backdrop_path"
         case voteAverage = "vote_average"
         case firstAirDate = "first_air_date"
@@ -146,5 +160,12 @@ public struct TMDBExternalIDs: Sendable, Equatable, Decodable {
 
     enum CodingKeys: String, CodingKey {
         case imdbID = "imdb_id"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // TMDB sometimes returns "" instead of null for a missing imdb_id.
+        let raw = try container.decodeIfPresent(String.self, forKey: .imdbID)
+        imdbID = raw?.isEmpty == false ? raw : nil
     }
 }

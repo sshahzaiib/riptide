@@ -11,11 +11,17 @@ final class MockURLProtocol: URLProtocol {
         let status: Int
         let headers: [String: String]
         let body: Data
-        init(status: Int = 200, headers: [String: String] = [:], body: Data = Data()) {
-            self.status = status; self.headers = headers; self.body = body
+        let error: Error?
+        init(status: Int = 200, headers: [String: String] = [:], body: Data = Data(),
+             error: Error? = nil) {
+            self.status = status; self.headers = headers; self.body = body; self.error = error
         }
         static func json(_ string: String, status: Int = 200, headers: [String: String] = [:]) -> Stub {
             Stub(status: status, headers: headers, body: Data(string.utf8))
+        }
+        /// Fail the request at the transport layer instead of responding.
+        static func failure(_ error: Error) -> Stub {
+            Stub(error: error)
         }
     }
 
@@ -37,6 +43,9 @@ final class MockURLProtocol: URLProtocol {
             client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse)); return
         }
         let stub = handler(request)
+        if let error = stub.error {
+            client?.urlProtocol(self, didFailWithError: error); return
+        }
         let response = HTTPURLResponse(url: request.url!, statusCode: stub.status,
                                        httpVersion: "HTTP/1.1", headerFields: stub.headers)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)

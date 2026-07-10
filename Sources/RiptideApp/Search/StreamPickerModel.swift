@@ -2,8 +2,9 @@ import Foundation
 import StreamCore
 
 extension URLSession {
-    /// Session for addon stream queries — 5 s per-request timeout so one
-    /// slow addon can't stall the merged list.
+    /// Session for addon requests (stream queries, add-time validation) —
+    /// 5 s per-request timeout so one slow/dead addon can't stall the merged
+    /// list or hang the Settings validation spinner.
     static let addon: URLSession = {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 5
@@ -73,7 +74,14 @@ final class StreamPickerModel {
             var request = URLRequest(url: url)
             request.setValue("bytes=0-0", forHTTPHeaderField: "Range")
             request.timeoutInterval = 30
-            _ = try? await URLSession.shared.data(for: request)
+            // bytes(for:) + cancel stays bounded even when the resolver's
+            // redirect target ignores Range — data(for:) would buffer the
+            // whole (multi-GB) file into memory.
+            guard let (bytes, _) = try? await URLSession.shared.bytes(for: request)
+            else { return }
+            var iterator = bytes.makeAsyncIterator()
+            _ = try? await iterator.next()
+            bytes.task.cancel()
         }
     }
 
@@ -97,8 +105,14 @@ final class StreamPickerModel {
             if (a.meta.sizeBytes ?? 0) != (b.meta.sizeBytes ?? 0) {
                 return (a.meta.sizeBytes ?? 0) > (b.meta.sizeBytes ?? 0)
             }
-            return (addonOrder.firstIndex(of: a.addon.id) ?? .max)
-                 < (addonOrder.firstIndex(of: b.addon.id) ?? .max)
+            if a.addon.id != b.addon.id {
+                return (addonOrder.firstIndex(of: a.addon.id) ?? .max)
+                     < (addonOrder.firstIndex(of: b.addon.id) ?? .max)
+            }
+            // Stable final tie-break so incremental addon results don't
+            // visibly shuffle equal-ranked rows while loading.
+            return (a.stream.url ?? a.stream.displayText)
+                 < (b.stream.url ?? b.stream.displayText)
         }
     }
 }

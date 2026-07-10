@@ -55,21 +55,27 @@ final class GlobalSearchModel {
     private(set) var movies: [TMDBMovie] = []
     private(set) var shows: [TMDBShow] = []
     private(set) var searching = false
+    /// Query the displayed results belong to; nil until a search completes.
+    private(set) var completedQuery: String?
 
     func search(query: String) async {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard q.count >= 2, !AppSettings.shared.tmdbToken.isEmpty else {
-            movies = []; shows = []; return
+            movies = []; shows = []; searching = false; completedQuery = nil
+            return
         }
         searching = true
-        defer { searching = false }
         let tmdb = TMDBClient(bearerToken: AppSettings.shared.tmdbToken)
         async let movieHits = tmdb.searchMovie(title: q, year: nil)
         async let showHits = tmdb.searchTV(title: q, year: nil)
         let m = (try? await movieHits) ?? []
         let s = (try? await showHits) ?? []
+        // A stale (cancelled) invocation must not touch state — the newer
+        // .task(id:) invocation owns the spinner and results now.
         guard !Task.isCancelled else { return }
+        searching = false
         movies = m
         shows = s
+        completedQuery = q
     }
 }

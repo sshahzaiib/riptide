@@ -38,6 +38,7 @@ public struct AddonValidator: Sendable {
         } catch is StremioAddonError {
             throw Failure.notAnAddon          // 404 or non-manifest body
         } catch {
+            if error.isCancellation { throw error }
             throw Failure.unreachable         // transport-level (URLError)
         }
         guard manifest.supportsStreams else { throw Failure.noStreamSupport }
@@ -49,11 +50,20 @@ public struct AddonValidator: Sendable {
         } catch is StremioAddonError {
             throw Failure.noDebrid            // addon exists but can't serve streams
         } catch {
+            if error.isCancellation { throw error }
             throw Failure.unreachable
         }
         guard streams.contains(where: { $0.httpURL != nil }) else {
             throw Failure.noDebrid
         }
         return Result(baseURL: base, manifest: manifest)
+    }
+}
+
+extension Error {
+    /// Task cancellation must never be re-mapped to a domain failure
+    /// (same passthrough as TorrentAdder's poll loop).
+    var isCancellation: Bool {
+        self is CancellationError || (self as? URLError)?.code == .cancelled
     }
 }

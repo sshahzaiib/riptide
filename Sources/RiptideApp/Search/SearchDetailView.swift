@@ -21,7 +21,7 @@ struct SearchDetailView: View {
     @Environment(LibraryModel.self) private var library
     @Environment(\.openWindow) private var openWindow
 
-    @State private var seasonCount = 1
+    @State private var seasonNumbers = [1]
     @State private var season = 1
     @State private var episodes: [TMDBSeasonEpisode] = []
     @State private var imdbID: String?
@@ -93,7 +93,9 @@ struct SearchDetailView: View {
     private var showSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Picker("Season", selection: $season) {
-                ForEach(1...max(seasonCount, 1), id: \.self) { Text("Season \($0)").tag($0) }
+                ForEach(seasonNumbers, id: \.self) {
+                    Text($0 == 0 ? "Specials" : "Season \($0)").tag($0)
+                }
             }
             .pickerStyle(.menu)
             .frame(maxWidth: 200, alignment: .leading)
@@ -176,12 +178,16 @@ struct SearchDetailView: View {
         guard media.isShow else { return }
         let tmdb = TMDBClient(bearerToken: AppSettings.shared.tmdbToken)
         if let details = try? await tmdb.showDetails(id: media.tmdbID) {
-            seasonCount = details.numberOfSeasons ?? 1
+            seasonNumbers = details.seasonNumbers
+            if !seasonNumbers.contains(season) {
+                season = seasonNumbers.first(where: { $0 > 0 }) ?? seasonNumbers.first ?? 1
+            }
         }
     }
 
     private func loadEpisodes() async {
         guard media.isShow else { return }
+        episodes = []   // don't render stale prior-season rows under the new season
         let tmdb = TMDBClient(bearerToken: AppSettings.shared.tmdbToken)
         episodes = (try? await tmdb.seasonEpisodes(showID: media.tmdbID, season: season)) ?? []
     }

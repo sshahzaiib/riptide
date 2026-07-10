@@ -58,7 +58,13 @@ struct StreamPickerSheet: View {
 
     @ViewBuilder
     private var content: some View {
-        if let confirmation {
+        if AppSettings.shared.addons.isEmpty {
+            ContentUnavailableView {
+                Label("No addons configured", systemImage: "puzzlepiece.extension")
+            } description: {
+                Text("Add a debrid-configured addon in Settings › Addons to find streams.")
+            }
+        } else if let confirmation {
             ContentUnavailableView(confirmation, systemImage: "tray.and.arrow.down")
         } else if model.visibleRows.isEmpty && model.loadingCount == 0 {
             ContentUnavailableView {
@@ -142,8 +148,13 @@ struct StreamPickerSheet: View {
                                    tmdbID: request.tmdbID,
                                    autoResume: false))
         dismiss()
-        // Playing the URL made the addon's resolver add the torrent to the
-        // debrid account — refresh so it materializes in the library.
-        Task { await library.refresh() }
+        // The addon's resolver only adds the torrent to the debrid account
+        // once mpv actually requests the URL — give playback time to start
+        // before refreshing, or the new item may not exist on RD yet.
+        // ponytail: fixed delay; wire to a playback-start event if flaky.
+        Task {
+            try? await Task.sleep(for: .seconds(10))
+            await library.refresh()
+        }
     }
 }

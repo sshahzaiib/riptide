@@ -70,6 +70,25 @@ final class AddonValidatorTests: XCTestCase {
         await assertFailure(.noDebrid) { try await self.validator().validate(rawURL: "https://host/x") }
     }
 
+    /// A cancelled request must propagate as cancellation, not be masked
+    /// as `.unreachable` (same passthrough as TorrentAdder, b6478c2).
+    func testCancellationNotMaskedAsUnreachable() async {
+        MockURLProtocol.setHandler { request in
+            if request.url!.path.hasSuffix("/manifest.json") {
+                return .json(Self.goodManifest)
+            }
+            return .failure(URLError(.cancelled))
+        }
+        do {
+            _ = try await validator().validate(rawURL: "https://host/x")
+            XCTFail("expected an error")
+        } catch is CancellationError {
+        } catch let e as URLError where e.code == .cancelled {
+        } catch {
+            XCTFail("cancellation was masked as \(error)")
+        }
+    }
+
     func testTransportErrorIsUnreachable() async {
         // No handler registered → MockURLProtocol fails the request with a URLError.
         MockURLProtocol.setHandler(nil)

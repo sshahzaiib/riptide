@@ -33,6 +33,32 @@ final class TMDBAddonSupportTests: XCTestCase {
         XCTAssertNil(ids.imdbID)
     }
 
+    /// TMDB sometimes returns `"imdb_id": ""` instead of null/omitted.
+    func testExternalIDsEmptyStringIsNil() async throws {
+        MockURLProtocol.setHandler { _ in .json(#"{"id":1396,"imdb_id":""}"#) }
+        let ids = try await client().externalIDs(showID: 1396)
+        XCTAssertNil(ids.imdbID)
+    }
+
+    func testShowDetailsDecodesSeasonNumbersIncludingSpecials() async throws {
+        MockURLProtocol.setHandler { _ in .json("""
+        {"id":1396,"name":"Breaking Bad","backdrop_path":null,"overview":"x",
+         "vote_average":8.9,"first_air_date":"2008-01-20","number_of_seasons":2,
+         "seasons":[{"season_number":0},{"season_number":1},{"season_number":2}]}
+        """) }
+        let details = try await client().showDetails(id: 1396)
+        XCTAssertEqual(details.seasonNumbers, [0, 1, 2])
+    }
+
+    func testShowDetailsWithoutSeasonsFallsBackToCount() async throws {
+        MockURLProtocol.setHandler { _ in .json("""
+        {"id":1396,"name":"Breaking Bad","backdrop_path":null,"overview":"x",
+         "vote_average":8.9,"first_air_date":"2008-01-20","number_of_seasons":3}
+        """) }
+        let details = try await client().showDetails(id: 1396)
+        XCTAssertEqual(details.seasonNumbers, [1, 2, 3])
+    }
+
     func testShowDetailsDecodesNumberOfSeasons() async throws {
         MockURLProtocol.setHandler { _ in .json("""
         {"id":1396,"name":"Breaking Bad","backdrop_path":null,"overview":"x",

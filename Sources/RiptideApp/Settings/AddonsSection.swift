@@ -32,6 +32,7 @@ struct AddonsSection: View {
             HStack {
                 TextField("Addon manifest URL", text: $input)
                     .textFieldStyle(.roundedBorder)
+                    .autocorrectionDisabled()
                     .onSubmit(add)
                 if validating {
                     ProgressView().controlSize(.small)
@@ -56,7 +57,10 @@ struct AddonsSection: View {
         Task {
             defer { validating = false }
             do {
-                let result = try await AddonValidator().validate(rawURL: raw)
+                // .addon session: 5 s timeout so a dead URL fails fast
+                // instead of hanging the spinner for the default ~60 s.
+                let validator = AddonValidator(client: StremioAddonClient(session: .addon))
+                let result = try await validator.validate(rawURL: raw)
                 var list = settings.addons
                 guard !list.contains(where: { $0.url == result.baseURL }) else {
                     errorMessage = "That addon is already configured."
@@ -65,7 +69,9 @@ struct AddonsSection: View {
                 list.append(ConfiguredAddon(id: UUID(), name: result.manifest.name,
                                             url: result.baseURL))
                 settings.saveAddons(list)
-                input = ""
+                // Only clear what we validated — don't wipe a newer URL the
+                // user typed while this one was still validating.
+                if input.trimmingCharacters(in: .whitespaces) == raw { input = "" }
             } catch let failure as AddonValidator.Failure {
                 errorMessage = failure.userMessage
             } catch {
