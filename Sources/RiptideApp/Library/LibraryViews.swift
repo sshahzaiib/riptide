@@ -211,9 +211,13 @@ struct MovieGrid: View {
                 }
             }
             .padding()
+
+            if !model.searchText.isEmpty {
+                GlobalSearchSection(kind: .movies)
+            }
         }
         .overlay {
-            if model.movies.isEmpty {
+            if model.movies.isEmpty && model.searchText.isEmpty {
                 ContentUnavailableView("No movies yet",
                                        systemImage: "film",
                                        description: Text("Refresh to sync your Real-Debrid library."))
@@ -238,9 +242,13 @@ struct ShowsList: View {
                 }
             }
             .padding()
+
+            if !model.searchText.isEmpty {
+                GlobalSearchSection(kind: .shows)
+            }
         }
         .overlay {
-            if model.shows.isEmpty {
+            if model.shows.isEmpty && model.searchText.isEmpty {
                 ContentUnavailableView("No TV shows yet", systemImage: "tv",
                                        description: Text("Refresh to sync your Real-Debrid library."))
             }

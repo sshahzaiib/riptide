@@ -121,4 +121,14 @@ final class LibraryModel {
     func firstItem(torrentID: String) -> LibraryItem? {
         items.first { $0.itemKey.hasPrefix("\(torrentID)#") }
     }
+
+    /// Library-priority check for addon search (movies: season/episode nil).
+    func libraryItem(tmdbID: Int, season: Int?, episode: Int?) -> LibraryItem? {
+        (try? store.item(tmdbID: tmdbID, season: season, episode: episode)) ?? nil
+    }
+
+    /// Any file of this TMDB title in the library (used for search-card badges).
+    func hasLibraryEntry(tmdbID: Int) -> Bool {
+        items.contains { $0.tmdbID == tmdbID }
+    }
 }
