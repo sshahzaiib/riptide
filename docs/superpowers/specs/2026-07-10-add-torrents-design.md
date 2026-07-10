@@ -29,22 +29,32 @@ torrents with no changes.
    (same pattern as `TraktSyncer`). One public entry:
 
    ```swift
-   enum AddOutcome: Equatable {
+   enum Outcome: Equatable {
        case alreadyInLibrary(torrentID: String)
        case ready(torrentID: String)        // RD status "downloaded"
        case downloading(torrentID: String)  // anything else (queued/downloading/…)
    }
 
-   struct AddedTorrent {
-       let outcome: AddOutcome
+   enum AddSource { case magnet(String); case file(Data) }
+
+   struct Added {
+       let outcome: Outcome
        let torrentID: String
-       let selectedFiles: [TorrentFile]      // id, path, bytes — for "Edit files…"
+       let files: [TorrentFile]         // all files RD listed — for "Edit files…"
+       let selectedFileIDs: [Int]
    }
 
-   func add(magnet: String) async throws -> AddedTorrent
-   func add(torrentFile: Data) async throws -> AddedTorrent
-   func reselect(torrentID: String, fileIDs: [Int]) async throws
+   func add(magnet: String) async throws -> Added
+   func add(torrentFile: Data) async throws -> Added
+   func reselect(source: AddSource, torrentID: String, fileIDs: [Int]) async throws -> Added
    ```
+
+   **`reselect` is delete + re-add:** RD rejects `selectFiles` on a torrent
+   whose files are already selected (`action_already_done`), so editing the
+   selection means `DELETE /torrents/delete/{id}`, re-adding from the
+   original source, and selecting the chosen ids (file ids are stable —
+   they're 1-indexed positions in the same torrent). Needs a new
+   `deleteTorrent(id)` client endpoint.
 
    Flow for `add`:
    - **Dedupe:** extract the infohash from the magnet's `xt=urn:btih:` param
@@ -113,7 +123,8 @@ StreamCore XCTests (MockURLProtocol):
 - Dedupe: magnet whose infohash matches an existing torrent →
   `.alreadyInLibrary`, no add call made.
 - Outcome mapping: `downloaded` → `.ready`, `queued` → `.downloading`.
-- `reselect` issues `selectFiles` with the given ids.
+- `reselect` deletes the torrent, re-adds from source, selects the given ids.
+- `deleteTorrent` sends DELETE to `torrents/delete/{id}`.
 
 UI layer stays thin (no UI tests).
 
