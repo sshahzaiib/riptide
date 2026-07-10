@@ -22,6 +22,8 @@ struct LibraryRootView: View {
     @State private var model: LibraryModel
     @State private var selection: SidebarSection = .movies
     @State private var showSettings = false
+    @State private var showAddTorrent = false
+    @State private var addTorrentPrefill: String?
 
     init(store: LibraryStore) {
         _model = State(initialValue: LibraryModel(store: store))
@@ -42,6 +44,12 @@ struct LibraryRootView: View {
                     .searchable(text: $model.searchText, placement: .toolbar)
                     .toolbar {
                         ToolbarItem {
+                            Button(action: { addTorrentPrefill = nil; showAddTorrent = true }) {
+                                Image(systemName: "plus")
+                            }
+                            .help("Add magnet or .torrent")
+                        }
+                        ToolbarItem {
                             Button(action: { Task { await model.refresh() } }) {
                                 if model.refreshing { ProgressView().controlSize(.small) }
                                 else { Image(systemName: "arrow.clockwise") }
@@ -59,6 +67,11 @@ struct LibraryRootView: View {
         }
         .sheet(isPresented: $showSettings, onDismiss: { Task { await model.refresh() } }) {
             SettingsView()
+        }
+        .sheet(isPresented: $showAddTorrent) {
+            AddTorrentSheet(prefill: addTorrentPrefill) { added in
+                Task { await handleAdded(added) }
+            }
         }
         .task {
             // Debug playback session: don't touch Keychain-backed settings.
@@ -90,6 +103,10 @@ struct LibraryRootView: View {
         case .shows: ShowsList()
         case .files: FileList()
         }
+    }
+
+    private func handleAdded(_ added: TorrentAdder.Added) async {
+        await model.refresh()
     }
 }
 
