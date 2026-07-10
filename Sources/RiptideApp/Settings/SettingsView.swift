@@ -52,6 +52,7 @@ struct SettingsView: View {
                     }
                 }
             }
+            AddonsSection()
             HStack {
                 Spacer()
                 Button("Save") {
