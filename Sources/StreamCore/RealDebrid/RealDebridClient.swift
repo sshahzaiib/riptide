@@ -46,7 +46,8 @@ public struct RealDebridClient: Sendable {
     /// Returns the raw 2xx body. Throws a mapped `RealDebridError` on any non-2xx.
     func send(_ method: String, _ path: String,
               query: [String: String]? = nil,
-              form: [String: String]? = nil) async throws -> Data {
+              form: [String: String]? = nil,
+              rawBody: (data: Data, contentType: String)? = nil) async throws -> Data {
         var attempt = 0
         while true {
             var url = config.baseURL.appendingPathComponent(path)
@@ -62,6 +63,10 @@ public struct RealDebridClient: Sendable {
             if let form {
                 request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
                 request.httpBody = Self.formEncode(form)
+            }
+            if let rawBody {
+                request.setValue(rawBody.contentType, forHTTPHeaderField: "Content-Type")
+                request.httpBody = rawBody.data
             }
 
             let (data, response) = try await session.data(for: request)
@@ -114,6 +119,17 @@ public struct RealDebridClient: Sendable {
     public func addMagnet(_ magnet: String) async throws -> AddMagnetResult {
         let data = try await send("POST", "torrents/addMagnet", form: ["magnet": magnet])
         return try decode(AddMagnetResult.self, from: data)
+    }
+
+    /// `PUT /torrents/addTorrent` with the raw `.torrent` bytes as the body.
+    public func addTorrentFile(_ torrent: Data) async throws -> AddMagnetResult {
+        let data = try await send("PUT", "torrents/addTorrent",
+                                  rawBody: (torrent, "application/x-bittorrent"))
+        return try decode(AddMagnetResult.self, from: data)
+    }
+
+    public func deleteTorrent(_ id: String) async throws {
+        _ = try await send("DELETE", "torrents/delete/\(id)")
     }
 
     public func selectFiles(torrentID: String, files: String = "all") async throws {
