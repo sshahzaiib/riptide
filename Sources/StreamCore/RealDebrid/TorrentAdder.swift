@@ -61,8 +61,13 @@ public struct TorrentAdder: Sendable {
     /// Wait for RD to list files, select (explicit ids, else video files,
     /// else all), then map the post-selection status to an outcome.
     private func finishAdd(id: String, fileIDs: [Int]? = nil) async throws -> Added {
-        let info = try await rd.pollUntil(id) {
-            $0.status == "waiting_files_selection" || $0.status == "downloaded"
+        let info: TorrentInfo
+        do {
+            info = try await rd.pollUntil(id) {
+                $0.status == "waiting_files_selection" || $0.status == "downloaded"
+            }
+        } catch {
+            throw TorrentAdderError.pollFailed(torrentID: id, underlying: "\(error)")
         }
         var selectedIDs = info.files.filter { $0.selected == 1 }.map(\.id)
         if info.status == "waiting_files_selection" {
@@ -102,6 +107,16 @@ public struct TorrentAdder: Sendable {
             let ext = (file.path as NSString).pathExtension.lowercased()
             return ReleaseNameParser.videoExtensions.contains(ext)
                 && !file.path.lowercased().contains("sample")
+        }
+    }
+}
+
+public enum TorrentAdderError: Error, LocalizedError, Sendable {
+    case pollFailed(torrentID: String, underlying: String)
+    public var errorDescription: String? {
+        switch self {
+        case .pollFailed(let id, let underlying):
+            "Real-Debrid didn't finish preparing this torrent (\(underlying)). It still exists on Real-Debrid as \(id) — try refreshing the library shortly."
         }
     }
 }

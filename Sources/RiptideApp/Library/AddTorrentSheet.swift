@@ -75,6 +75,7 @@ struct AddTorrentSheet: View {
     @State private var model = TorrentAddModel()
     @State private var showFilePicker = false
     @State private var showEditFiles = false
+    @State private var autoDismissTask: Task<Void, Never>?
     let prefill: String?
     var torrentFile: URL? = nil
     let onAdded: (TorrentAdder.Added) -> Void
@@ -101,7 +102,7 @@ struct AddTorrentSheet: View {
                 }
             }
         }
-        .task {
+        .task(id: torrentFile?.absoluteString ?? prefill ?? "") {
             if let torrentFile {
                 await model.submit(fileURL: torrentFile)
             } else if let prefill {
@@ -110,6 +111,19 @@ struct AddTorrentSheet: View {
             } else if let clip = NSPasteboard.general.string(forType: .string),
                       clip.hasPrefix("magnet:") {
                 model.magnetText = clip
+            }
+        }
+        .task(id: model.phase) {
+            if case .done = model.phase, let added = model.lastAdded {
+                autoDismissTask = Task {
+                    try? await Task.sleep(for: .seconds(2.5))
+                    guard !Task.isCancelled else { return }
+                    onAdded(added)
+                    dismiss()
+                }
+            } else {
+                autoDismissTask?.cancel()
+                autoDismissTask = nil
             }
         }
     }
@@ -163,10 +177,16 @@ struct AddTorrentSheet: View {
             }
             HStack {
                 if !added.files.isEmpty {
-                    Button("Edit Files…") { showEditFiles = true }
+                    Button("Edit Files…") {
+                        autoDismissTask?.cancel()
+                        autoDismissTask = nil
+                        showEditFiles = true
+                    }
                 }
                 Spacer()
                 Button("Done") {
+                    autoDismissTask?.cancel()
+                    autoDismissTask = nil
                     onAdded(added)
                     dismiss()
                 }

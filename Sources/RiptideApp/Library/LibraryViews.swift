@@ -124,6 +124,12 @@ struct LibraryRootView: View {
             }
             return false
         }
+        .dropDestination(for: String.self) { strings, _ in
+            guard let s = strings.first, s.hasPrefix("magnet:") else { return false }
+            addTorrentPrefill = s
+            showAddTorrent = true
+            return true
+        }
         .onOpenURL { url in
             // magnet: scheme handler. Registration requires a packaged .app
             // (CFBundleURLTypes) — inert under the unbundled run.sh binary,
