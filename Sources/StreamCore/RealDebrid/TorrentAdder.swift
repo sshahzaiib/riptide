@@ -67,6 +67,7 @@ public struct TorrentAdder: Sendable {
                 $0.status == "waiting_files_selection" || $0.status == "downloaded"
             }
         } catch {
+            if error is CancellationError { throw error }
             throw TorrentAdderError.pollFailed(torrentID: id, underlying: "\(error)")
         }
         var selectedIDs = info.files.filter { $0.selected == 1 }.map(\.id)

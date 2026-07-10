@@ -54,13 +54,14 @@ struct LibraryRootView: View {
                     .onPasteCommand(of: [.plainText, .url]) { _ in
                         if let s = NSPasteboard.general.string(forType: .string),
                            s.hasPrefix("magnet:") {
+                            droppedTorrentFile = nil
                             addTorrentPrefill = s
                             showAddTorrent = true
                         }
                     }
                     .toolbar {
                         ToolbarItem {
-                            Button(action: { addTorrentPrefill = nil; showAddTorrent = true }) {
+                            Button(action: { addTorrentPrefill = nil; droppedTorrentFile = nil; showAddTorrent = true }) {
                                 Image(systemName: "plus")
                             }
                             .help("Add magnet or .torrent")
@@ -109,32 +110,36 @@ struct LibraryRootView: View {
             Text("Your Real-Debrid API token is missing or expired.")
         }
         .environment(model)
+        .dropDestination(for: String.self) { strings, _ in
+            guard let s = strings.first, s.hasPrefix("magnet:") else { return false }
+            droppedTorrentFile = nil
+            addTorrentPrefill = s
+            showAddTorrent = true
+            return true
+        }
         .dropDestination(for: URL.self) { urls, _ in
             guard let url = urls.first else { return false }
             if url.scheme == "magnet" {
+                droppedTorrentFile = nil
                 addTorrentPrefill = url.absoluteString
                 showAddTorrent = true
                 return true
             }
             if url.isFileURL, url.pathExtension.lowercased() == "torrent" {
                 // Reuse the sheet: no prefill; submit the file directly after present.
+                addTorrentPrefill = nil
                 droppedTorrentFile = url
                 showAddTorrent = true
                 return true
             }
             return false
         }
-        .dropDestination(for: String.self) { strings, _ in
-            guard let s = strings.first, s.hasPrefix("magnet:") else { return false }
-            addTorrentPrefill = s
-            showAddTorrent = true
-            return true
-        }
         .onOpenURL { url in
             // magnet: scheme handler. Registration requires a packaged .app
             // (CFBundleURLTypes) — inert under the unbundled run.sh binary,
             // active once the app ships as a bundle.
             guard url.scheme == "magnet" else { return }
+            droppedTorrentFile = nil
             addTorrentPrefill = url.absoluteString
             showAddTorrent = true
         }
