@@ -30,21 +30,33 @@ public final class LibraryStore {
         return LibraryStore(container: container)
     }
 
-    /// On-disk store in Application Support. Pre-1.0 schema policy: if the
-    /// container fails to open (schema changed), wipe and recreate rather
-    /// than migrate.
+    /// On-disk store in Application Support/Riptide — an explicit path, NOT
+    /// SwiftData's shared `default.store` (a bare SwiftPM executable has no
+    /// app container, so the default path collides with any other SwiftData
+    /// process on the machine). Pre-1.0 schema policy: if the store fails to
+    /// open — or fails the probe fetches below, since table creation is lazy
+    /// and a stale/foreign file only errors at first query ("no such table:
+    /// ZWATCHSTATE") — wipe and recreate rather than migrate.
     public static func onDisk() throws -> LibraryStore {
-        do {
-            let container = try ModelContainer(for: LibraryItem.self, WatchState.self)
-            return LibraryStore(container: container)
-        } catch {
-            let support = URL.applicationSupportDirectory
+        let dir = URL.applicationSupportDirectory
+            .appendingPathComponent("Riptide", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let storeURL = dir.appendingPathComponent("library.store")
+        func open() throws -> LibraryStore {
+            let config = ModelConfiguration(url: storeURL)
+            let container = try ModelContainer(for: LibraryItem.self, WatchState.self,
+                                               configurations: config)
+            let store = LibraryStore(container: container)
+            _ = try store.context.fetchCount(FetchDescriptor<LibraryItem>())
+            _ = try store.context.fetchCount(FetchDescriptor<WatchState>())
+            return store
+        }
+        do { return try open() } catch {
             for suffix in ["", "-shm", "-wal"] {
                 try? FileManager.default.removeItem(
-                    at: support.appendingPathComponent("default.store\(suffix)"))
+                    at: URL(fileURLWithPath: storeURL.path + suffix))
             }
-            let container = try ModelContainer(for: LibraryItem.self, WatchState.self)
-            return LibraryStore(container: container)
+            return try open()
         }
     }
 
