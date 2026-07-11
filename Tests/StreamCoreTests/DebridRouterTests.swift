@@ -109,4 +109,21 @@ final class DebridRouterTests: XCTestCase {
         do { _ = try await router.addWithFailover(magnet: "m", preferring: nil); XCTFail("expected throw") }
         catch DebridRouterError.noServiceConfigured {} catch { XCTFail("wrong error \(error)") }
     }
+
+    func testFallbackThrowsOneShot() async throws {
+        let log = CallLog()
+        let router = DebridRouter(
+            rd: stub(.realDebrid, log: log, result: { _ in DebridTransfer(id: "x", status: .failed("boom")) }),
+            ad: stub(.allDebrid, log: log, result: { _ in throw AllDebridError.badResponse })
+        )
+        do {
+            _ = try await router.addWithFailover(magnet: "m", preferring: .realDebrid)
+            XCTFail("expected throw")
+        } catch AllDebridError.badResponse {
+            let fallbackCalls = log.order.filter { $0 == .allDebrid }.count
+            XCTAssertEqual(fallbackCalls, 1)
+        } catch {
+            XCTFail("wrong error \(error)")
+        }
+    }
 }

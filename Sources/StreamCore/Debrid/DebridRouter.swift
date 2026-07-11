@@ -31,19 +31,21 @@ public struct DebridRouter: Sendable {
         else { throw DebridRouterError.noServiceConfigured }
         let fallback = primary.serviceID == .realDebrid ? ad : rd
 
+        let transfer: DebridTransfer
         do {
-            let transfer = try await primary.addMagnet(magnet)
-            if case .failed = transfer.status, let fallback {
-                return Placed(serviceID: fallback.serviceID,
-                              transfer: try await fallback.addMagnet(magnet))
-            }
-            return Placed(serviceID: primary.serviceID, transfer: transfer)
+            transfer = try await primary.addMagnet(magnet)
         } catch {
             if error.isCancellation { throw error }
             guard let fallback else { throw error }
             return Placed(serviceID: fallback.serviceID,
                           transfer: try await fallback.addMagnet(magnet))
         }
+
+        if case .failed = transfer.status, let fallback {
+            return Placed(serviceID: fallback.serviceID,
+                          transfer: try await fallback.addMagnet(magnet))
+        }
+        return Placed(serviceID: primary.serviceID, transfer: transfer)
     }
 }
 
