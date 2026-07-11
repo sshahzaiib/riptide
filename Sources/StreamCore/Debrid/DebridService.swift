@@ -51,6 +51,11 @@ public protocol DebridService: Sendable {
     func finishForeignAdd(id: String) async throws
     func unrestrict(link: String) async throws -> URL
     func delete(id: String) async throws
+    /// Account contents flattened to ready-to-play files. `knownCounts` maps
+    /// torrentID -> stored entry count and `cached` the stored entries, so a
+    /// fully-expanded pack skips its per-torrent detail RPC on refresh.
+    func libraryEntries(knownCounts: [String: Int],
+                        cached: [String: [LibraryFileEntry]]) async throws -> [LibraryFileEntry]
 }
 
 public extension DebridService {
@@ -104,6 +109,35 @@ public struct RealDebridService: DebridService {
     public func delete(id: String) async throws {
         try await rd.deleteTorrent(id)
     }
+
+    public func libraryEntries(knownCounts: [String: Int],
+                               cached: [String: [LibraryFileEntry]]) async throws -> [LibraryFileEntry] {
+        // Only finished torrents with at least one link are streamable.
+        let torrents = try await rd.allTorrents()
+            .filter { $0.status == "downloaded" && !$0.links.isEmpty }
+        var entries: [LibraryFileEntry] = []
+        for t in torrents {
+            if t.links.count <= 1 {
+                entries.append(LibraryFileEntry(torrentID: t.id, fileIndex: 0,
+                                                filename: t.filename, bytes: t.bytes,
+                                                added: t.added, link: t.links[0]))
+            } else if knownCounts[t.id] == t.links.count, let known = cached[t.id] {
+                // Already expanded on a previous refresh — no torrentInfo call.
+                entries.append(contentsOf: known)
+            } else {
+                // Season pack / multi-file: real names live in files[].path.
+                let info = try await rd.torrentInfo(t.id)
+                let selected = info.files.filter { $0.selected == 1 }
+                for (i, file) in selected.enumerated() where i < t.links.count {
+                    let base = (file.path as NSString).lastPathComponent
+                    entries.append(LibraryFileEntry(torrentID: t.id, fileIndex: i,
+                                                    filename: base, bytes: file.bytes,
+                                                    added: t.added, link: t.links[i]))
+                }
+            }
+        }
+        return entries
+    }
 }
 
 // MARK: AllDebrid adapter
@@ -146,5 +180,31 @@ public struct AllDebridService: DebridService {
     public func delete(id: String) async throws {
         guard let numeric = Int(id) else { throw AllDebridError.badResponse }
         try await client.magnetDelete(id: numeric)
+    }
+
+    public func libraryEntries(knownCounts: [String: Int],
+                               cached: [String: [LibraryFileEntry]]) async throws -> [LibraryFileEntry] {
+        let ready = try await client.magnetStatusList().filter { $0.statusCode == 4 }
+        var entries: [LibraryFileEntry] = []
+        for magnet in ready {
+            let id = String(magnet.id)
+            if let known = cached[id], !known.isEmpty {
+                // Ready magnets are immutable — the stored expansion is final.
+                entries.append(contentsOf: known)
+                continue
+            }
+            let trees = try await client.magnetFiles(ids: [magnet.id])
+            let files = ADFileNode.flattenVideoFiles(trees.flatMap(\.files))
+            let added = magnet.uploadDate.map {
+                Date(timeIntervalSince1970: TimeInterval($0)).ISO8601Format()
+            } ?? ""
+            for (i, f) in files.enumerated() {
+                entries.append(LibraryFileEntry(service: "ad", torrentID: id,
+                                                fileIndex: i, filename: f.name,
+                                                bytes: f.size, added: added,
+                                                link: f.link))
+            }
+        }
+        return entries
     }
 }

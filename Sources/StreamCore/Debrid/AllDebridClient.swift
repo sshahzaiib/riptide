@@ -189,8 +189,9 @@ public struct ADMagnet: Decodable, Sendable, Equatable {
     public let status: String?
     public let statusCode: Int
     public let downloaded: Int64
+    public let uploadDate: Int?
 
-    enum CodingKeys: String, CodingKey { case id, filename, size, status, statusCode, downloaded }
+    enum CodingKeys: String, CodingKey { case id, filename, size, status, statusCode, downloaded, uploadDate }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -200,6 +201,7 @@ public struct ADMagnet: Decodable, Sendable, Equatable {
         status = try c.decodeIfPresent(String.self, forKey: .status)
         statusCode = try c.decode(Int.self, forKey: .statusCode)
         downloaded = try c.decodeIfPresent(Int64.self, forKey: .downloaded) ?? 0
+        uploadDate = try c.decodeIfPresent(Int.self, forKey: .uploadDate)
     }
 }
 

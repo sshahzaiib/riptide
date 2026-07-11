@@ -18,6 +18,8 @@ private struct StubService: DebridService {
     func transferIDs() async throws -> Set<String> { [] }
     func unrestrict(link: String) async throws -> URL { URL(string: "https://stub")! }
     func delete(id: String) async throws {}
+    func libraryEntries(knownCounts: [String: Int],
+                        cached: [String: [LibraryFileEntry]]) async throws -> [LibraryFileEntry] { [] }
 }
 
 final class DebridRouterTests: XCTestCase {
