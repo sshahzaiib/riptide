@@ -18,6 +18,11 @@ struct ContinueEntry: Identifiable {
 @Observable
 @MainActor
 final class LibraryModel {
+    /// One AUTH_* failure pauses AllDebrid for the session (no retry storms).
+    /// AppSettings.save clears it via resetADAuth().
+    static var adAuthRejected = false
+    static func resetADAuth() { adAuthRejected = false }
+
     private(set) var items: [LibraryItem] = []
     private(set) var continueWatching: [ContinueEntry] = []
     private(set) var refreshing = false
@@ -79,27 +84,27 @@ final class LibraryModel {
         refreshing = true
         defer { refreshing = false; reload() }
         do {
-            var services: [any DebridService] = [
-                RealDebridService(rd: RealDebridClient(token: settings.rdToken))
-            ]
-            if !settings.adToken.isEmpty {
+            var services: [any DebridService] =
+                [RealDebridService(rd: RealDebridClient(token: settings.rdToken))]
+            if !settings.adToken.isEmpty, !Self.adAuthRejected {
                 services.append(AllDebridService(client: AllDebridClient(token: settings.adToken)))
             }
-            let refresher = LibraryRefresher(
-                services: services,
-                tmdb: TMDBClient(bearerToken: settings.tmdbToken),
-                store: store)
+            let refresher = LibraryRefresher(services: services,
+                                             tmdb: TMDBClient(bearerToken: settings.tmdbToken),
+                                             store: store)
             let summary = try await refresher.refresh()
             await TraktService.shared.pullSync(store: store)
-            if summary.authFailures.contains("rd") {
-                needsAuth = true
-            }
-            if !summary.serviceErrors.isEmpty {
-                errorMessage = "Service refresh failed: " + summary.serviceErrors.map { "\($0.key): \($0.value)" }.joined(separator: ", ")
-            } else if summary.matchFailed > 0 {
-                errorMessage = "\(summary.matchFailed) item(s) could not be matched on TMDB."
+            if summary.authFailures.contains("rd") { needsAuth = true }
+            if summary.authFailures.contains("ad") {
+                // No retry storms: one AUTH_* failure pauses AD until relaunch
+                // or a new key is saved.
+                Self.adAuthRejected = true
+                errorMessage = "AllDebrid rejected your API key — check Settings. AllDebrid is paused until you save a new key."
+            } else if let firstError = summary.serviceErrors.values.first {
+                errorMessage = "Partial refresh: \(firstError)"
             } else {
-                errorMessage = nil
+                errorMessage = summary.matchFailed > 0
+                    ? "\(summary.matchFailed) item(s) could not be matched on TMDB." : nil
             }
         } catch let e as RealDebridError where e == .unauthorized {
             needsAuth = true
@@ -112,9 +117,15 @@ final class LibraryModel {
     func playItem(for item: LibraryItem, autoResume: Bool = false) async throws -> PlayItem {
         guard !item.link.isEmpty else { throw RealDebridError.noDownloadableLinks }
         let settings = AppSettings.shared
-        let rd = RealDebridClient(token: settings.rdToken)
-        let unrestricted = try await rd.unrestrictLink(item.link)
-        guard let url = unrestricted.directURL else { throw RealDebridError.badResponse }
+        let url: URL
+        if item.service == "ad" {
+            url = try await AllDebridClient(token: settings.adToken).unlock(link: item.link)
+        } else {
+            let unrestricted = try await RealDebridClient(token: settings.rdToken)
+                .unrestrictLink(item.link)
+            guard let direct = unrestricted.directURL else { throw RealDebridError.badResponse }
+            url = direct
+        }
         let resume = (try? store.continueWatching())?
             .first { $0.itemKey == item.itemKey }?.positionSeconds
         let title = item.season != nil

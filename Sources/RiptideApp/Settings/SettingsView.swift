@@ -65,6 +65,7 @@ struct SettingsView: View {
                 Button("Save") {
                     AppSettings.shared.save(rdToken: rdToken, tmdbToken: tmdbToken,
                                             openSubsKey: openSubsKey, adToken: adToken)
+                    LibraryModel.resetADAuth()
                     TraktService.shared.saveCredentials(clientID: traktClientID,
                                                         clientSecret: traktClientSecret)
                     dismiss()

@@ -109,6 +109,18 @@ struct LibraryRootView: View {
         } message: {
             Text("Your Real-Debrid API token is missing or expired.")
         }
+        .safeAreaInset(edge: .bottom) {
+            if let message = model.errorMessage {
+                HStack {
+                    Text(message).font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Dismiss") { model.errorMessage = nil }
+                        .buttonStyle(.borderless).controlSize(.small)
+                }
+                .padding(8)
+                .background(.bar)
+            }
+        }
         .environment(model)
         // ponytail: dropped support for dragging raw magnet TEXT (not a link) — needs a custom multi-representation Transferable to safely coexist with the URL dropDestination; ⌘V paste and dragging an actual magnet: link both already work.
         .dropDestination(for: URL.self) { urls, _ in
