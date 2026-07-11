@@ -15,32 +15,32 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("Real-Debrid") {
-                SecureField("API token", text: $rdToken)
+                SecureField("API token", text: $rdToken).frame(maxWidth: .infinity)
                 Link("Get your token at real-debrid.com/apitoken",
                      destination: URL(string: "https://real-debrid.com/apitoken")!)
                     .font(.caption)
             }
             Section("AllDebrid (optional backup)") {
-                SecureField("API key", text: $adToken)
+                SecureField("API key", text: $adToken).frame(maxWidth: .infinity)
                 Link("Get your key at alldebrid.com/apikeys",
                      destination: URL(string: "https://alldebrid.com/apikeys")!)
                     .font(.caption)
             }
             Section("TMDB (posters & metadata)") {
-                SecureField("API Read Access Token (v4)", text: $tmdbToken)
+                SecureField("API Read Access Token (v4)", text: $tmdbToken).frame(maxWidth: .infinity)
                 Link("Create a free key at themoviedb.org/settings/api",
                      destination: URL(string: "https://www.themoviedb.org/settings/api")!)
                     .font(.caption)
             }
             Section("OpenSubtitles (optional)") {
-                SecureField("API key", text: $openSubsKey)
+                SecureField("API key", text: $openSubsKey).frame(maxWidth: .infinity)
                 Link("Create a free key at opensubtitles.com/consumers",
                      destination: URL(string: "https://www.opensubtitles.com/en/consumers")!)
                     .font(.caption)
             }
             Section("Trakt (optional)") {
-                SecureField("Client ID", text: $traktClientID)
-                SecureField("Client Secret", text: $traktClientSecret)
+                SecureField("Client ID", text: $traktClientID).frame(maxWidth: .infinity)
+                SecureField("Client Secret", text: $traktClientSecret).frame(maxWidth: .infinity)
                 Link("Create an app at trakt.tv/oauth/applications",
                      destination: URL(string: "https://trakt.tv/oauth/applications")!)
                     .font(.caption)

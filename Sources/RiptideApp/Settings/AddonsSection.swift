@@ -52,6 +52,9 @@ struct AddonsSection: View {
                 TextField("Addon manifest URL", text: $input)
                     .textFieldStyle(.roundedBorder)
                     .autocorrectionDisabled()
+                    // Long pasted URLs must not widen the row (the field's
+                    // ideal width tracks its content).
+                    .frame(maxWidth: .infinity)
                     .onSubmit(add)
                 if validating {
                     ProgressView().controlSize(.small)
