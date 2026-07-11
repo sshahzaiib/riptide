@@ -194,7 +194,7 @@ struct StreamPickerSheet: View {
         if row.meta.cached == false {
             uncachedSend = .inFlight
             uncachedTask = Task {
-                let outcome = await model.registerUncached(stream: row.stream, addon: row.addon)
+                let outcome = await model.registerUncached(row: row)
                 // A cancelled task (sheet dismissed) must not repaint state —
                 // cancellation is not a failure.
                 guard !Task.isCancelled else { return }
@@ -203,7 +203,7 @@ struct StreamPickerSheet: View {
                     // Failover placement: the resolver URL is bound to the
                     // addon's own service and can't stream a transfer that
                     // landed on the other one — report instead of auto-play.
-                    guard service == (row.addon.service ?? .realDebrid) else {
+                    guard service == row.intendedService else {
                         uncachedSend = .sent(fallback: service)
                         return
                     }

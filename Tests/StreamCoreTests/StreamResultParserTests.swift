@@ -50,4 +50,23 @@ final class StreamResultParserTests: XCTestCase {
         XCTAssertNil(meta.resolution)
         XCTAssertNil(meta.sizeBytes)
     }
+
+    func testDebridServiceDetection() {
+        XCTAssertEqual(StreamResultParser.parse(stream(name: "[RD+] Torrentio")).service, .realDebrid)
+        XCTAssertEqual(StreamResultParser.parse(stream(name: "[AD+] Torrentio")).service, .allDebrid)
+        XCTAssertEqual(StreamResultParser.parse(stream(name: "AIOStreams | AllDebrid ⚡")).service, .allDebrid)
+        XCTAssertEqual(StreamResultParser.parse(stream(name: "Real-Debrid cached")).service, .realDebrid)
+        XCTAssertEqual(StreamResultParser.parse(stream(name: "realdebrid cached")).service, .realDebrid)
+        XCTAssertNil(StreamResultParser.parse(stream(name: "both RD and AD here")).service)
+        XCTAssertNil(StreamResultParser.parse(stream(name: "4K HDR BluRay")).service)
+        XCTAssertNil(StreamResultParser.parse(stream(name: "plain title mentioning neither")).service)
+
+        // Word boundaries test cases
+        XCTAssertNil(StreamResultParser.parse(stream(name: "HDR")).service)
+        XCTAssertNil(StreamResultParser.parse(stream(name: "SHADOW")).service)
+        XCTAssertNil(StreamResultParser.parse(stream(name: "1080p")).service)
+        XCTAssertEqual(StreamResultParser.parse(stream(name: "[RD+]")).service, .realDebrid)
+        XCTAssertEqual(StreamResultParser.parse(stream(name: "RD download")).service, .realDebrid)
+        XCTAssertEqual(StreamResultParser.parse(stream(name: "⚡ AD")).service, .allDebrid)
+    }
 }

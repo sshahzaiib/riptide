@@ -20,6 +20,8 @@ final class StreamPickerModel {
         let addon: ConfiguredAddon
         let stream: AddonStream
         let meta: ParsedStreamMeta
+
+        var intendedService: DebridServiceID { meta.service ?? addon.service ?? .realDebrid }
     }
 
     private(set) var rows: [Row] = []
@@ -91,10 +93,10 @@ final class StreamPickerModel {
     /// the other service on terminal rejection. Hash recovery first; the
     /// account-diff fallback covers opaque resolver URLs (no failover there —
     /// nothing to re-add).
-    func registerUncached(stream: AddonStream, addon: ConfiguredAddon) async -> UncachedOutcome {
-        guard let url = stream.httpURL else { return .failed(bothTried: false) }
+    func registerUncached(row: Row) async -> UncachedOutcome {
+        guard let url = row.stream.httpURL else { return .failed(bothTried: false) }
         let router = router
-        if let hash = stream.infoHash ?? TorrentAdder.infohash(inURL: url) {
+        if let hash = row.stream.infoHash ?? TorrentAdder.infohash(inURL: url) {
             // The hash path fails over, so a failure here means every
             // configured service was tried.
             let settings = AppSettings.shared
@@ -102,14 +104,14 @@ final class StreamPickerModel {
             do {
                 let placed = try await router.addWithFailover(
                     magnet: "magnet:?xt=urn:btih:\(hash)",
-                    preferring: addon.service)
+                    preferring: row.intendedService)
                 if case .failed = placed.transfer.status { return .failed(bothTried: bothTried) }
                 return .added(service: placed.serviceID, transferID: placed.transfer.id)
             } catch { return .failed(bothTried: bothTried) }
         }
         // Opaque resolver URL: probe, then find the new transfer by diffing
         // the TARGET service's account. No failover here — nothing to re-add.
-        guard let target = router.service(addon.service ?? .realDebrid)
+        guard let target = router.service(row.intendedService)
         else { return .failed(bothTried: false) }
         // No snapshot -> no reliable diff: an empty `before` would make every
         // pre-existing transfer look new and lock onto the wrong one. Register
