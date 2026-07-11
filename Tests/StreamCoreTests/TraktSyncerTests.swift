@@ -72,11 +72,48 @@ final class TraktSyncerTests: XCTestCase {
         XCTAssertEqual(try state("t1#0")?.positionSeconds, 100)
     }
 
-    func testPlaybackWithoutLocalDurationSkipped() async throws {
+    func testPlaybackWithoutLocalDurationOrRuntimeSkipped() async throws {
         respond(playback: #"[{"progress":50.0,"paused_at":"2099-01-01T00:00:00.000Z","type":"movie","movie":{"ids":{"tmdb":603}}}]"#)
         let summary = try await TraktSyncer(client: client, store: store).pull()
         XCTAssertEqual(summary.playbackApplied, 0)
         XCTAssertNil(try state("t1#0"))
+    }
+
+    /// Fresh store (no local durations): Trakt's extended=full runtime is
+    /// the percent→seconds base, so Continue Watching survives a rebuild.
+    func testPlaybackWithoutLocalDurationUsesTraktRuntime() async throws {
+        respond(playback: #"[{"progress":50.0,"paused_at":"2099-01-01T00:00:00.000Z","type":"movie","movie":{"ids":{"tmdb":603},"runtime":120}}]"#)
+        let summary = try await TraktSyncer(client: client, store: store).pull()
+        XCTAssertEqual(summary.playbackApplied, 1)
+        XCTAssertEqual(try state("t1#0")?.positionSeconds, 3600)   // 50% of 120 min
+        XCTAssertEqual(try state("t1#0")?.durationSeconds, 7200)
+        XCTAssertEqual(try state("t1#0")?.finished, false)
+    }
+
+    func testEpisodePlaybackUsesEpisodeRuntime() async throws {
+        respond(playback: #"[{"progress":25.0,"paused_at":"2099-01-01T00:00:00.000Z","type":"episode","show":{"ids":{"tmdb":1399}},"episode":{"season":1,"number":5,"runtime":60}}]"#)
+        let summary = try await TraktSyncer(client: client, store: store).pull()
+        XCTAssertEqual(summary.playbackApplied, 1)
+        XCTAssertEqual(try state("t2#3")?.positionSeconds, 900)    // 25% of 60 min
+    }
+
+    /// A locally known duration still wins over Trakt's runtime (the file's
+    /// real length beats the catalog figure).
+    func testLocalDurationBeatsTraktRuntime() async throws {
+        try store.saveProgress(itemKey: "t1#0", position: 100, duration: 4000)
+        respond(playback: #"[{"progress":50.0,"paused_at":"2099-01-01T00:00:00.000Z","type":"movie","movie":{"ids":{"tmdb":603},"runtime":120}}]"#)
+        _ = try await TraktSyncer(client: client, store: store).pull()
+        XCTAssertEqual(try state("t1#0")?.positionSeconds, 2000)   // 50% of 4000
+    }
+
+    func testPlaybackRequestsExtendedFull() async throws {
+        nonisolated(unsafe) var query: String?
+        MockURLProtocol.setHandler { req in
+            if req.url!.path == "/sync/playback" { query = req.url!.query }
+            return .json("[]")
+        }
+        _ = try await TraktSyncer(client: client, store: store).pull()
+        XCTAssertEqual(query, "extended=full")
     }
 
     func testWatchedEpisodeMarksFinished() async throws {

@@ -111,8 +111,15 @@ public final class TraktClient {
     // MARK: Request infra
 
     private func request(path: String, method: String, body: Data?,
-                         authorized: Bool) -> URLRequest {
-        var req = URLRequest(url: base.appending(path: path))
+                         authorized: Bool, query: [String: String]? = nil) -> URLRequest {
+        var url = base.appending(path: path)
+        if let query, !query.isEmpty {
+            var comps = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+            comps.queryItems = query.sorted { $0.key < $1.key }
+                .map { URLQueryItem(name: $0.key, value: $0.value) }
+            url = comps.url!
+        }
+        var req = URLRequest(url: url)
         req.httpMethod = method
         req.httpBody = body
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -161,8 +168,11 @@ public final class TraktClient {
     // MARK: Sync pulls
 
     public func playback() async throws -> [TraktPlaybackEntry] {
+        // extended=full inlines runtimes — the percent→seconds base when the
+        // local store has no duration (fresh install / store rebuild).
         try Self.decoder.decode([TraktPlaybackEntry].self,
-                                from: try await send(path: "/sync/playback"))
+                                from: try await send(path: "/sync/playback",
+                                                     query: ["extended": "full"]))
     }
 
     public func watchedMovies() async throws -> [TraktWatchedMovie] {
@@ -209,17 +219,18 @@ public final class TraktClient {
     }
 
     /// Authorized call with a single automatic token refresh on 401.
-    func send(path: String, method: String = "GET", body: Data? = nil) async throws -> Data {
+    func send(path: String, method: String = "GET", body: Data? = nil,
+              query: [String: String]? = nil) async throws -> Data {
         guard tokens != nil else { throw TraktError.unauthorized }
         let (data, response) = try await session.data(
-            for: request(path: path, method: method, body: body, authorized: true))
+            for: request(path: path, method: method, body: body, authorized: true, query: query))
         guard let http = response as? HTTPURLResponse else { throw TraktError.badResponse }
         switch http.statusCode {
         case 200, 201, 204: return data
         case 401:
             try await refreshTokens()   // throws .unauthorized on failure
             let (data2, response2) = try await session.data(
-                for: request(path: path, method: method, body: body, authorized: true))
+                for: request(path: path, method: method, body: body, authorized: true, query: query))
             guard let http2 = response2 as? HTTPURLResponse else { throw TraktError.badResponse }
             switch http2.statusCode {
             case 200...299: return data2

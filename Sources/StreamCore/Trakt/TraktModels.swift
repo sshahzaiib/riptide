@@ -51,6 +51,8 @@ public struct TraktIDs: Decodable, Equatable, Sendable {
 
 public struct TraktMovieRef: Decodable, Equatable, Sendable {
     public let ids: TraktIDs
+    /// Minutes; present only on extended=full responses.
+    public let runtime: Int?
 }
 
 public struct TraktShowRef: Decodable, Equatable, Sendable {
@@ -60,6 +62,8 @@ public struct TraktShowRef: Decodable, Equatable, Sendable {
 public struct TraktEpisodeRef: Decodable, Equatable, Sendable {
     public let season: Int
     public let number: Int
+    /// Minutes; present only on extended=full responses.
+    public let runtime: Int?
 }
 
 public struct TraktPlaybackEntry: Decodable, Equatable, Sendable {

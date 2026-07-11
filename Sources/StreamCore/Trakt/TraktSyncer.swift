@@ -48,8 +48,13 @@ public struct TraktSyncer {
             }
             guard let key, let pausedAt = entry.pausedAt else { continue }
             let local = states[key]
-            // Percent -> seconds needs a locally known duration.
-            guard let duration = local?.1, duration > 0,
+            // Percent -> seconds needs a duration: the file's real length
+            // when we have it, else Trakt's runtime (extended=full) so a
+            // fresh store still gets its Continue Watching row.
+            let runtime = entry.type == "movie" ? entry.movie?.runtime : entry.episode?.runtime
+            let duration = (local?.1).flatMap { $0 > 0 ? $0 : nil }
+                ?? runtime.map { Double($0) * 60 }
+            guard let duration, duration > 0,
                   pausedAt > (local?.0 ?? .distantPast) else { continue }
             try store.applyRemoteProgress(itemKey: key,
                                           position: entry.progress / 100 * duration,
