@@ -86,8 +86,9 @@ final class LibraryModel {
         do {
             var services: [any DebridService] =
                 [RealDebridService(rd: RealDebridClient(token: settings.rdToken))]
-            if !settings.adToken.isEmpty, !Self.adAuthRejected {
-                services.append(AllDebridService(client: AllDebridClient(token: settings.adToken)))
+            let adTokenUsed = settings.adToken
+            if !adTokenUsed.isEmpty, !Self.adAuthRejected {
+                services.append(AllDebridService(client: AllDebridClient(token: adTokenUsed)))
             }
             let refresher = LibraryRefresher(services: services,
                                              tmdb: TMDBClient(bearerToken: settings.tmdbToken),
@@ -95,9 +96,11 @@ final class LibraryModel {
             let summary = try await refresher.refresh()
             await TraktService.shared.pullSync(store: store)
             if summary.authFailures.contains("rd") { needsAuth = true }
-            if summary.authFailures.contains("ad") {
+            if summary.authFailures.contains("ad"),
+               AppSettings.shared.adToken == adTokenUsed {
                 // No retry storms: one AUTH_* failure pauses AD until relaunch
-                // or a new key is saved.
+                // or a new key is saved. A key saved while this refresh was in
+                // flight must not be re-paused by the OLD key's failure.
                 Self.adAuthRejected = true
                 errorMessage = "AllDebrid rejected your API key — check Settings. AllDebrid is paused until you save a new key."
             } else if let firstError = summary.serviceErrors.values.first {
@@ -119,6 +122,8 @@ final class LibraryModel {
         let settings = AppSettings.shared
         let url: URL
         if item.service == "ad" {
+            // Fail fast on a cleared key instead of a doomed network call.
+            guard !settings.adToken.isEmpty else { throw AllDebridError.authFailed }
             url = try await AllDebridClient(token: settings.adToken).unlock(link: item.link)
         } else {
             let unrestricted = try await RealDebridClient(token: settings.rdToken)
