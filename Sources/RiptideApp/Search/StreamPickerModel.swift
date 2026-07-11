@@ -69,20 +69,22 @@ final class StreamPickerModel {
 
     /// Uncached selection: fetching one byte makes the addon's resolver
     /// register the torrent with the debrid service; no playback.
-    nonisolated func registerUncached(url: URL) {
-        Task.detached {
-            var request = URLRequest(url: url)
-            request.setValue("bytes=0-0", forHTTPHeaderField: "Range")
-            request.timeoutInterval = 30
-            // bytes(for:) + cancel stays bounded even when the resolver's
-            // redirect target ignores Range — data(for:) would buffer the
-            // whole (multi-GB) file into memory.
-            guard let (bytes, _) = try? await URLSession.shared.bytes(for: request)
-            else { return }
-            var iterator = bytes.makeAsyncIterator()
-            _ = try? await iterator.next()
-            bytes.task.cancel()
-        }
+    /// Returns false when the resolver was unreachable or rejected the
+    /// request, so the UI doesn't claim success it can't verify.
+    nonisolated func registerUncached(url: URL) async -> Bool {
+        var request = URLRequest(url: url)
+        request.setValue("bytes=0-0", forHTTPHeaderField: "Range")
+        request.timeoutInterval = 30
+        // bytes(for:) + cancel stays bounded even when the resolver's
+        // redirect target ignores Range — data(for:) would buffer the
+        // whole (multi-GB) file into memory.
+        guard let (bytes, response) = try? await URLSession.shared.bytes(for: request),
+              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode)
+        else { return false }
+        var iterator = bytes.makeAsyncIterator()
+        _ = try? await iterator.next()
+        bytes.task.cancel()
+        return true
     }
 
     private func sortRows() {

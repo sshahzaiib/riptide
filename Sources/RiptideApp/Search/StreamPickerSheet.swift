@@ -9,7 +9,9 @@ struct StreamPickerSheet: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(LibraryModel.self) private var library
     @State private var model = StreamPickerModel()
-    @State private var confirmation: String?
+
+    private enum UncachedSend { case inFlight, sent, failed }
+    @State private var uncachedSend: UncachedSend?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -64,8 +66,26 @@ struct StreamPickerSheet: View {
             } description: {
                 Text("Add a debrid-configured addon in Settings › Addons to find streams.")
             }
-        } else if let confirmation {
-            ContentUnavailableView(confirmation, systemImage: "tray.and.arrow.down")
+        } else if let uncachedSend {
+            switch uncachedSend {
+            case .inFlight:
+                ProgressView("Sending to your debrid service…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .sent:
+                ContentUnavailableView {
+                    Label("Sent to your debrid service", systemImage: "tray.and.arrow.down")
+                } description: {
+                    Text("It will appear in your library once downloaded.")
+                }
+            case .failed:
+                ContentUnavailableView {
+                    Label("Couldn't send to your debrid service", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text("The addon's resolver didn't accept the request. Try another stream.")
+                } actions: {
+                    Button("Back to Streams") { self.uncachedSend = nil }
+                }
+            }
         } else if model.visibleRows.isEmpty && model.loadingCount == 0 {
             ContentUnavailableView {
                 Label("No streams found", systemImage: "magnifyingglass")
@@ -120,6 +140,11 @@ struct StreamPickerSheet: View {
                     Text(row.addon.name).font(.caption)
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(.quaternary, in: Capsule())
+                    Button { copyLink(row) } label: {
+                        Image(systemName: "doc.on.doc")
+                    }
+                    .buttonStyle(.borderless)
+                    .help(row.stream.infoHash != nil ? "Copy magnet link" : "Copy stream URL")
                 }
                 Text(row.stream.displayText)
                     .font(.caption).foregroundStyle(.secondary)
@@ -130,11 +155,21 @@ struct StreamPickerSheet: View {
         .padding(.vertical, 2)
     }
 
+    /// Prefer a real magnet link when the addon exposed the infohash;
+    /// otherwise the debrid-resolved stream URL is the best we have.
+    private func copyLink(_ row: StreamPickerModel.Row) {
+        let text = row.stream.infoHash.map { "magnet:?xt=urn:btih:\($0)" }
+            ?? row.stream.httpURL?.absoluteString
+        guard let text else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
     private func select(_ row: StreamPickerModel.Row) {
         guard let url = row.stream.httpURL else { return }
         if row.meta.cached == false {
-            model.registerUncached(url: url)
-            confirmation = "Sent to your debrid service — it will appear in your library once downloaded."
+            uncachedSend = .inFlight
+            Task { uncachedSend = await model.registerUncached(url: url) ? .sent : .failed }
             return
         }
         let key = "addon#\(request.imdbID):\(request.season ?? 0):\(request.episode ?? 0)"
