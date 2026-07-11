@@ -106,7 +106,12 @@ final class StreamPickerModel {
         // Opaque resolver URL: probe, then find the new transfer by diffing
         // the TARGET service's account.
         guard let target = router.service(addon.service ?? .realDebrid) else { return .failed }
-        let before = (try? await target.transferIDs()) ?? []
+        // No snapshot -> no reliable diff: an empty `before` would make every
+        // pre-existing transfer look new and lock onto the wrong one. Register
+        // blind instead.
+        guard let before = try? await target.transferIDs() else {
+            return await probeResolver(url: url) ? .probed : .failed
+        }
         guard await probeResolver(url: url) else { return .failed }
         for attempt in 0..<6 {
             if attempt > 0 { try? await Task.sleep(for: .seconds(3)) }
