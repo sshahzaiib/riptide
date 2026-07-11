@@ -115,6 +115,25 @@ final class AllDebridClientTests: XCTestCase {
         // parser's job downstream — flatten keeps every video file.
     }
 
+    func testMagnetFilesOmitFilesKeyDefaultsToEmpty() async throws {
+        MockURLProtocol.setHandler { _ in
+            .json(#"{"status":"success","data":{"magnets":[{"id":5}]}}"#)
+        }
+        let files = try await client().magnetFiles(ids: [5])
+        XCTAssertEqual(files.count, 1)
+        XCTAssertEqual(files[0].id, 5)
+        XCTAssertEqual(files[0].files, [])
+    }
+
+    func testFlattenVideoFilesHandlesLeafWithEmptyChildren() {
+        let node = ADFileNode(n: "Movie.mkv", s: 100, l: "https://alldebrid.com/f/link", e: [])
+        let flat = ADFileNode.flattenVideoFiles([node])
+        XCTAssertEqual(flat.count, 1)
+        XCTAssertEqual(flat[0].name, "Movie.mkv")
+        XCTAssertEqual(flat[0].link, "https://alldebrid.com/f/link")
+        XCTAssertEqual(flat[0].path, "Movie.mkv")
+    }
+
     func testUnlockReturnsDirectURL() async throws {
         nonisolated(unsafe) var body: String?
         MockURLProtocol.setHandler { req in
@@ -124,6 +143,14 @@ final class AllDebridClientTests: XCTestCase {
         let url = try await client().unlock(link: "https://alldebrid.com/f/aaa")
         XCTAssertEqual(body, "link=https%3A%2F%2Falldebrid.com%2Ff%2Faaa")
         XCTAssertEqual(url.absoluteString, "https://x.debrid.it/dl/abc/file.mkv")
+    }
+
+    func testUnlockPercentEncodesUnencodedSpaces() async throws {
+        MockURLProtocol.setHandler { _ in
+            .json(#"{"status":"success","data":{"link":"https://host/My Movie (2023).mkv"}}"#)
+        }
+        let url = try await client().unlock(link: "https://alldebrid.com/f/aaa")
+        XCTAssertEqual(url.absoluteString, "https://host/My%20Movie%20(2023).mkv")
     }
 
     func testMagnetDeleteRoutes() async throws {

@@ -168,7 +168,9 @@ extension AllDebridClient {
         struct Payload: Decodable { let link: String }
         let data = try await send("v4/link/unlock", form: ["link": link])
         let direct = try decodeData(Payload.self, from: data).link
-        guard let url = URL(string: direct) else { throw AllDebridError.badResponse }
+        guard let url = URL(string: direct) ?? URL(string: direct.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "") else {
+            throw AllDebridError.badResponse
+        }
         return url
     }
 
@@ -204,6 +206,14 @@ public struct ADMagnet: Decodable, Sendable, Equatable {
 public struct ADMagnetFiles: Decodable, Sendable, Equatable {
     public let id: Int
     public let files: [ADFileNode]
+
+    enum CodingKeys: String, CodingKey { case id, files }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(Int.self, forKey: .id)
+        files = try c.decodeIfPresent([ADFileNode].self, forKey: .files) ?? []
+    }
 }
 
 /// AD's file tree: {n, s, l} for files, {n, e: [children]} for folders.
@@ -218,14 +228,13 @@ public struct ADFileNode: Decodable, Sendable, Equatable {
         -> [(path: String, name: String, size: Int64, link: String)] {
         var out: [(path: String, name: String, size: Int64, link: String)] = []
         func walk(_ node: ADFileNode, prefix: String) {
-            if let children = node.e {
+            if let link = node.l {
+                let ext = (node.n as NSString).pathExtension.lowercased()
+                guard ReleaseNameParser.videoExtensions.contains(ext) else { return }
+                out.append((path: prefix + node.n, name: node.n, size: node.s ?? 0, link: link))
+            } else if let children = node.e {
                 for child in children { walk(child, prefix: prefix + node.n + "/") }
-                return
             }
-            guard let link = node.l else { return }
-            let ext = (node.n as NSString).pathExtension.lowercased()
-            guard ReleaseNameParser.videoExtensions.contains(ext) else { return }
-            out.append((path: prefix + node.n, name: node.n, size: node.s ?? 0, link: link))
         }
         for node in nodes { walk(node, prefix: "") }
         return out
