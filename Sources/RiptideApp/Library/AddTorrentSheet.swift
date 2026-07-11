@@ -17,6 +17,8 @@ final class TorrentAddModel {
     var magnetText = ""
     private(set) var lastAdded: TorrentAdder.Added?
     private(set) var source: TorrentAdder.AddSource?
+    /// Set when RD terminally rejected the magnet and AllDebrid took it.
+    private(set) var adFallback: DebridTransfer?
 
     var magnetIsValid: Bool {
         magnetText.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("magnet:")
@@ -58,11 +60,24 @@ final class TorrentAddModel {
     private func run(_ addSource: TorrentAdder.AddSource) async {
         source = addSource
         phase = .adding
+        adFallback = nil
         do {
             let adder = TorrentAdder(rd: RealDebridClient(token: AppSettings.shared.rdToken))
             lastAdded = try await adder.add(addSource)
             phase = .done
         } catch {
+            // Backup: magnets RD rejects retry once on AllDebrid. (.torrent
+            // file uploads stay RD-only — AD's magnet/upload takes magnets.)
+            if case .magnet(let magnet) = addSource,
+               !AppSettings.shared.adToken.isEmpty,
+               !(error is CancellationError), (error as? URLError)?.code != .cancelled {
+                let ad = AllDebridService(client: AllDebridClient(token: AppSettings.shared.adToken))
+                if let transfer = try? await ad.addMagnet(magnet) {
+                    adFallback = transfer
+                    phase = .done
+                    return
+                }
+            }
             phase = .error(error.localizedDescription)
         }
     }
@@ -115,7 +130,7 @@ struct AddTorrentSheet: View {
             }
         }
         .task(id: model.phase) {
-            if case .done = model.phase, let added = model.lastAdded {
+            if case .done = model.phase, model.adFallback == nil, let added = model.lastAdded {
                 autoDismissTask = Task {
                     try? await Task.sleep(for: .seconds(2.5))
                     guard !Task.isCancelled else { return }
@@ -166,7 +181,18 @@ struct AddTorrentSheet: View {
 
     @ViewBuilder
     private var doneView: some View {
-        if let added = model.lastAdded {
+        if let transfer = model.adFallback {
+            Label("Real-Debrid rejected it — sent to AllDebrid instead.",
+                  systemImage: "arrow.triangle.branch")
+            Text(transfer.status == .ready
+                 ? "AllDebrid already has it cached."
+                 : "AllDebrid is downloading it. (AllDebrid items appear in the library in a later update.)")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Spacer()
+                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+            }
+        } else if let added = model.lastAdded {
             switch added.outcome {
             case .alreadyInLibrary:
                 Label("Already in your library.", systemImage: "checkmark.circle")
