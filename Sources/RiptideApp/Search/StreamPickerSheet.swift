@@ -10,7 +10,14 @@ struct StreamPickerSheet: View {
     @Environment(LibraryModel.self) private var library
     @State private var model = StreamPickerModel()
 
-    private enum UncachedSend { case inFlight, downloading, sent, failed }
+    private enum UncachedSend {
+        case inFlight
+        case downloading(DebridServiceID)
+        /// `fallback` non-nil when the magnet landed on the other service —
+        /// the addon's resolver URL can't stream that, so no auto-play.
+        case sent(fallback: DebridServiceID?)
+        case failed(bothTried: Bool)
+    }
     @State private var uncachedSend: UncachedSend?
     @State private var uncachedTask: Task<Void, Never>?
 
@@ -73,29 +80,32 @@ struct StreamPickerSheet: View {
             case .inFlight:
                 ProgressView("Sending to your debrid service…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            case .downloading:
+            case .downloading(let service):
                 VStack(spacing: 12) {
                     ProgressView(value: model.downloadProgress ?? 0, total: 100)
                         .frame(maxWidth: 280)
-                    Text("Downloading on Real-Debrid… \(Int(model.downloadProgress ?? 0))%")
+                    Text("Downloading on \(service.displayName)… \(Int(model.downloadProgress ?? 0))%")
                         .foregroundStyle(.secondary)
                     Text("Playback starts automatically when it's ready.")
                         .font(.caption).foregroundStyle(.tertiary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            case .sent:
+            case .sent(let fallback):
                 ContentUnavailableView {
-                    Label("Sent to your debrid service", systemImage: "tray.and.arrow.down")
+                    Label(fallback.map { "Sent to \($0.displayName)" } ?? "Sent to your debrid service",
+                          systemImage: "tray.and.arrow.down")
                 } description: {
-                    Text("It will appear in your library once downloaded.")
+                    Text(fallback.map {
+                        "Your addon's service rejected this torrent, so it was sent to \($0.displayName) instead — it will download there."
+                    } ?? "It will appear in your library once downloaded.")
                 }
-            case .failed:
+            case .failed(let bothTried):
                 ContentUnavailableView {
                     Label("Couldn't send to your debrid service", systemImage: "exclamationmark.triangle")
                 } description: {
-                    Text(AppSettings.shared.adToken.isEmpty
-                         ? "Real-Debrid couldn't start this torrent — it may be dead. Try another stream."
-                         : "Neither debrid service could start this torrent — it may be dead. Try another stream.")
+                    Text(bothTried
+                         ? "Neither debrid service could start this torrent — it may be dead. Try another stream."
+                         : "Your debrid service couldn't start this torrent — it may be dead. Try another stream.")
                 } actions: {
                     Button("Back to Streams") { self.uncachedSend = nil }
                 }
@@ -190,16 +200,24 @@ struct StreamPickerSheet: View {
                 guard !Task.isCancelled else { return }
                 switch outcome {
                 case .added(let service, let transferID):
-                    uncachedSend = .downloading
-                    if await model.waitUntilDownloaded(service: service, transferID: transferID) {
+                    // Failover placement: the resolver URL is bound to the
+                    // addon's own service and can't stream a transfer that
+                    // landed on the other one — report instead of auto-play.
+                    guard service == (row.addon.service ?? .realDebrid) else {
+                        uncachedSend = .sent(fallback: service)
+                        return
+                    }
+                    uncachedSend = .downloading(service)
+                    if await model.waitUntilDownloaded(service: service, transferID: transferID),
+                       !Task.isCancelled {
                         startPlayback(url: url)
                     } else if !Task.isCancelled {
-                        uncachedSend = .failed
+                        uncachedSend = .failed(bothTried: false)
                     }
                 case .probed:
-                    uncachedSend = .sent      // registered blind; nothing to poll
-                case .failed:
-                    uncachedSend = .failed
+                    uncachedSend = .sent(fallback: nil)   // registered blind; nothing to poll
+                case .failed(let bothTried):
+                    uncachedSend = .failed(bothTried: bothTried)
                 }
             }
             return

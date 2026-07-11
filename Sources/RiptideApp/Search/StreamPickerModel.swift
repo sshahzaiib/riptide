@@ -70,7 +70,7 @@ final class StreamPickerModel {
     enum UncachedOutcome {
         case added(service: DebridServiceID, transferID: String)  // pollable → auto-play
         case probed                                               // registered blind
-        case failed
+        case failed(bothTried: Bool)   // true when the router attempted both services
     }
 
     /// RD download progress (0–100) for an uncached pick, nil when idle.
@@ -92,27 +92,32 @@ final class StreamPickerModel {
     /// account-diff fallback covers opaque resolver URLs (no failover there —
     /// nothing to re-add).
     func registerUncached(stream: AddonStream, addon: ConfiguredAddon) async -> UncachedOutcome {
-        guard let url = stream.httpURL else { return .failed }
+        guard let url = stream.httpURL else { return .failed(bothTried: false) }
         let router = router
         if let hash = stream.infoHash ?? TorrentAdder.infohash(inURL: url) {
+            // The hash path fails over, so a failure here means every
+            // configured service was tried.
+            let settings = AppSettings.shared
+            let bothTried = !settings.rdToken.isEmpty && !settings.adToken.isEmpty
             do {
                 let placed = try await router.addWithFailover(
                     magnet: "magnet:?xt=urn:btih:\(hash)",
                     preferring: addon.service)
-                if case .failed = placed.transfer.status { return .failed }
+                if case .failed = placed.transfer.status { return .failed(bothTried: bothTried) }
                 return .added(service: placed.serviceID, transferID: placed.transfer.id)
-            } catch { return .failed }
+            } catch { return .failed(bothTried: bothTried) }
         }
         // Opaque resolver URL: probe, then find the new transfer by diffing
-        // the TARGET service's account.
-        guard let target = router.service(addon.service ?? .realDebrid) else { return .failed }
+        // the TARGET service's account. No failover here — nothing to re-add.
+        guard let target = router.service(addon.service ?? .realDebrid)
+        else { return .failed(bothTried: false) }
         // No snapshot -> no reliable diff: an empty `before` would make every
         // pre-existing transfer look new and lock onto the wrong one. Register
         // blind instead.
         guard let before = try? await target.transferIDs() else {
-            return await probeResolver(url: url) ? .probed : .failed
+            return await probeResolver(url: url) ? .probed : .failed(bothTried: false)
         }
-        guard await probeResolver(url: url) else { return .failed }
+        guard await probeResolver(url: url) else { return .failed(bothTried: false) }
         for attempt in 0..<6 {
             if attempt > 0 { try? await Task.sleep(for: .seconds(3)) }
             if Task.isCancelled { break }
