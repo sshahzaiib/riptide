@@ -67,6 +67,15 @@ final class StreamPickerModel {
         }
     }
 
+    enum UncachedOutcome {
+        case added(torrentID: String)   // on RD, pollable → can auto-play when done
+        case probed                     // resolver-registered, no ID to track
+        case failed
+    }
+
+    /// RD download progress (0–100) for an uncached pick, nil when idle.
+    private(set) var downloadProgress: Double?
+
     /// Uncached selection: add the torrent to Real-Debrid so it downloads
     /// into the library. Preferred path: recover the infohash (stream field
     /// or resolver URL) and add the magnet through our own RD client —
@@ -74,9 +83,8 @@ final class StreamPickerModel {
     /// resolver probes routinely skip (they answer before metadata arrives,
     /// leaving RD stuck at "waiting_files_selection" forever). If the
     /// resolver already added it in that stuck state, finish the selection.
-    /// Returns false when RD rejected the magnet or nothing could be added.
-    func registerUncached(stream: AddonStream) async -> Bool {
-        guard let url = stream.httpURL else { return false }
+    func registerUncached(stream: AddonStream) async -> UncachedOutcome {
+        guard let url = stream.httpURL else { return .failed }
         if let hash = stream.infoHash ?? TorrentAdder.infohash(inURL: url) {
             let adder = TorrentAdder(rd: RealDebridClient(token: AppSettings.shared.rdToken))
             do {
@@ -84,10 +92,36 @@ final class StreamPickerModel {
                 if case .alreadyInLibrary(let id) = added.outcome {
                     try await adder.completeSelection(torrentID: id)
                 }
-                return true
-            } catch { return false }
+                return .added(torrentID: added.torrentID)
+            } catch { return .failed }
         }
-        return await probeResolver(url: url)
+        return await probeResolver(url: url) ? .probed : .failed
+    }
+
+    /// Polls RD until the torrent finishes downloading (then the resolver
+    /// URL streams like any cached pick). Publishes progress for the sheet.
+    /// False on terminal RD failure or repeated polling errors; exits early
+    /// when the owning task is cancelled (sheet closed).
+    func waitUntilDownloaded(torrentID: String) async -> Bool {
+        let rd = RealDebridClient(token: AppSettings.shared.rdToken)
+        downloadProgress = 0
+        defer { downloadProgress = nil }
+        var consecutiveFailures = 0
+        while !Task.isCancelled {
+            do {
+                let info = try await rd.torrentInfo(torrentID)
+                consecutiveFailures = 0
+                if info.status == "downloaded" { return true }
+                guard !["magnet_error", "error", "virus", "dead"].contains(info.status)
+                else { return false }
+                downloadProgress = info.progress
+            } catch {
+                consecutiveFailures += 1
+                if consecutiveFailures >= 5 { return false }
+            }
+            try? await Task.sleep(for: .seconds(3))
+        }
+        return false
     }
 
     /// Fallback when no infohash is recoverable: fetching one byte makes the

@@ -10,8 +10,9 @@ struct StreamPickerSheet: View {
     @Environment(LibraryModel.self) private var library
     @State private var model = StreamPickerModel()
 
-    private enum UncachedSend { case inFlight, sent, failed }
+    private enum UncachedSend { case inFlight, downloading, sent, failed }
     @State private var uncachedSend: UncachedSend?
+    @State private var uncachedTask: Task<Void, Never>?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -21,6 +22,7 @@ struct StreamPickerSheet: View {
         }
         .frame(width: 560, height: 480)
         .task { await model.load(request) }
+        .onDisappear { uncachedTask?.cancel() }
     }
 
     private var sheetTitle: String {
@@ -71,6 +73,16 @@ struct StreamPickerSheet: View {
             case .inFlight:
                 ProgressView("Sending to your debrid service…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .downloading:
+                VStack(spacing: 12) {
+                    ProgressView(value: model.downloadProgress ?? 0, total: 100)
+                        .frame(maxWidth: 280)
+                    Text("Downloading on Real-Debrid… \(Int(model.downloadProgress ?? 0))%")
+                        .foregroundStyle(.secondary)
+                    Text("Playback starts automatically when it's ready.")
+                        .font(.caption).foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .sent:
                 ContentUnavailableView {
                     Label("Sent to your debrid service", systemImage: "tray.and.arrow.down")
@@ -169,9 +181,29 @@ struct StreamPickerSheet: View {
         guard let url = row.stream.httpURL else { return }
         if row.meta.cached == false {
             uncachedSend = .inFlight
-            Task { uncachedSend = await model.registerUncached(stream: row.stream) ? .sent : .failed }
+            uncachedTask = Task {
+                switch await model.registerUncached(stream: row.stream) {
+                case .added(let torrentID):
+                    // Trackable on RD — wait out the download, then the
+                    // resolver URL streams like any cached pick.
+                    uncachedSend = .downloading
+                    if await model.waitUntilDownloaded(torrentID: torrentID) {
+                        startPlayback(url: url)
+                    } else if !Task.isCancelled {
+                        uncachedSend = .failed
+                    }
+                case .probed:
+                    uncachedSend = .sent      // registered blind; nothing to poll
+                case .failed:
+                    uncachedSend = .failed
+                }
+            }
             return
         }
+        startPlayback(url: url)
+    }
+
+    private func startPlayback(url: URL) {
         let key = "addon#\(request.imdbID):\(request.season ?? 0):\(request.episode ?? 0)"
         openWindow(value: PlayItem(itemKey: key,
                                    title: sheetTitle,
