@@ -23,7 +23,11 @@ struct AddonsSection: View {
                         get: { addon.service ?? .realDebrid },
                         set: { newValue in
                             var list = settings.addons
-                            list[index].service = newValue
+                            // Resolve by id, not the render-time index — a row
+                            // removed between render and set would misindex.
+                            guard let idx = list.firstIndex(where: { $0.id == addon.id })
+                            else { return }
+                            list[idx].service = newValue
                             settings.saveAddons(list)
                         }
                     )) {
