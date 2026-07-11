@@ -12,13 +12,10 @@ struct AddonsSection: View {
     var body: some View {
         Section("Addons (Torrentio, AIOStreams, …)") {
             ForEach(Array(settings.addons.enumerated()), id: \.element.id) { index, addon in
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(addon.name)
-                        Text(addon.url.host ?? "")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer()
+                // LabeledContent, not a bare HStack: the grouped form imposes
+                // its label/content column split on rows, starving a leading
+                // VStack to a sliver (chars wrapped vertically).
+                LabeledContent {
                     Picker("", selection: Binding(
                         get: { addon.service ?? .realDebrid },
                         set: { newValue in
@@ -46,6 +43,9 @@ struct AddonsSection: View {
                         .disabled(index == settings.addons.count - 1)
                     Button(role: .destructive) { remove(addon) } label: { Image(systemName: "trash") }
                         .buttonStyle(.borderless)
+                } label: {
+                    Text(addon.name).lineLimit(1)
+                    Text(addon.url.host ?? "").lineLimit(1).truncationMode(.middle)
                 }
             }
             HStack {
