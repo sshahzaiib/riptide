@@ -74,4 +74,67 @@ final class AllDebridClientTests: XCTestCase {
         do { _ = try await client().magnetUpload("magnet:?xt=urn:btih:x"); XCTFail("expected throw") }
         catch AllDebridError.rateLimited {} catch { XCTFail("wrong error \(error)") }
     }
+
+    func testMagnetStatusListDecodesAndRoutes() async throws {
+        nonisolated(unsafe) var path: String?
+        MockURLProtocol.setHandler { req in
+            path = req.url?.path
+            return .json(#"{"status":"success","data":{"magnets":[{"id":1,"filename":"a.mkv","size":100,"status":"Ready","statusCode":4},{"id":2,"filename":"b","size":50,"status":"Downloading","statusCode":1,"downloaded":25}]}}"#)
+        }
+        let list = try await client().magnetStatusList()
+        XCTAssertEqual(path, "/v4.1/magnet/status")
+        XCTAssertEqual(list.map(\.id), [1, 2])
+        XCTAssertEqual(list[0].statusCode, 4)
+        XCTAssertEqual(list[1].downloaded, 25)
+    }
+
+    /// Querying one id returns data.magnets as a single OBJECT, not an array.
+    func testMagnetStatusSingleObjectDecodes() async throws {
+        nonisolated(unsafe) var body: String?
+        MockURLProtocol.setHandler { req in
+            body = req.bodyData.flatMap { String(data: $0, encoding: .utf8) }
+            return .json(#"{"status":"success","data":{"magnets":{"id":7,"filename":"x.mkv","size":10,"status":"Ready","statusCode":4}}}"#)
+        }
+        let magnet = try await client().magnetStatus(id: 7)
+        XCTAssertEqual(body, "id=7")
+        XCTAssertEqual(magnet.id, 7)
+        XCTAssertEqual(magnet.statusCode, 4)
+    }
+
+    func testMagnetFilesFlattensTreeToVideoFiles() async throws {
+        MockURLProtocol.setHandler { _ in
+            .json(#"{"status":"success","data":{"magnets":[{"id":5,"files":[{"n":"Pack","e":[{"n":"S01E01.mkv","s":900,"l":"https://alldebrid.com/f/aaa"},{"n":"info.nfo","s":1,"l":"https://alldebrid.com/f/bbb"}]},{"n":"Sample.mp4","s":10,"l":"https://alldebrid.com/f/ccc"}]}]}}"#)
+        }
+        let files = try await client().magnetFiles(ids: [5])
+        XCTAssertEqual(files.count, 1)
+        let flat = ADFileNode.flattenVideoFiles(files[0].files)
+        XCTAssertEqual(flat.map(\.name), ["S01E01.mkv", "Sample.mp4"])
+        XCTAssertEqual(flat[0].path, "Pack/S01E01.mkv")   // folder joined into path
+        XCTAssertEqual(flat[0].link, "https://alldebrid.com/f/aaa")
+        // .nfo is skipped (not a video extension); sample FILTERING is the
+        // parser's job downstream — flatten keeps every video file.
+    }
+
+    func testUnlockReturnsDirectURL() async throws {
+        nonisolated(unsafe) var body: String?
+        MockURLProtocol.setHandler { req in
+            body = req.bodyData.flatMap { String(data: $0, encoding: .utf8) }
+            return .json(#"{"status":"success","data":{"link":"https://x.debrid.it/dl/abc/file.mkv"}}"#)
+        }
+        let url = try await client().unlock(link: "https://alldebrid.com/f/aaa")
+        XCTAssertEqual(body, "link=https%3A%2F%2Falldebrid.com%2Ff%2Faaa")
+        XCTAssertEqual(url.absoluteString, "https://x.debrid.it/dl/abc/file.mkv")
+    }
+
+    func testMagnetDeleteRoutes() async throws {
+        nonisolated(unsafe) var captured: (path: String?, body: String?)
+        MockURLProtocol.setHandler { req in
+            captured = (req.url?.path, req.bodyData.flatMap { String(data: $0, encoding: .utf8) })
+            return .json(#"{"status":"success","data":{"message":"Magnet was successfully deleted"}}"#)
+        }
+        try await client().magnetDelete(id: 42)
+        XCTAssertEqual(captured.path, "/v4/magnet/delete")
+        XCTAssertEqual(captured.body, "id=42")
+    }
 }
+

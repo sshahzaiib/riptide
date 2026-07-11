@@ -134,3 +134,101 @@ public enum AllDebridError: Error, Equatable, Sendable {
             : .magnetRejected(code: apiError.code)
     }
 }
+
+extension AllDebridClient {
+    /// All magnets in the account (v4.1 list form: no links, no hash).
+    public func magnetStatusList() async throws -> [ADMagnet] {
+        struct Payload: Decodable { let magnets: [ADMagnet] }
+        let data = try await send("v4.1/magnet/status", form: [:])
+        return try decodeData(Payload.self, from: data).magnets
+    }
+
+    /// One magnet's status. AD returns data.magnets as a single object here.
+    public func magnetStatus(id: Int) async throws -> ADMagnet {
+        struct Payload: Decodable { let magnets: ADMagnet }
+        let data = try await send("v4.1/magnet/status", form: ["id": String(id)])
+        return try decodeData(Payload.self, from: data).magnets
+    }
+
+    /// Per-magnet file/link trees (batched).
+    public func magnetFiles(ids: [Int]) async throws -> [ADMagnetFiles] {
+        struct Payload: Decodable { let magnets: [ADMagnetFiles] }
+        // AD accepts repeated id[] params; formEncode takes a dict, so send
+        // one id per call when batching is unavailable. Single-id calls are
+        // all plan 1 needs; plan 2 revisits batching for library sync.
+        var result: [ADMagnetFiles] = []
+        for id in ids {
+            let data = try await send("v4/magnet/files", form: ["id[]": String(id)])
+            result.append(contentsOf: try decodeData(Payload.self, from: data).magnets)
+        }
+        return result
+    }
+
+    public func unlock(link: String) async throws -> URL {
+        struct Payload: Decodable { let link: String }
+        let data = try await send("v4/link/unlock", form: ["link": link])
+        let direct = try decodeData(Payload.self, from: data).link
+        guard let url = URL(string: direct) else { throw AllDebridError.badResponse }
+        return url
+    }
+
+    public func magnetDelete(id: Int) async throws {
+        struct Payload: Decodable { let message: String? }
+        let data = try await send("v4/magnet/delete", form: ["id": String(id)])
+        _ = try decodeData(Payload.self, from: data)
+    }
+}
+
+/// v4.1 magnet/status entry. statusCode: 0–3 processing, 4 ready, ≥5 error.
+public struct ADMagnet: Decodable, Sendable, Equatable {
+    public let id: Int
+    public let filename: String?
+    public let size: Int64
+    public let status: String?
+    public let statusCode: Int
+    public let downloaded: Int64
+
+    enum CodingKeys: String, CodingKey { case id, filename, size, status, statusCode, downloaded }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(Int.self, forKey: .id)
+        filename = try c.decodeIfPresent(String.self, forKey: .filename)
+        size = try c.decodeIfPresent(Int64.self, forKey: .size) ?? 0
+        status = try c.decodeIfPresent(String.self, forKey: .status)
+        statusCode = try c.decode(Int.self, forKey: .statusCode)
+        downloaded = try c.decodeIfPresent(Int64.self, forKey: .downloaded) ?? 0
+    }
+}
+
+public struct ADMagnetFiles: Decodable, Sendable, Equatable {
+    public let id: Int
+    public let files: [ADFileNode]
+}
+
+/// AD's file tree: {n, s, l} for files, {n, e: [children]} for folders.
+public struct ADFileNode: Decodable, Sendable, Equatable {
+    public let n: String
+    public let s: Int64?
+    public let l: String?
+    public let e: [ADFileNode]?
+
+    /// Depth-first flatten to video files, folder names joined into `path`.
+    public static func flattenVideoFiles(_ nodes: [ADFileNode])
+        -> [(path: String, name: String, size: Int64, link: String)] {
+        var out: [(path: String, name: String, size: Int64, link: String)] = []
+        func walk(_ node: ADFileNode, prefix: String) {
+            if let children = node.e {
+                for child in children { walk(child, prefix: prefix + node.n + "/") }
+                return
+            }
+            guard let link = node.l else { return }
+            let ext = (node.n as NSString).pathExtension.lowercased()
+            guard ReleaseNameParser.videoExtensions.contains(ext) else { return }
+            out.append((path: prefix + node.n, name: node.n, size: node.s ?? 0, link: link))
+        }
+        for node in nodes { walk(node, prefix: "") }
+        return out
+    }
+}
+
