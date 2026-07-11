@@ -61,6 +61,7 @@ struct ItemDetailView: View {
                     if let year = item.year { Text(String(year)) }
                     if let runtime = details?.runtime { Text("\(runtime) min") }
                     if let quality = item.quality { Text(quality.uppercased()) }
+                    ServiceBadge(service: item.service)
                     if let rating = details?.voteAverage ?? item.rating {
                         Label(String(format: "%.1f", rating), systemImage: "star.fill")
                             .foregroundStyle(.yellow)
@@ -222,6 +223,7 @@ struct ShowDetailView: View {
                     if let runtime = meta?.runtime { Text("\(runtime) min") }
                     if let air = meta?.airDate { Text(air) }
                     if let quality = item.quality { Text(quality.uppercased()) }
+                    ServiceBadge(service: item.service)
                 }
                 .font(.callout)
                 .foregroundStyle(.secondary)

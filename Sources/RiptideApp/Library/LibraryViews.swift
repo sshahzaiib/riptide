@@ -375,7 +375,10 @@ struct PlayableFileRow: View {
         HStack {
             Image(systemName: "doc.fill").foregroundStyle(.secondary)
             VStack(alignment: .leading) {
-                Text(item.filename).lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(item.filename).lineLimit(1)
+                    ServiceBadge(service: item.service)
+                }
                 Text(ByteCountFormatter.string(fromByteCount: item.sizeBytes,
                                                countStyle: .file))
                     .font(.caption).foregroundStyle(.secondary)
@@ -416,6 +419,20 @@ struct AddedItemDestination: View {
             }
         } else {
             ContentUnavailableView("Item not in library yet", systemImage: "clock")
+        }
+    }
+}
+
+/// "RD" / "AD" source tag. Only rendered for non-RD items until a second
+/// service is the norm — an all-RD library doesn't need per-file noise.
+struct ServiceBadge: View {
+    let service: String
+    var body: some View {
+        if service != "rd" {
+            Text(service.uppercased())
+                .font(.caption2.bold())
+                .padding(.horizontal, 4).padding(.vertical, 1)
+                .background(.quaternary, in: Capsule())
         }
     }
 }
