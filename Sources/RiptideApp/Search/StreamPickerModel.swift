@@ -67,11 +67,32 @@ final class StreamPickerModel {
         }
     }
 
-    /// Uncached selection: fetching one byte makes the addon's resolver
-    /// register the torrent with the debrid service; no playback.
-    /// Returns false when the resolver was unreachable or rejected the
-    /// request, so the UI doesn't claim success it can't verify.
-    nonisolated func registerUncached(url: URL) async -> Bool {
+    /// Uncached selection: add the torrent to Real-Debrid so it downloads
+    /// into the library. Preferred path: recover the infohash (stream field
+    /// or resolver URL) and add the magnet through our own RD client —
+    /// TorrentAdder polls metadata and auto-selects video files, which
+    /// resolver probes routinely skip (they answer before metadata arrives,
+    /// leaving RD stuck at "waiting_files_selection" forever). If the
+    /// resolver already added it in that stuck state, finish the selection.
+    /// Returns false when RD rejected the magnet or nothing could be added.
+    func registerUncached(stream: AddonStream) async -> Bool {
+        guard let url = stream.httpURL else { return false }
+        if let hash = stream.infoHash ?? TorrentAdder.infohash(inURL: url) {
+            let adder = TorrentAdder(rd: RealDebridClient(token: AppSettings.shared.rdToken))
+            do {
+                let added = try await adder.add(.magnet("magnet:?xt=urn:btih:\(hash)"))
+                if case .alreadyInLibrary(let id) = added.outcome {
+                    try await adder.completeSelection(torrentID: id)
+                }
+                return true
+            } catch { return false }
+        }
+        return await probeResolver(url: url)
+    }
+
+    /// Fallback when no infohash is recoverable: fetching one byte makes the
+    /// addon's resolver register the torrent with the debrid service.
+    private nonisolated func probeResolver(url: URL) async -> Bool {
         var request = URLRequest(url: url)
         request.setValue("bytes=0-0", forHTTPHeaderField: "Range")
         request.timeoutInterval = 30

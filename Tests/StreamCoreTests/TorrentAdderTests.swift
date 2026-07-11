@@ -170,4 +170,70 @@ final class TorrentAdderTests: XCTestCase {
         XCTAssertNil(TorrentAdder.infohash(fromMagnet: "https://example.com/not-a-magnet"))
         XCTAssertNil(TorrentAdder.infohash(fromMagnet: "magnet:?dn=no-xt"))
     }
+
+    // MARK: infohash from resolver URLs
+
+    func testInfohashFromResolverURL() {
+        // Torrentio-style: {base}/realdebrid/{apikey}/{hash}/{fileIdx}/{name}
+        let url = URL(string: "https://torrentio.strem.fun/realdebrid/SOMEAPIKEY123/35790E66E077E90A14A067A983A3568E56C95333/null/0/My.Show.S01E01.mkv")!
+        XCTAssertEqual(TorrentAdder.infohash(inURL: url),
+                       "35790e66e077e90a14a067a983a3568e56c95333")
+    }
+
+    func testInfohashFromResolverURLNilWhenAbsent() {
+        let url = URL(string: "https://resolver.example/play/My.Movie.2023.1080p.mkv")!
+        XCTAssertNil(TorrentAdder.infohash(inURL: url))
+    }
+
+    // MARK: completeSelection
+
+    /// A resolver-added torrent stuck at waiting_files_selection gets its
+    /// video files selected so RD actually starts downloading.
+    func testCompleteSelectionSelectsVideoFilesOnStuckTorrent() async throws {
+        nonisolated(unsafe) var selectBody: String?
+        MockURLProtocol.setHandler(scriptedHandler(files: mixedPack,
+                                                   postSelectStatus: "downloading") { path, body in
+            if path.contains("/selectFiles/") { selectBody = body }
+        })
+        try await TorrentAdder(rd: client()).completeSelection(torrentID: "TID")
+        XCTAssertEqual(selectBody, "files=1%2C4")
+    }
+
+    /// Metadata may still be resolving when we arrive — wait it out, then select.
+    func testCompleteSelectionWaitsOutMagnetConversion() async throws {
+        nonisolated(unsafe) var infoCalls = 0
+        nonisolated(unsafe) var selectBody: String?
+        let files = mixedPack
+        MockURLProtocol.setHandler { req in
+            let path = req.url!.path
+            if path.contains("/selectFiles/") {
+                selectBody = req.bodyData.flatMap { String(data: $0, encoding: .utf8) }
+                return .init(status: 204)
+            }
+            if path.contains("/torrents/info/") {
+                infoCalls += 1
+                let status = infoCalls == 1 ? "magnet_conversion" : "waiting_files_selection"
+                return .json(#"{"id":"TID","filename":"pack","bytes":9,"progress":0,"status":"\#(status)","files":\#(files),"links":[]}"#)
+            }
+            return .init(status: 404)
+        }
+        try await TorrentAdder(rd: client()).completeSelection(torrentID: "TID")
+        XCTAssertEqual(selectBody, "files=1%2C4")
+    }
+
+    /// Already-selected torrents (downloading/downloaded) must be left alone —
+    /// RD rejects selectFiles on them (action_already_done).
+    func testCompleteSelectionNoopsWhenAlreadyStarted() async throws {
+        nonisolated(unsafe) var selectCalled = false
+        MockURLProtocol.setHandler { req in
+            let path = req.url!.path
+            if path.contains("/selectFiles/") { selectCalled = true; return .init(status: 204) }
+            if path.contains("/torrents/info/") {
+                return .json(#"{"id":"TID","filename":"pack","bytes":9,"progress":10,"status":"downloading","files":[],"links":[]}"#)
+            }
+            return .init(status: 404)
+        }
+        try await TorrentAdder(rd: client()).completeSelection(torrentID: "TID")
+        XCTAssertFalse(selectCalled)
+    }
 }

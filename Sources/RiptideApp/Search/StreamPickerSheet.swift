@@ -81,7 +81,7 @@ struct StreamPickerSheet: View {
                 ContentUnavailableView {
                     Label("Couldn't send to your debrid service", systemImage: "exclamationmark.triangle")
                 } description: {
-                    Text("The addon's resolver didn't accept the request. Try another stream.")
+                    Text("Real-Debrid couldn't start this torrent — it may be dead. Try another stream.")
                 } actions: {
                     Button("Back to Streams") { self.uncachedSend = nil }
                 }
@@ -169,7 +169,7 @@ struct StreamPickerSheet: View {
         guard let url = row.stream.httpURL else { return }
         if row.meta.cached == false {
             uncachedSend = .inFlight
-            Task { uncachedSend = await model.registerUncached(url: url) ? .sent : .failed }
+            Task { uncachedSend = await model.registerUncached(stream: row.stream) ? .sent : .failed }
             return
         }
         let key = "addon#\(request.imdbID):\(request.season ?? 0):\(request.episode ?? 0)"

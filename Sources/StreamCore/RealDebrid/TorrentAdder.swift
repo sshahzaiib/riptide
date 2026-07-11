@@ -90,6 +90,29 @@ public struct TorrentAdder: Sendable {
                      files: info.files, selectedFileIDs: selectedIDs)
     }
 
+    /// Finish a torrent another client added but left unselected — e.g. a
+    /// Stremio addon resolver that answered before magnet metadata arrived,
+    /// leaving RD stuck at "waiting_files_selection" forever. Waits out
+    /// metadata resolution, then auto-selects video files. No-ops on
+    /// torrents that already started (RD rejects re-selection).
+    public func completeSelection(torrentID: String) async throws {
+        let info = try await rd.pollUntil(torrentID) { $0.status != "magnet_conversion" }
+        guard info.status == "waiting_files_selection" else { return }
+        let videos = Self.videoFiles(in: info.files)
+        let chosen = (videos.isEmpty ? info.files : videos).map(\.id)
+        try await rd.selectFiles(torrentID: torrentID,
+                                 files: chosen.map(String.init).joined(separator: ","))
+    }
+
+    /// Lowercased infohash embedded in a debrid resolver URL's path
+    /// (Torrentio/Comet-style `…/{apikey}/{infohash}/{fileIdx}/{name}`) —
+    /// the last 40-hex-char path component, nil when there isn't one.
+    public static func infohash(inURL url: URL) -> String? {
+        url.pathComponents.last {
+            $0.count == 40 && $0.allSatisfy(\.isHexDigit)
+        }?.lowercased()
+    }
+
     /// Lowercased infohash from a magnet's `xt=urn:btih:` param, nil otherwise.
     static func infohash(fromMagnet magnet: String) -> String? {
         guard let comps = URLComponents(string: magnet), comps.scheme == "magnet"
