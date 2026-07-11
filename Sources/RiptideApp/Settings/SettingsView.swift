@@ -75,9 +75,13 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .sheet(isPresented: $showTraktConnect) { TraktConnectSheet() }
-        // Fixed height so the grouped Form scrolls instead of growing the
-        // sheet past the window (it overflowed once enough sections landed).
-        .frame(width: 480, height: 620)
+        // The grouped form's internal scroll view lays out at ~580pt minimum
+        // for this content and overflows (clips both edges) below that —
+        // measured via offscreen NSHostingView renders. Min 600 clears it;
+        // flexible max makes the sheet user-resizable, capped height keeps
+        // it scrolling instead of outgrowing the window.
+        .frame(minWidth: 600, maxWidth: .infinity,
+               minHeight: 480, idealHeight: 660, maxHeight: .infinity)
         .padding(.bottom, 12)
     }
 
