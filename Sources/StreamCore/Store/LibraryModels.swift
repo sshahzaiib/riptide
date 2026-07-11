@@ -4,17 +4,22 @@ import SwiftData
 /// Input for library sync: one playable file, already flattened from RD's
 /// torrent + file layout by the refresher.
 public struct LibraryFileEntry: Sendable, Equatable {
-    public let torrentID: String
+    public let service: String         // "rd" | "ad"
+    public let torrentID: String       // RD torrent id or AD magnet id
     public let fileIndex: Int
     public let filename: String        // per-file basename (or torrent name)
     public let bytes: Int64
     public let added: String           // raw ISO-8601 from the torrent
-    public let link: String            // RD hoster link for THIS file
+    public let link: String            // debrid hoster link for THIS file
 
-    public var itemKey: String { "\(torrentID)#\(fileIndex)" }
+    /// RD keys keep their pre-multi-debrid format so nothing re-syncs.
+    public var itemKey: String {
+        service == "rd" ? "\(torrentID)#\(fileIndex)" : "\(service)#\(torrentID)#\(fileIndex)"
+    }
 
-    public init(torrentID: String, fileIndex: Int, filename: String,
-                bytes: Int64, added: String, link: String) {
+    public init(service: String = "rd", torrentID: String, fileIndex: Int,
+                filename: String, bytes: Int64, added: String, link: String) {
+        self.service = service
         self.torrentID = torrentID
         self.fileIndex = fileIndex
         self.filename = filename
@@ -29,6 +34,7 @@ public struct LibraryFileEntry: Sendable, Equatable {
 @Model
 public final class LibraryItem {
     @Attribute(.unique) public var itemKey: String   // "<torrentID>#<fileIndex>"
+    public var service: String = "rd"
     public var torrentID: String
     public var fileIndex: Int
     public var filename: String
@@ -50,6 +56,7 @@ public final class LibraryItem {
     public var lastRefreshed: Date
 
     public init(entry: LibraryFileEntry, parsed: ParsedRelease, lastRefreshed: Date = .now) {
+        self.service = entry.service
         self.itemKey = entry.itemKey
         self.torrentID = entry.torrentID
         self.fileIndex = entry.fileIndex

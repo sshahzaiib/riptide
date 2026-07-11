@@ -126,4 +126,38 @@ final class LibraryStoreTests: XCTestCase {
         XCTAssertNil(try store.item(tmdbID: 603, season: 1, episode: 1))     // movie ≠ episode
         XCTAssertNil(try store.item(tmdbID: 42, season: nil, episode: nil))  // unknown id
     }
+
+    func testADEntryKeyIsNamespacedAndRDKeyUnchanged() {
+        let rd = LibraryFileEntry(torrentID: "T1", fileIndex: 0, filename: "a.mkv",
+                                  bytes: 1, added: "", link: "l")
+        let ad = LibraryFileEntry(service: "ad", torrentID: "77", fileIndex: 2,
+                                  filename: "b.mkv", bytes: 1, added: "", link: "l")
+        XCTAssertEqual(rd.itemKey, "T1#0")
+        XCTAssertEqual(ad.itemKey, "ad#77#2")
+    }
+
+    func testUpsertProtectsFailedServicesOrphans() throws {
+        let store = try LibraryStore.inMemory()
+        let rd = LibraryFileEntry(torrentID: "T1", fileIndex: 0, filename: "Movie.2020.mkv",
+                                  bytes: 1, added: "", link: "l1")
+        let ad = LibraryFileEntry(service: "ad", torrentID: "77", fileIndex: 0,
+                                  filename: "Show.S01E01.mkv", bytes: 2, added: "", link: "l2")
+        _ = try store.upsert(entries: [rd, ad])
+        // AD refresh failed: its orphan survives an upsert that omits it.
+        _ = try store.upsert(entries: [rd], protecting: ["ad"])
+        XCTAssertEqual(try store.items().count, 2)
+        // AD refreshed fine and really is gone: orphan deleted.
+        _ = try store.upsert(entries: [rd])
+        XCTAssertEqual(try store.items().map(\.itemKey), ["T1#0"])
+    }
+
+    func testCachedEntriesByTorrentGroupsAndKeepsService() throws {
+        let store = try LibraryStore.inMemory()
+        let ad = LibraryFileEntry(service: "ad", torrentID: "77", fileIndex: 0,
+                                  filename: "Show.S01E01.mkv", bytes: 2, added: "", link: "l2")
+        _ = try store.upsert(entries: [ad])
+        let grouped = try store.cachedEntriesByTorrent()
+        XCTAssertEqual(grouped["77"], [ad])
+    }
 }
+

@@ -60,12 +60,13 @@ public final class LibraryStore {
         }
     }
 
-    // MARK: Library sync
-
     /// Mirror the flattened RD file list into the cache: insert new, update
     /// changed (filename/link/size), delete vanished. Parsing happens here so
     /// the UI never sees an unparsed item.
-    public func upsert(entries: [LibraryFileEntry]) throws -> UpsertSummary {
+    /// `protecting` = service ids whose refresh FAILED this cycle: their
+    /// orphans survive (a service outage must not wipe its items).
+    public func upsert(entries: [LibraryFileEntry],
+                       protecting failedServices: Set<String> = []) throws -> UpsertSummary {
         let existing = try context.fetch(FetchDescriptor<LibraryItem>())
         var byKey = Dictionary(uniqueKeysWithValues: existing.map { ($0.itemKey, $0) })
         var summary = UpsertSummary(inserted: 0, updated: 0, deleted: 0)
@@ -104,7 +105,7 @@ public final class LibraryStore {
         // too, or Continue Watching would keep offering dead entries.
         if !byKey.isEmpty {
             let allStates = try context.fetch(FetchDescriptor<WatchState>())
-            for (_, orphan) in byKey {
+            for (_, orphan) in byKey where !failedServices.contains(orphan.service) {
                 for state in allStates where state.itemKey == orphan.itemKey {
                     context.delete(state)
                 }
@@ -148,11 +149,22 @@ public final class LibraryStore {
         let descriptor = FetchDescriptor<LibraryItem>(
             predicate: #Predicate { $0.torrentID == torrentID })
         return try context.fetch(descriptor).map {
-            LibraryFileEntry(torrentID: $0.torrentID, fileIndex: $0.fileIndex,
-                             filename: $0.filename, bytes: $0.sizeBytes,
-                             added: $0.addedAt, link: $0.link)
+            LibraryFileEntry(service: $0.service, torrentID: $0.torrentID,
+                             fileIndex: $0.fileIndex, filename: $0.filename,
+                             bytes: $0.sizeBytes, added: $0.addedAt, link: $0.link)
         }
     }
+
+    /// All stored entries grouped by torrentID — the cache adapters consult
+    /// to skip per-torrent detail RPCs.
+    public func cachedEntriesByTorrent() throws -> [String: [LibraryFileEntry]] {
+        Dictionary(grouping: try items().map {
+            LibraryFileEntry(service: $0.service, torrentID: $0.torrentID,
+                             fileIndex: $0.fileIndex, filename: $0.filename,
+                             bytes: $0.sizeBytes, added: $0.addedAt, link: $0.link)
+        }, by: \.torrentID)
+    }
+
 
     public func applyMatch(itemKey: String, tmdbID: Int, mediaKind: String,
                            posterPath: String?, overview: String?, rating: Double?) throws {
