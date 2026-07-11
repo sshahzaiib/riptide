@@ -79,14 +79,28 @@ final class LibraryModel {
         refreshing = true
         defer { refreshing = false; reload() }
         do {
+            var services: [any DebridService] = [
+                RealDebridService(rd: RealDebridClient(token: settings.rdToken))
+            ]
+            if !settings.adToken.isEmpty {
+                services.append(AllDebridService(client: AllDebridClient(token: settings.adToken)))
+            }
             let refresher = LibraryRefresher(
-                rd: RealDebridClient(token: settings.rdToken),
+                services: services,
                 tmdb: TMDBClient(bearerToken: settings.tmdbToken),
                 store: store)
             let summary = try await refresher.refresh()
             await TraktService.shared.pullSync(store: store)
-            errorMessage = summary.matchFailed > 0
-                ? "\(summary.matchFailed) item(s) could not be matched on TMDB." : nil
+            if summary.authFailures.contains("rd") {
+                needsAuth = true
+            }
+            if !summary.serviceErrors.isEmpty {
+                errorMessage = "Service refresh failed: " + summary.serviceErrors.map { "\($0.key): \($0.value)" }.joined(separator: ", ")
+            } else if summary.matchFailed > 0 {
+                errorMessage = "\(summary.matchFailed) item(s) could not be matched on TMDB."
+            } else {
+                errorMessage = nil
+            }
         } catch let e as RealDebridError where e == .unauthorized {
             needsAuth = true
         } catch {

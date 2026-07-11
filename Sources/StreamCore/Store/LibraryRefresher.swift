@@ -4,9 +4,21 @@ public struct RefreshSummary: Equatable, Sendable {
     public var upsert: UpsertSummary
     public var matched: Int
     public var matchFailed: Int
+    public var serviceErrors: [String: String]
+    public var authFailures: Set<String>
 
-    public init(upsert: UpsertSummary, matched: Int, matchFailed: Int) {
-        self.upsert = upsert; self.matched = matched; self.matchFailed = matchFailed
+    public init(
+        upsert: UpsertSummary,
+        matched: Int,
+        matchFailed: Int,
+        serviceErrors: [String: String] = [:],
+        authFailures: Set<String> = []
+    ) {
+        self.upsert = upsert
+        self.matched = matched
+        self.matchFailed = matchFailed
+        self.serviceErrors = serviceErrors
+        self.authFailures = authFailures
     }
 }
 
@@ -16,46 +28,45 @@ public struct RefreshSummary: Equatable, Sendable {
 /// items as plain (still playable) file cards.
 @MainActor
 public struct LibraryRefresher {
-    let rd: RealDebridClient
+    let services: [any DebridService]
     let tmdb: TMDBClient
     let store: LibraryStore
 
-    public init(rd: RealDebridClient, tmdb: TMDBClient, store: LibraryStore) {
-        self.rd = rd; self.tmdb = tmdb; self.store = store
+    public init(services: [any DebridService], tmdb: TMDBClient, store: LibraryStore) {
+        self.services = services; self.tmdb = tmdb; self.store = store
     }
 
     public func refresh() async throws -> RefreshSummary {
-        // Only finished torrents with at least one link are streamable.
-        let torrents = try await rd.allTorrents()
-            .filter { $0.status == "downloaded" && !$0.links.isEmpty }
         let knownCounts = try store.entryCounts()
-
+        let cached = try store.cachedEntriesByTorrent()
         var entries: [LibraryFileEntry] = []
-        for t in torrents {
-            if t.links.count <= 1 {
-                entries.append(LibraryFileEntry(torrentID: t.id, fileIndex: 0,
-                                                filename: t.filename, bytes: t.bytes,
-                                                added: t.added, link: t.links[0]))
-            } else if knownCounts[t.id] == t.links.count {
-                // Already expanded on a previous refresh — no torrentInfo call.
-                entries.append(contentsOf: try store.cachedEntries(torrentID: t.id))
-            } else {
-                // Season pack / multi-file: real names live in files[].path.
-                let info = try await rd.torrentInfo(t.id)
-                let selected = info.files.filter { $0.selected == 1 }
-                for (i, file) in selected.enumerated() where i < t.links.count {
-                    let base = (file.path as NSString).lastPathComponent
-                    entries.append(LibraryFileEntry(torrentID: t.id, fileIndex: i,
-                                                    filename: base, bytes: file.bytes,
-                                                    added: t.added, link: t.links[i]))
-                }
+        var serviceErrors: [String: String] = [:]
+        var authFailures: Set<String> = []
+        var failed: Set<String> = []
+        for service in services {
+            do {
+                entries.append(contentsOf: try await service.libraryEntries(
+                    knownCounts: knownCounts, cached: cached))
+            } catch {
+                if error.isCancellation { throw error }
+                failed.insert(service.serviceID.rawValue)
+                serviceErrors[service.serviceID.rawValue] = "\(error)"
+                if case RealDebridError.unauthorized = error { authFailures.insert("rd") }
+                if case AllDebridError.authFailed = error { authFailures.insert("ad") }
             }
         }
-        let upsert = try store.upsert(entries: entries)
+        // AD copy of an RD file (same name + size, RD preferred) is dropped —
+        // AD's list API has no infohash, so name+size is the only join key.
+        let rdFiles = Set(entries.filter { $0.service == "rd" }
+            .map { "\($0.filename.lowercased())|\($0.bytes)" })
+        entries.removeAll {
+            $0.service == "ad" && rdFiles.contains("\($0.filename.lowercased())|\($0.bytes)")
+        }
+        let upsert = try store.upsert(entries: entries, protecting: failed)
 
         // Grouped matching: one TMDB search per distinct (kind, title, year) —
         // a 23-episode pack costs one API call.
-        var matched = 0, failed = 0
+        var matched = 0, failed2 = 0
         let unmatched = try store.items().filter { $0.tmdbID == nil }
         let groups = Dictionary(grouping: unmatched) {
             "\($0.mediaKind)|\($0.title.lowercased())|\($0.year.map(String.init) ?? "")"
@@ -66,7 +77,7 @@ public struct LibraryRefresher {
                 if rep.mediaKind == "episode" {
                     guard let show = try await tmdb.searchTV(title: rep.title,
                                                              year: rep.year).first else {
-                        failed += members.count; continue
+                        failed2 += members.count; continue
                     }
                     for member in members {
                         try store.applyMatch(itemKey: member.itemKey, tmdbID: show.id,
@@ -78,7 +89,7 @@ public struct LibraryRefresher {
                 } else {
                     guard let movie = try await tmdb.searchMovie(title: rep.title,
                                                                  year: rep.year).first else {
-                        failed += members.count; continue
+                        failed2 += members.count; continue
                     }
                     for member in members {
                         try store.applyMatch(itemKey: member.itemKey, tmdbID: movie.id,
@@ -90,9 +101,9 @@ public struct LibraryRefresher {
                 }
                 matched += members.count
             } catch {
-                failed += members.count
+                failed2 += members.count
             }
         }
-        return RefreshSummary(upsert: upsert, matched: matched, matchFailed: failed)
+        return RefreshSummary(upsert: upsert, matched: matched, matchFailed: failed2, serviceErrors: serviceErrors, authFailures: authFailures)
     }
 }

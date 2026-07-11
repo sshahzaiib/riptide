@@ -9,9 +9,13 @@ final class LibraryRefresherTests: XCTestCase {
     }
 
     private func makeRefresher(store: LibraryStore) -> LibraryRefresher {
-        LibraryRefresher(rd: RealDebridClient(token: "T", session: .mocked()),
-                         tmdb: TMDBClient(bearerToken: "K", session: .mocked()),
+        LibraryRefresher(services: [RealDebridService(rd: RealDebridClient(token: "T", session: .mocked()))],
+                         tmdb: makeTMDB(),
                          store: store)
+    }
+
+    private func makeTMDB() -> TMDBClient {
+        TMDBClient(bearerToken: "K", session: .mocked())
     }
 
     nonisolated private static func torrentJSON(id: String, filename: String,
@@ -165,4 +169,73 @@ final class LibraryRefresherTests: XCTestCase {
         _ = try await makeRefresher(store: store).refresh()
         XCTAssertTrue(try store.items().isEmpty)
     }
+
+    func testTwoServicesMergeIntoOneLibrary() async throws {
+        let store = try LibraryStore.inMemory()
+        MockURLProtocol.setHandler { _ in .json(#"{"results":[]}"#) }   // TMDB no-match
+        let rd = StubLibraryService(serviceID: .realDebrid) {
+            [LibraryFileEntry(torrentID: "T1", fileIndex: 0, filename: "Movie.2020.mkv",
+                              bytes: 1, added: "", link: "l1")]
+        }
+        let ad = StubLibraryService(serviceID: .allDebrid) {
+            [LibraryFileEntry(service: "ad", torrentID: "77", fileIndex: 0,
+                              filename: "Other.2021.mkv", bytes: 2, added: "", link: "l2")]
+        }
+        _ = try await LibraryRefresher(services: [rd, ad], tmdb: makeTMDB(), store: store).refresh()
+        XCTAssertEqual(Set(try store.items().map(\.itemKey)), ["T1#0", "ad#77#0"])
+    }
+
+    func testDedupeDropsADCopyOfRDFile() async throws {
+        let store = try LibraryStore.inMemory()
+        MockURLProtocol.setHandler { _ in .json(#"{"results":[]}"#) }
+        let rd = StubLibraryService(serviceID: .realDebrid) {
+            [LibraryFileEntry(torrentID: "T1", fileIndex: 0, filename: "Movie.2020.MKV",
+                              bytes: 5, added: "", link: "l1")]
+        }
+        let ad = StubLibraryService(serviceID: .allDebrid) {
+            [LibraryFileEntry(service: "ad", torrentID: "77", fileIndex: 0,
+                              filename: "movie.2020.mkv", bytes: 5, added: "", link: "l2")]
+        }
+        _ = try await LibraryRefresher(services: [rd, ad], tmdb: makeTMDB(), store: store).refresh()
+        XCTAssertEqual(try store.items().map(\.itemKey), ["T1#0"])
+    }
+
+    func testFailingServicePreservesItsItemsAndReportsError() async throws {
+        let store = try LibraryStore.inMemory()
+        MockURLProtocol.setHandler { _ in .json(#"{"results":[]}"#) }
+        _ = try store.upsert(entries: [LibraryFileEntry(service: "ad", torrentID: "77",
+                                                        fileIndex: 0, filename: "Kept.2021.mkv",
+                                                        bytes: 2, added: "", link: "l2")])
+        let rd = StubLibraryService(serviceID: .realDebrid) { [] }
+        let ad = StubLibraryService(serviceID: .allDebrid) { throw AllDebridError.http(500) }
+        let summary = try await LibraryRefresher(services: [rd, ad],
+                                                 tmdb: makeTMDB(), store: store).refresh()
+        XCTAssertNotNil(summary.serviceErrors["ad"])
+        XCTAssertEqual(try store.items().map(\.itemKey), ["ad#77#0"])
+    }
+
+    func testAuthFailureIsTyped() async throws {
+        let store = try LibraryStore.inMemory()
+        MockURLProtocol.setHandler { _ in .json(#"{"results":[]}"#) }
+        let rd = StubLibraryService(serviceID: .realDebrid) { throw RealDebridError.unauthorized }
+        let ad = StubLibraryService(serviceID: .allDebrid) { throw AllDebridError.authFailed }
+        let summary = try await LibraryRefresher(services: [rd, ad],
+                                                 tmdb: makeTMDB(), store: store).refresh()
+        XCTAssertEqual(summary.authFailures, ["rd", "ad"])
+    }
+}
+
+private struct StubLibraryService: DebridService {
+    let serviceID: DebridServiceID
+    var entries: @Sendable () async throws -> [LibraryFileEntry]
+    var supportsAdds: Bool { true }
+    func libraryEntries(knownCounts: [String: Int],
+                        cached: [String: [LibraryFileEntry]]) async throws -> [LibraryFileEntry] {
+        try await entries()
+    }
+    func addMagnet(_ magnet: String) async throws -> DebridTransfer { fatalError("unused") }
+    func transferStatus(id: String) async throws -> DebridTransfer { fatalError("unused") }
+    func transferIDs() async throws -> Set<String> { [] }
+    func unrestrict(link: String) async throws -> URL { fatalError("unused") }
+    func delete(id: String) async throws {}
 }
