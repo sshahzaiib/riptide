@@ -85,8 +85,9 @@ final class StreamPickerModel {
     /// resolver already added it in that stuck state, finish the selection.
     func registerUncached(stream: AddonStream) async -> UncachedOutcome {
         guard let url = stream.httpURL else { return .failed }
+        let rd = RealDebridClient(token: AppSettings.shared.rdToken)
+        let adder = TorrentAdder(rd: rd)
         if let hash = stream.infoHash ?? TorrentAdder.infohash(inURL: url) {
-            let adder = TorrentAdder(rd: RealDebridClient(token: AppSettings.shared.rdToken))
             do {
                 let added = try await adder.add(.magnet("magnet:?xt=urn:btih:\(hash)"))
                 if case .alreadyInLibrary(let id) = added.outcome {
@@ -95,7 +96,23 @@ final class StreamPickerModel {
                 return .added(torrentID: added.torrentID)
             } catch { return .failed }
         }
-        return await probeResolver(url: url) ? .probed : .failed
+        // Opaque resolver URLs (e.g. AIOStreams) carry no infohash: snapshot
+        // the account, let the resolver register the torrent, then diff to
+        // find its ID so this pick can track + auto-play like the hash path.
+        let before = Set(((try? await rd.allTorrents()) ?? []).map(\.id))
+        guard await probeResolver(url: url) else { return .failed }
+        for attempt in 0..<6 {
+            if attempt > 0 { try? await Task.sleep(for: .seconds(3)) }
+            if Task.isCancelled { break }
+            guard let torrents = try? await rd.allTorrents() else { continue }
+            if let new = torrents.first(where: { !before.contains($0.id) }) {
+                // Resolvers routinely bail before metadata arrives, leaving
+                // the torrent stuck at file selection — finish it.
+                try? await adder.completeSelection(torrentID: new.id)
+                return .added(torrentID: new.id)
+            }
+        }
+        return .probed   // resolver answered but no new torrent surfaced
     }
 
     /// Polls RD until the torrent finishes downloading (then the resolver
