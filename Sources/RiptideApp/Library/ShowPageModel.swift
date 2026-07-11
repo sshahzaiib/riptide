@@ -47,8 +47,12 @@ final class ShowPageModel {
     }
 
     func watchState(for item: LibraryItem) -> (progress: Double, finished: Bool)? {
-        guard let state = stateByKey[item.itemKey], state.durationSeconds > 0 else { return nil }
-        return (state.positionSeconds / state.durationSeconds, state.finished)
+        guard let state = stateByKey[item.itemKey] else { return nil }
+        // Trakt-restored marks carry no local duration (never played here) —
+        // finished must render regardless.
+        if state.finished { return (1, true) }
+        guard state.durationSeconds > 0 else { return nil }
+        return (state.positionSeconds / state.durationSeconds, false)
     }
 
     func episodeMeta(for item: LibraryItem) -> TMDBSeasonEpisode? {
