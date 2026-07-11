@@ -75,7 +75,9 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .sheet(isPresented: $showTraktConnect) { TraktConnectSheet() }
-        .frame(width: 480)
+        // Fixed height so the grouped Form scrolls instead of growing the
+        // sheet past the window (it overflowed once enough sections landed).
+        .frame(width: 480, height: 620)
         .padding(.bottom, 12)
     }
 
