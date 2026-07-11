@@ -68,70 +68,74 @@ final class StreamPickerModel {
     }
 
     enum UncachedOutcome {
-        case added(torrentID: String)   // on RD, pollable → can auto-play when done
-        case probed                     // resolver-registered, no ID to track
+        case added(service: DebridServiceID, transferID: String)  // pollable → auto-play
+        case probed                                               // registered blind
         case failed
     }
 
     /// RD download progress (0–100) for an uncached pick, nil when idle.
     private(set) var downloadProgress: Double?
 
-    /// Uncached selection: add the torrent to Real-Debrid so it downloads
-    /// into the library. Preferred path: recover the infohash (stream field
-    /// or resolver URL) and add the magnet through our own RD client —
-    /// TorrentAdder polls metadata and auto-selects video files, which
-    /// resolver probes routinely skip (they answer before metadata arrives,
-    /// leaving RD stuck at "waiting_files_selection" forever). If the
-    /// resolver already added it in that stuck state, finish the selection.
-    func registerUncached(stream: AddonStream) async -> UncachedOutcome {
+    /// Router over the services the user has tokens for.
+    private var router: DebridRouter {
+        let settings = AppSettings.shared
+        return DebridRouter(
+            rd: settings.rdToken.isEmpty ? nil
+                : RealDebridService(rd: RealDebridClient(token: settings.rdToken)),
+            ad: settings.adToken.isEmpty ? nil
+                : AllDebridService(client: AllDebridClient(token: settings.adToken)))
+    }
+
+    /// Uncached selection: register the torrent on the service the pick's
+    /// addon is configured for (nil/undetected → RD), failing over once to
+    /// the other service on terminal rejection. Hash recovery first; the
+    /// account-diff fallback covers opaque resolver URLs (no failover there —
+    /// nothing to re-add).
+    func registerUncached(stream: AddonStream, addon: ConfiguredAddon) async -> UncachedOutcome {
         guard let url = stream.httpURL else { return .failed }
-        let rd = RealDebridClient(token: AppSettings.shared.rdToken)
-        let adder = TorrentAdder(rd: rd)
+        let router = router
         if let hash = stream.infoHash ?? TorrentAdder.infohash(inURL: url) {
             do {
-                let added = try await adder.add(.magnet("magnet:?xt=urn:btih:\(hash)"))
-                if case .alreadyInLibrary(let id) = added.outcome {
-                    try await adder.completeSelection(torrentID: id)
-                }
-                return .added(torrentID: added.torrentID)
+                let placed = try await router.addWithFailover(
+                    magnet: "magnet:?xt=urn:btih:\(hash)",
+                    preferring: addon.service)
+                if case .failed = placed.transfer.status { return .failed }
+                return .added(service: placed.serviceID, transferID: placed.transfer.id)
             } catch { return .failed }
         }
-        // Opaque resolver URLs (e.g. AIOStreams) carry no infohash: snapshot
-        // the account, let the resolver register the torrent, then diff to
-        // find its ID so this pick can track + auto-play like the hash path.
-        let before = Set(((try? await rd.allTorrents()) ?? []).map(\.id))
+        // Opaque resolver URL: probe, then find the new transfer by diffing
+        // the TARGET service's account.
+        guard let target = router.service(addon.service ?? .realDebrid) else { return .failed }
+        let before = (try? await target.transferIDs()) ?? []
         guard await probeResolver(url: url) else { return .failed }
         for attempt in 0..<6 {
             if attempt > 0 { try? await Task.sleep(for: .seconds(3)) }
             if Task.isCancelled { break }
-            guard let torrents = try? await rd.allTorrents() else { continue }
-            if let new = torrents.first(where: { !before.contains($0.id) }) {
-                // Resolvers routinely bail before metadata arrives, leaving
-                // the torrent stuck at file selection — finish it.
-                try? await adder.completeSelection(torrentID: new.id)
-                return .added(torrentID: new.id)
+            guard let now = try? await target.transferIDs() else { continue }
+            if let new = now.subtracting(before).first {
+                try? await target.finishForeignAdd(id: new)
+                return .added(service: target.serviceID, transferID: new)
             }
         }
-        return .probed   // resolver answered but no new torrent surfaced
+        return .probed   // resolver answered but no new transfer surfaced
     }
 
-    /// Polls RD until the torrent finishes downloading (then the resolver
-    /// URL streams like any cached pick). Publishes progress for the sheet.
-    /// False on terminal RD failure or repeated polling errors; exits early
-    /// when the owning task is cancelled (sheet closed).
-    func waitUntilDownloaded(torrentID: String) async -> Bool {
-        let rd = RealDebridClient(token: AppSettings.shared.rdToken)
+    /// Polls the service until the transfer finishes (then the resolver URL
+    /// streams like any cached pick). Publishes progress for the sheet.
+    func waitUntilDownloaded(service: DebridServiceID, transferID: String) async -> Bool {
+        guard let service = router.service(service) else { return false }
         downloadProgress = 0
         defer { downloadProgress = nil }
         var consecutiveFailures = 0
         while !Task.isCancelled {
             do {
-                let info = try await rd.torrentInfo(torrentID)
+                let transfer = try await service.transferStatus(id: transferID)
                 consecutiveFailures = 0
-                if info.status == "downloaded" { return true }
-                guard !["magnet_error", "error", "virus", "dead"].contains(info.status)
-                else { return false }
-                downloadProgress = info.progress
+                switch transfer.status {
+                case .ready: return true
+                case .failed: return false
+                case .processing(let progress): downloadProgress = progress
+                }
             } catch {
                 consecutiveFailures += 1
                 if consecutiveFailures >= 5 { return false }

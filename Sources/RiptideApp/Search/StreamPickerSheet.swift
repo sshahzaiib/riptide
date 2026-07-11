@@ -93,7 +93,7 @@ struct StreamPickerSheet: View {
                 ContentUnavailableView {
                     Label("Couldn't send to your debrid service", systemImage: "exclamationmark.triangle")
                 } description: {
-                    Text("Real-Debrid couldn't start this torrent — it may be dead. Try another stream.")
+                    Text("Neither debrid service could start this torrent — it may be dead. Try another stream.")
                 } actions: {
                     Button("Back to Streams") { self.uncachedSend = nil }
                 }
@@ -182,12 +182,10 @@ struct StreamPickerSheet: View {
         if row.meta.cached == false {
             uncachedSend = .inFlight
             uncachedTask = Task {
-                switch await model.registerUncached(stream: row.stream) {
-                case .added(let torrentID):
-                    // Trackable on RD — wait out the download, then the
-                    // resolver URL streams like any cached pick.
+                switch await model.registerUncached(stream: row.stream, addon: row.addon) {
+                case .added(let service, let transferID):
                     uncachedSend = .downloading
-                    if await model.waitUntilDownloaded(torrentID: torrentID) {
+                    if await model.waitUntilDownloaded(service: service, transferID: transferID) {
                         startPlayback(url: url)
                     } else if !Task.isCancelled {
                         uncachedSend = .failed
