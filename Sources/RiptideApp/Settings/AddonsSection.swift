@@ -19,6 +19,21 @@ struct AddonsSection: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
+                    Picker("", selection: Binding(
+                        get: { addon.service ?? .realDebrid },
+                        set: { newValue in
+                            var list = settings.addons
+                            list[index].service = newValue
+                            settings.saveAddons(list)
+                        }
+                    )) {
+                        ForEach(DebridServiceID.allCases, id: \.self) {
+                            Text($0.displayName).tag($0)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .fixedSize()
+                    .help("Debrid service this addon's streams use")
                     Button { move(index, by: -1) } label: { Image(systemName: "chevron.up") }
                         .buttonStyle(.borderless)
                         .disabled(index == 0)
@@ -67,7 +82,8 @@ struct AddonsSection: View {
                     return
                 }
                 list.append(ConfiguredAddon(id: UUID(), name: result.manifest.name,
-                                            url: result.baseURL))
+                                            url: result.baseURL,
+                                            service: DebridServiceID.detect(fromAddonURL: result.baseURL)))
                 settings.saveAddons(list)
                 // Only clear what we validated — don't wipe a newer URL the
                 // user typed while this one was still validating.

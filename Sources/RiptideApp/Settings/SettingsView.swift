@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var rdToken = AppSettings.shared.rdToken
+    @State private var adToken = AppSettings.shared.adToken
     @State private var tmdbToken = AppSettings.shared.tmdbToken
     @State private var openSubsKey = AppSettings.shared.openSubsKey
     @State private var traktClientID = TraktService.shared.clientID
@@ -17,6 +18,12 @@ struct SettingsView: View {
                 SecureField("API token", text: $rdToken)
                 Link("Get your token at real-debrid.com/apitoken",
                      destination: URL(string: "https://real-debrid.com/apitoken")!)
+                    .font(.caption)
+            }
+            Section("AllDebrid (optional backup)") {
+                SecureField("API key", text: $adToken)
+                Link("Get your key at alldebrid.com/apikeys",
+                     destination: URL(string: "https://alldebrid.com/apikeys")!)
                     .font(.caption)
             }
             Section("TMDB (posters & metadata)") {
@@ -57,7 +64,7 @@ struct SettingsView: View {
                 Spacer()
                 Button("Save") {
                     AppSettings.shared.save(rdToken: rdToken, tmdbToken: tmdbToken,
-                                            openSubsKey: openSubsKey)
+                                            openSubsKey: openSubsKey, adToken: adToken)
                     TraktService.shared.saveCredentials(clientID: traktClientID,
                                                         clientSecret: traktClientSecret)
                     dismiss()
