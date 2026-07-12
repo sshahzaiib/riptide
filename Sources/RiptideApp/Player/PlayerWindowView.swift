@@ -204,7 +204,7 @@ struct PlayerWindowView: View {
         guard !upNextDismissed, upNextItem == nil,
               let next = (try? store.nextEpisode(after: current.itemKey)) ?? nil
         else { return }
-        upNextItem = next
+        withAnimation(.easeInOut(duration: 0.25)) { upNextItem = next }
         upNextFailed = false
         upNextTask = Task {
             let built: PlayItem
@@ -237,7 +237,7 @@ struct PlayerWindowView: View {
     }
 
     private func clearUpNext() {
-        upNextItem = nil
+        withAnimation(.easeInOut(duration: 0.25)) { upNextItem = nil }
         upNextPlay = nil
         upNextCountdown = nil
         upNextFailed = false

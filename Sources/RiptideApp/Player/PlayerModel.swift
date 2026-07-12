@@ -165,8 +165,9 @@ final class PlayerModel {
         playbackError = nil
         ended = false
         buffering = false
-        speed = 1.0
-        controller?.setSpeed(1.0)
+        // speed deliberately survives the swap: like volume/mute it's a
+        // session preference (a 1.25x binge stays 1.25x), and mpv itself
+        // persists it across loadfile.
         controller?.loadFile(next.url, startAt: next.resumeFrom)
         controller?.play()
     }
