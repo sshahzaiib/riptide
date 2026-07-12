@@ -48,12 +48,30 @@ final class ShowPageModel {
 
     func watchState(for item: LibraryItem) -> (progress: Double, finished: Bool)? {
         guard let state = stateByKey[item.itemKey] else { return nil }
-        // Trakt-restored marks carry no local duration (never played here) —
-        // finished must render regardless.
-        if state.finished { return (1, true) }
-        guard state.durationSeconds > 0 else { return nil }
-        return (state.positionSeconds / state.durationSeconds, false)
+        let progress = state.durationSeconds > 0
+            ? state.positionSeconds / state.durationSeconds : 0
+        return (progress, state.finished)
     }
+
+    func isFinished(_ item: LibraryItem) -> Bool {
+        stateByKey[item.itemKey]?.finished == true
+    }
+
+    /// Context-menu mark: local write first (survives Trakt pulls), then a
+    /// best-effort batched push to Trakt history.
+    func setWatched(_ watched: Bool, items: [LibraryItem]) {
+        for item in items {
+            try? store.setWatched(itemKey: item.itemKey, watched: watched)
+        }
+        refreshWatchStates()
+        guard let showID else { return }
+        let media: [TraktMedia] = items.compactMap { item in
+            guard let season = item.season, let episode = item.episode else { return nil }
+            return .episode(showTMDBID: showID, season: season, episode: episode)
+        }
+        TraktService.shared.setWatched(watched, media: media)
+    }
+
 
     func episodeMeta(for item: LibraryItem) -> TMDBSeasonEpisode? {
         guard let season = item.season, let episode = item.episode else { return nil }

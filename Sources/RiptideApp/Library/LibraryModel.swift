@@ -72,7 +72,8 @@ final class LibraryModel {
         items = (try? store.items()) ?? []
         let states = (try? store.continueWatching()) ?? []
         continueWatching = states.compactMap { state in
-            guard let item = items.first(where: { $0.itemKey == state.itemKey }) else { return nil }
+            guard let item = items.first(where: { $0.itemKey == state.itemKey }),
+                  item.mediaKind != "extra" else { return nil }
             return ContinueEntry(state: state, item: item)
         }
     }

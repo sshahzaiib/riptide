@@ -265,6 +265,10 @@ struct ShowDetailView: View {
             Text(season == 0 ? "Specials" : "Season \(season)")
                 .font(.title3.bold())
                 .padding(.horizontal, 24)
+                .contextMenu {
+                    Button("Mark Season Watched") { model.setWatched(true, items: episodes) }
+                    Button("Mark Season Unwatched") { model.setWatched(false, items: episodes) }
+                }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .top, spacing: 14) {
                     ForEach(episodes, id: \.itemKey) { episode in
@@ -322,6 +326,11 @@ struct ShowDetailView: View {
                 .frame(width: 200, alignment: .leading)
         }
         .contentShape(Rectangle())
+        .contextMenu {
+            Button(model.isFinished(episode) ? "Mark Unwatched" : "Mark Watched") {
+                model.setWatched(!model.isFinished(episode), items: [episode])
+            }
+        }
         .onTapGesture { model.userDidSelect(episode) }
         .simultaneousGesture(TapGesture(count: 2).onEnded {
             model.userDidSelect(episode)

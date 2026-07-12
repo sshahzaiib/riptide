@@ -121,6 +121,25 @@ final class TraktService {
         }
     }
 
+    /// Manual watched marks. Best-effort like scrobble — local state is
+    /// already written by the caller; Trakt failures only log.
+    func setWatched(_ watched: Bool, media: [TraktMedia]) {
+        guard let client, isConnected, !media.isEmpty else { return }
+        Task {
+            do {
+                if watched { try await client.addToHistory(media) }
+                else { try await client.removeFromHistory(media) }
+                NSLog("Trakt history \(watched ? "add" : "remove") OK (\(media.count) item(s))")
+            }
+            catch TraktError.unauthorized {
+                needsReauth = true
+                NSLog("Trakt history \(watched ? "add" : "remove") FAILED: unauthorized")
+            }
+            catch { NSLog("Trakt history \(watched ? "add" : "remove") FAILED: \(error)") }
+        }
+    }
+
+
     /// TEMP: dump Trakt's current playback-progress state (RIPTIDE_TRAKT_PROBE=1).
     func probePlayback() async {
         guard let client, isConnected else { return }
