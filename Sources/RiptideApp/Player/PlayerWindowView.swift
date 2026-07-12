@@ -76,7 +76,7 @@ struct PlayerWindowView: View {
                     }
                     controls
                         .padding(12)
-                        .glassEffect(.regular, in: .rect(cornerRadius: 12))
+                        .glassEffect(.regular, in: .rect(cornerRadius: 16))
                         .padding(16)
                 }
                 .transition(.opacity)
@@ -314,7 +314,7 @@ struct PlayerWindowView: View {
             }
         }
         .padding(16)
-        .glassEffect(.regular, in: .rect(cornerRadius: 14))
+        .glassEffect(.regular, in: .rect(cornerRadius: 16))
         .animation(.easeInOut(duration: 0.2), value: upNextCountdown)
     }
 
