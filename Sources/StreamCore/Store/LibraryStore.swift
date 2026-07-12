@@ -260,6 +260,25 @@ public final class LibraryStore {
         try context.save()
     }
 
+    /// Manual watched toggle (context menus). Writes a fresh lastWatchedAt so
+    /// the next Trakt pull — strictly-newer-wins — cannot resurrect old state.
+    public func setWatched(itemKey: String, watched: Bool) throws {
+        let descriptor = FetchDescriptor<WatchState>(
+            predicate: #Predicate { $0.itemKey == itemKey })
+        let state: WatchState
+        if let existing = try context.fetch(descriptor).first {
+            state = existing
+        } else {
+            state = WatchState(itemKey: itemKey, positionSeconds: 0,
+                               durationSeconds: 0, finished: false)
+            context.insert(state)
+        }
+        state.finished = watched
+        state.positionSeconds = watched ? state.durationSeconds : 0
+        state.lastWatchedAt = .now
+        try context.save()
+    }
+
     /// Unfinished, started items, most recently watched first.
     public func continueWatching() throws -> [WatchState] {
         try context.fetch(FetchDescriptor<WatchState>(

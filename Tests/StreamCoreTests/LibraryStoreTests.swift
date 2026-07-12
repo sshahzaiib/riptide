@@ -220,6 +220,32 @@ final class LibraryStoreTests: XCTestCase {
         _ = try store.upsert(entries: [entry1])
         XCTAssertEqual(try store.items().first?.mediaKind, "episode")
     }
+
+    func testSetWatchedTogglesAndClearsProgress() throws {
+        let store = try LibraryStore.inMemory()
+        try store.saveProgress(itemKey: "T1#0", position: 300, duration: 7200)
+
+        try store.setWatched(itemKey: "T1#0", watched: true)
+        var state = try XCTUnwrap(try store.allWatchStates().first)
+        XCTAssertTrue(state.finished)
+        XCTAssertEqual(state.positionSeconds, 7200)        // jump to the end
+        XCTAssertTrue(try store.continueWatching().isEmpty)
+
+        try store.setWatched(itemKey: "T1#0", watched: false)
+        state = try XCTUnwrap(try store.allWatchStates().first)
+        XCTAssertFalse(state.finished)
+        XCTAssertEqual(state.positionSeconds, 0)
+        XCTAssertTrue(try store.continueWatching().isEmpty) // reset, not "in progress"
+    }
+
+    func testSetWatchedCreatesRowWithFreshTimestamp() throws {
+        let store = try LibraryStore.inMemory()
+        try store.setWatched(itemKey: "T9#0", watched: true)
+        let state = try XCTUnwrap(try store.allWatchStates().first)
+        XCTAssertTrue(state.finished)
+        // Fresh timestamp ⇒ Trakt pull (strictly-newer-wins) can't overwrite it.
+        XCTAssertGreaterThan(state.lastWatchedAt, Date(timeIntervalSinceNow: -60))
+    }
 }
 
 
