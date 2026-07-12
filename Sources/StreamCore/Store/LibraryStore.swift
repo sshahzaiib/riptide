@@ -169,6 +169,35 @@ public final class LibraryStore {
         return candidates.first { $0.torrentID == current.torrentID } ?? candidates.first
     }
 
+    /// Mirror of nextEpisode: EXACTLY (S, E-1), or — from E1 only — the
+    /// highest-numbered owned episode of season S-1. A same-season gap
+    /// (E-1 missing while earlier episodes exist) returns nil: skipping
+    /// backwards over unowned story content is as wrong as forwards.
+    public func previousEpisode(before itemKey: String) throws -> LibraryItem? {
+        let keyDescriptor = FetchDescriptor<LibraryItem>(
+            predicate: #Predicate { $0.itemKey == itemKey })
+        guard let current = try context.fetch(keyDescriptor).first,
+              let showID = current.tmdbID,
+              let season = current.season,
+              let episode = current.episode else { return nil }
+        let id: Int? = showID
+        let siblings = try context.fetch(FetchDescriptor<LibraryItem>(
+            predicate: #Predicate { $0.tmdbID == id }))
+            .filter { $0.mediaKind == "episode" && $0.season != nil && $0.episode != nil }
+        func owned(_ s: Int, _ e: Int) -> [LibraryItem] {
+            siblings.filter { $0.season == s && $0.episode == e }
+        }
+        let candidates: [LibraryItem]
+        if episode > 1 {
+            candidates = owned(season, episode - 1)
+        } else {
+            let highest = siblings.filter { $0.season == season - 1 }
+                .compactMap(\.episode).max()
+            candidates = highest.map { owned(season - 1, $0) } ?? []
+        }
+        return candidates.first { $0.torrentID == current.torrentID } ?? candidates.first
+    }
+
     /// Item count per torrent — lets the refresher skip torrentInfo calls for
     /// packs it has already expanded.
     public func entryCounts() throws -> [String: Int] {

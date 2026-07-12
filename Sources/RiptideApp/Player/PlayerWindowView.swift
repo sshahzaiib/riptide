@@ -28,6 +28,10 @@ struct PlayerWindowView: View {
     @State private var upNextFailed = false
     @State private var upNextDismissed = false       // user hit Cancel this playback
     @State private var upNextTask: Task<Void, Never>?
+    // Adjacent owned episodes (same no-skip rules as Up Next) — drive the
+    // prev/next controls; nil disables the button.
+    @State private var prevEpisodeItem: LibraryItem?
+    @State private var nextEpisodeItem: LibraryItem?
 
     init(item: PlayItem, store: LibraryStore) {
         self.item = item
@@ -153,6 +157,8 @@ struct PlayerWindowView: View {
         }
         .task(id: current.itemKey) {
             episodeName = nil
+            prevEpisodeItem = (try? store.previousEpisode(before: current.itemKey)) ?? nil
+            nextEpisodeItem = (try? store.nextEpisode(after: current.itemKey)) ?? nil
             guard let id = current.tmdbID, let s = current.season, let e = current.episode
             else { return }
             let token = AppSettings.shared.tmdbToken
@@ -258,12 +264,31 @@ struct PlayerWindowView: View {
 
     private func playUpNext() {
         guard let next = upNextPlay else { return }
-        episodeName = nil          // don't flash the old episode's name
-        current = next
-        resolvedStart = .some(next.resumeFrom)
-        skipIntroUsed = false
-        model.advance(to: next)
+        advanceWindow(to: next)
         clearUpNext()
+    }
+
+    /// Swap this window (and its per-episode view state) to another item.
+    private func advanceWindow(to built: PlayItem) {
+        episodeName = nil          // don't flash the old episode's name
+        current = built
+        resolvedStart = .some(built.resumeFrom)
+        skipIntroUsed = false
+        model.advance(to: built)
+    }
+
+    /// Prev/next controls: unrestrict the adjacent episode and swap to it.
+    private func skip(to target: LibraryItem?) {
+        guard let target else { return }
+        upNextTask?.cancel()
+        clearUpNext()
+        Task {
+            // ponytail: unrestrict failure just leaves the current episode
+            // playing — the button stays enabled, clicking again retries.
+            guard let built = try? await PlayItemBuilder.make(
+                for: target, store: store, autoResume: true) else { return }
+            advanceWindow(to: built)
+        }
     }
 
     private func clearUpNext() {
@@ -350,12 +375,34 @@ struct PlayerWindowView: View {
             }
             .frame(height: 20)
 
-            HStack(spacing: 16) {
+            HStack(spacing: 10) {
+                if current.season != nil {
+                    Button(action: { skip(to: prevEpisodeItem) }) {
+                        Image(systemName: "backward.end.fill")
+                            .font(.body)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(prevEpisodeItem == nil)
+                    .opacity(prevEpisodeItem == nil ? 0.35 : 1)
+                    .help("Previous episode")
+                }
+
                 Button(action: { model.togglePause() }) {
                     Image(systemName: model.paused ? "play.fill" : "pause.fill")
                         .font(.title2)
                 }
                 .buttonStyle(.plain)
+
+                if current.season != nil {
+                    Button(action: { skip(to: nextEpisodeItem) }) {
+                        Image(systemName: "forward.end.fill")
+                            .font(.body)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(nextEpisodeItem == nil)
+                    .opacity(nextEpisodeItem == nil ? 0.35 : 1)
+                    .help("Next episode")
+                }
 
                 Text("\(format(model.position)) / \(format(model.duration))")
                     .font(.callout.monospacedDigit())
@@ -371,7 +418,7 @@ struct PlayerWindowView: View {
                     }
                 } label: { Image(systemName: "gauge.with.needle") }
                 .menuStyle(.borderlessButton)
-                .frame(width: 44)
+                .frame(width: 32)
 
                 Menu {
                     ForEach(model.audioTracks) { track in
@@ -382,7 +429,7 @@ struct PlayerWindowView: View {
                     }
                 } label: { Image(systemName: "waveform") }
                 .menuStyle(.borderlessButton)
-                .frame(width: 44)
+                .frame(width: 32)
                 .disabled(model.audioTracks.count < 2)
 
                 Menu {
@@ -397,7 +444,7 @@ struct PlayerWindowView: View {
                     Button("Search OpenSubtitles…") { showSubtitleSearch = true }
                 } label: { Image(systemName: "captions.bubble") }
                 .menuStyle(.borderlessButton)
-                .frame(width: 44)
+                .frame(width: 32)
 
                 Button(action: { model.toggleMute() }) {
                     Image(systemName: model.muted ? "speaker.slash" : "speaker.wave.2")

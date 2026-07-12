@@ -296,6 +296,39 @@ final class LibraryStoreTests: XCTestCase {
         XCTAssertNil(try store.nextEpisode(after: "T1#0"))
     }
 
+    func testPreviousEpisodeSequential() throws {
+        let store = try LibraryStore.inMemory()
+        try seedShow(store, episodes: [(1, 1, "T1"), (1, 2, "T1")])
+        let prev = try XCTUnwrap(try store.previousEpisode(before: "T1#1"))
+        XCTAssertEqual(prev.season, 1)
+        XCTAssertEqual(prev.episode, 1)
+    }
+
+    func testPreviousEpisodeSeasonRollback() throws {
+        let store = try LibraryStore.inMemory()
+        // From S2E1 back to the highest owned episode of S1.
+        try seedShow(store, episodes: [(1, 7, "T1"), (1, 8, "T1"), (2, 1, "T2")])
+        let prev = try XCTUnwrap(try store.previousEpisode(before: "T2#2"))
+        XCTAssertEqual(prev.season, 1)
+        XCTAssertEqual(prev.episode, 8)
+    }
+
+    func testPreviousEpisodeGapReturnsNil() throws {
+        let store = try LibraryStore.inMemory()
+        // E2 missing: stepping back from E3 must not skip to E1.
+        try seedShow(store, episodes: [(1, 1, "T1"), (1, 3, "T1")])
+        XCTAssertNil(try store.previousEpisode(before: "T1#1"))
+    }
+
+    func testPreviousEpisodeAtStartReturnsNil() throws {
+        let store = try LibraryStore.inMemory()
+        try seedShow(store, episodes: [(1, 1, "T1")])
+        XCTAssertNil(try store.previousEpisode(before: "T1#0"))
+        // Movies and unmatched items have no previous episode.
+        _ = try store.upsert(entries: [entry(torrentID: "M1", filename: "The.Matrix.1999.mkv")])
+        XCTAssertNil(try store.previousEpisode(before: "M1#0"))
+    }
+
     func testNextEpisodePrefersSamePack() throws {
         let store = try LibraryStore.inMemory()
         // E2 exists as a loose 4K file (T9) and inside the current pack (T1).
