@@ -267,5 +267,52 @@ final class TraktClientTests: XCTestCase {
         XCTAssertEqual(movies, [["ids": ["tmdb": 603]]])
         XCTAssertNil(json["shows"])
     }
+
+    func testHistoryBodyMixedShowAndEpisodeOrders() {
+        // (a) [.show(1396), .episode(1396, s1e1)] in both orders → shows[0] has NO "seasons" key
+        let body1 = TraktClient.historyBody([
+            .show(tmdbID: 1396),
+            .episode(showTMDBID: 1396, season: 1, episode: 1)
+        ])
+        XCTAssertEqual(body1.shows?.count, 1)
+        XCTAssertEqual(body1.shows?[0].ids.tmdb, 1396)
+        XCTAssertNil(body1.shows?[0].seasons)
+
+        let body2 = TraktClient.historyBody([
+            .episode(showTMDBID: 1396, season: 1, episode: 1),
+            .show(tmdbID: 1396)
+        ])
+        XCTAssertEqual(body2.shows?.count, 1)
+        XCTAssertEqual(body2.shows?[0].ids.tmdb, 1396)
+        XCTAssertNil(body2.shows?[0].seasons)
+    }
+
+    func testHistoryBodyDeduplicationAndSorting() {
+        // (b) duplicate .episode(1396,1,1) twice → exactly one episode object; duplicate .movie(603) twice → one movie object
+        // Also: preserve deterministic sorted output for movie IDs and episodes.
+        let body = TraktClient.historyBody([
+            .episode(showTMDBID: 1396, season: 1, episode: 1),
+            .episode(showTMDBID: 1396, season: 1, episode: 1),
+            .movie(tmdbID: 603),
+            .movie(tmdbID: 603),
+            .movie(tmdbID: 100)
+        ])
+        XCTAssertEqual(body.shows?.count, 1)
+        XCTAssertEqual(body.shows?[0].seasons?.count, 1)
+        XCTAssertEqual(body.shows?[0].seasons?[0].episodes.count, 1)
+        XCTAssertEqual(body.shows?[0].seasons?[0].episodes[0].number, 1)
+
+        XCTAssertEqual(body.movies?.count, 2)
+        XCTAssertEqual(body.movies?[0].ids.tmdb, 100) // sorted
+        XCTAssertEqual(body.movies?[1].ids.tmdb, 603)
+    }
+
+    func testHistoryBodyWholeShowOnly() {
+        // (c) ".show with no seasons marks the whole show" behavior
+        let body = TraktClient.historyBody([.show(tmdbID: 1396)])
+        XCTAssertEqual(body.shows?.count, 1)
+        XCTAssertEqual(body.shows?[0].ids.tmdb, 1396)
+        XCTAssertNil(body.shows?[0].seasons)
+    }
 }
 

@@ -231,31 +231,44 @@ public final class TraktClient {
     }
 
     static func historyBody(_ media: [TraktMedia]) -> HistoryBody {
-        var movies: [TraktRefPayload] = []
-        var episodesByShow: [Int: [Int: [Int]]] = [:]   // show tmdb → season → episodes
+        var movieIDs: Set<Int> = []
+        var episodesByShow: [Int: [Int: Set<Int>]] = [:]   // show tmdb → season → episodes
+        var wholeShowIDs: Set<Int> = []
+
         for m in media {
             switch m {
             case .movie(let id):
-                movies.append(TraktRefPayload(ids: TraktIDsPayload(tmdb: id)))
+                movieIDs.insert(id)
             case .show(let id):
-                if episodesByShow[id] == nil { episodesByShow[id] = [:] }
+                wholeShowIDs.insert(id)
             case .episode(let showID, let season, let episode):
-                episodesByShow[showID, default: [:]][season, default: []].append(episode)
+                episodesByShow[showID, default: [:]][season, default: []].insert(episode)
             }
         }
+
         var body = HistoryBody()
-        if !movies.isEmpty { body.movies = movies }
-        if !episodesByShow.isEmpty {
-            body.shows = episodesByShow.sorted { $0.key < $1.key }.map { showID, seasons in
-                HistoryBody.Show(
+        if !movieIDs.isEmpty {
+            body.movies = movieIDs.sorted().map { TraktRefPayload(ids: TraktIDsPayload(tmdb: $0)) }
+        }
+
+        let allShowIDs = Set(episodesByShow.keys).union(wholeShowIDs)
+        if !allShowIDs.isEmpty {
+            body.shows = allShowIDs.sorted().map { showID in
+                let seasons: [HistoryBody.Season]?
+                if wholeShowIDs.contains(showID) {
+                    seasons = nil
+                } else {
+                    let seasonsDict = episodesByShow[showID] ?? [:]
+                    seasons = seasonsDict.sorted { $0.key < $1.key }.map { number, eps in
+                        HistoryBody.Season(
+                            number: number,
+                            episodes: eps.sorted().map { HistoryBody.Episode(number: $0) })
+                    }
+                }
+                return HistoryBody.Show(
                     ids: TraktIDsPayload(tmdb: showID),
-                    // No seasons = Trakt marks the entire show.
-                    seasons: seasons.isEmpty ? nil
-                        : seasons.sorted { $0.key < $1.key }.map { number, eps in
-                            HistoryBody.Season(
-                                number: number,
-                                episodes: eps.sorted().map { HistoryBody.Episode(number: $0) })
-                        })
+                    seasons: seasons
+                )
             }
         }
         return body
