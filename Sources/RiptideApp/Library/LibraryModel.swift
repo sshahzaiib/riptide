@@ -119,33 +119,7 @@ final class LibraryModel {
 
     /// Unrestrict this file's link and build its PlayItem.
     func playItem(for item: LibraryItem, autoResume: Bool = false) async throws -> PlayItem {
-        guard !item.link.isEmpty else { throw RealDebridError.noDownloadableLinks }
-        let settings = AppSettings.shared
-        let url: URL
-        if item.service == "ad" {
-            // Fail fast on a cleared key instead of a doomed network call.
-            guard !settings.adToken.isEmpty else { throw AllDebridError.authFailed }
-            url = try await AllDebridClient(token: settings.adToken).unlock(link: item.link)
-        } else {
-            let unrestricted = try await RealDebridClient(token: settings.rdToken)
-                .unrestrictLink(item.link)
-            guard let direct = unrestricted.directURL else { throw RealDebridError.badResponse }
-            url = direct
-        }
-        let resume = (try? store.continueWatching())?
-            .first { $0.itemKey == item.itemKey }?.positionSeconds
-        let title = item.season != nil
-            ? "\(item.title) S\(item.season!)E\(item.episode ?? 0)"
-            : item.title
-        return PlayItem(itemKey: item.itemKey,
-                        title: title,
-                        url: url,
-                        resumeFrom: resume,
-                        subtitleQuery: item.title,
-                        season: item.season,
-                        episode: item.episode,
-                        tmdbID: item.tmdbID,
-                        autoResume: autoResume)
+        try await PlayItemBuilder.make(for: item, store: store, autoResume: autoResume)
     }
 
     /// First library item belonging to a torrent (itemKeys are "torrentID#fileIndex").
