@@ -9,11 +9,17 @@ struct SettingsView: View {
     @State private var traktClientID = TraktService.shared.clientID
     @State private var traktClientSecret = TraktService.shared.clientSecret
     @State private var showTraktConnect = false
+    @AppStorage("autoplayNext") private var autoplayNext = true
 
     private var trakt: TraktService { TraktService.shared }
 
     var body: some View {
         Form {
+            Section("Playback") {
+                Toggle("Autoplay next episode", isOn: $autoplayNext)
+                Text("When an episode ends, the next one starts after a 10-second countdown.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section("Real-Debrid") {
                 SecureField("API token", text: $rdToken).frame(maxWidth: .infinity)
                 Link("Get your token at real-debrid.com/apitoken",

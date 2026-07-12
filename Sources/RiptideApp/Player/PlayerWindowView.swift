@@ -1,10 +1,12 @@
 import SwiftUI
 import StreamCore
+import class StreamCore.LibraryItem
 
 struct PlayerWindowView: View {
     let item: PlayItem
     let store: LibraryStore
 
+    @State private var current: PlayItem
     @State private var model: PlayerModel
     @State private var volume: Double = 100
     @State private var scrubbing = false
@@ -18,22 +20,31 @@ struct PlayerWindowView: View {
     @State private var keyMonitor: Any?
     @State private var skipIntroUsed = false
 
+    @AppStorage("autoplayNext") private var autoplayNext = true
+    @State private var upNextItem: LibraryItem?      // next episode, pre-unrestrict
+    @State private var upNextPlay: PlayItem?         // unrestricted, ready to go
+    @State private var upNextCountdown: Int?
+    @State private var upNextFailed = false
+    @State private var upNextDismissed = false       // user hit Cancel this playback
+    @State private var upNextTask: Task<Void, Never>?
+
     init(item: PlayItem, store: LibraryStore) {
         self.item = item
         self.store = store
+        _current = State(initialValue: item)
         _model = State(initialValue: PlayerModel(store: store, itemKey: item.itemKey,
                                                  traktMedia: TraktMedia(playItem: item)))
     }
 
     // Episodes only, once per playback, and only during the first 6 minutes.
     private var showSkipIntro: Bool {
-        item.season != nil && !skipIntroUsed && model.position > 0 && model.position < 360
+        current.season != nil && !skipIntroUsed && model.position > 0 && model.position < 360
     }
 
     var body: some View {
         ZStack(alignment: .bottom) {
             if let start = resolvedStart {
-                MPVPlayerView(model: model, url: item.url, startAt: start)
+                MPVPlayerView(model: model, url: current.url, startAt: start)
                     .ignoresSafeArea()
             } else {
                 Color.black.ignoresSafeArea()
@@ -69,6 +80,13 @@ struct PlayerWindowView: View {
                 }
                 .transition(.opacity)
             }
+
+            if let next = upNextItem {
+                upNextCard(next)
+                    .padding(24)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
         .onAppear {
             // SwiftUI onKeyPress never fires in this NSView-hosting window
@@ -80,23 +98,23 @@ struct PlayerWindowView: View {
                 else { return event }
                 return handleKey(event) ? nil : event
             }
-            if let resume = item.resumeFrom, item.autoResume, resume > 60 {
+            if let resume = current.resumeFrom, current.autoResume, resume > 60 {
                 resolvedStart = .some(resume)
-            } else if let resume = item.resumeFrom, resume > 60 {
+            } else if let resume = current.resumeFrom, resume > 60 {
                 showResumePrompt = true
             } else {
                 resolvedStart = .some(nil)
             }
         }
         .alert("Resume playback?", isPresented: $showResumePrompt) {
-            Button("Resume") { resolvedStart = .some(item.resumeFrom) }
+            Button("Resume") { resolvedStart = .some(current.resumeFrom) }
             Button("Start Over") { resolvedStart = .some(nil) }
         } message: {
-            Text("You stopped at \(format(item.resumeFrom ?? 0)).")
+            Text("You stopped at \(format(current.resumeFrom ?? 0)).")
         }
         .onChange(of: showResumePrompt) {
             if !showResumePrompt && resolvedStart == nil {
-                resolvedStart = .some(item.resumeFrom)
+                resolvedStart = .some(current.resumeFrom)
             }
         }
         .onContinuousHover { phase in
@@ -126,16 +144,27 @@ struct PlayerWindowView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: controlsVisible)
-        .navigationTitle(item.title)
+        .navigationTitle(current.title)
         .onDisappear {
             if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
             keyMonitor = nil
+            upNextTask?.cancel()
             model.shutdown()
         }
         .sheet(isPresented: $showSubtitleSearch) {
-            SubtitleSearchSheet(query: item.subtitleQuery,
-                                season: item.season, episode: item.episode) { path in
+            SubtitleSearchSheet(query: current.subtitleQuery,
+                                season: current.season, episode: current.episode) { path in
                 model.addSubtitle(path: path)
+            }
+        }
+        .onChange(of: model.ended) {
+            if model.ended {
+                beginUpNext()
+            } else {
+                // Seek back from the end frame: retract the card and re-arm.
+                upNextTask?.cancel()
+                clearUpNext()
+                upNextDismissed = false
             }
         }
     }
@@ -153,6 +182,11 @@ struct PlayerWindowView: View {
         case 124: model.seek(relative: 10)     // →
         case 126: bumpVolume(5)                // ↑
         case 125: bumpVolume(-5)               // ↓
+        case 53:                               // esc — dismiss Up Next card
+            guard upNextItem != nil else { return false }
+            upNextTask?.cancel()
+            clearUpNext()
+            upNextDismissed = true
         default:
             switch event.charactersIgnoringModifiers?.lowercased() {
             case "f": model.toggleFullscreen()
@@ -164,6 +198,81 @@ struct PlayerWindowView: View {
         lastActivity = Date()
         controlsVisible = true
         return true
+    }
+
+    private func beginUpNext() {
+        guard !upNextDismissed, upNextItem == nil,
+              let next = (try? store.nextEpisode(after: current.itemKey)) ?? nil
+        else { return }
+        upNextItem = next
+        upNextFailed = false
+        upNextTask = Task {
+            let built: PlayItem
+            do {
+                built = try await PlayItemBuilder.make(for: next, store: store, autoResume: true)
+            } catch {
+                if !Task.isCancelled { upNextFailed = true }
+                return
+            }
+            guard !Task.isCancelled else { return }
+            upNextPlay = built
+            guard autoplayNext else { return }
+            for remaining in stride(from: 10, through: 0, by: -1) {
+                upNextCountdown = remaining
+                guard remaining > 0 else { break }
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { return }
+            }
+            playUpNext()
+        }
+    }
+
+    private func playUpNext() {
+        guard let next = upNextPlay else { return }
+        current = next
+        resolvedStart = .some(next.resumeFrom)
+        skipIntroUsed = false
+        model.advance(to: next)
+        clearUpNext()
+    }
+
+    private func clearUpNext() {
+        upNextItem = nil
+        upNextPlay = nil
+        upNextCountdown = nil
+        upNextFailed = false
+        upNextTask = nil
+    }
+
+    private func upNextCard(_ next: LibraryItem) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Up Next").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            Text("S\(next.season ?? 0)E\(next.episode ?? 0) · \(next.title)")
+                .font(.headline)
+                .lineLimit(1)
+            HStack(spacing: 10) {
+                if upNextFailed {
+                    Button("Retry") { clearUpNext(); beginUpNext() }
+                        .buttonStyle(.borderedProminent)
+                    Text("Couldn't fetch the stream").font(.callout).foregroundStyle(.secondary)
+                } else {
+                    Button(action: { upNextTask?.cancel(); playUpNext() }) {
+                        Label(upNextCountdown.map { "Playing in \($0)s" } ?? "Play Now",
+                              systemImage: "play.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(upNextPlay == nil)
+                }
+                Button("Cancel") {
+                    upNextTask?.cancel()
+                    clearUpNext()
+                    upNextDismissed = true
+                }
+            }
+        }
+        .padding(16)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .animation(.easeInOut(duration: 0.2), value: upNextCountdown)
     }
 
     private var controls: some View {
