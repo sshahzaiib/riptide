@@ -392,6 +392,7 @@ struct ShowDetailView: View {
             playError = "This show can't be searched on addons yet."
             return
         }
+        playError = nil
         streamRequest = StreamRequest(type: .series,
                                       imdbID: imdbID,
                                       title: show.title,
