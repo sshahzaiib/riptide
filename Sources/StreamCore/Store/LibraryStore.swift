@@ -137,12 +137,13 @@ public final class LibraryStore {
     }
 
     /// The library item that is EXACTLY the next episode after `itemKey`:
-    /// (S, E+1), or (S+1, 1) when E+1 isn't owned (season rollover). A gap
-    /// returns nil — autoplay must never skip story content. When duplicate
+    /// (S, E+1), or (S+1, 1) when E+1 isn't owned AND `itemKey` is the
+    /// highest-numbered owned episode of its season (season rollover). A gap
+    /// returns nil — autoplay must never skip story content. In particular,
+    /// if a later episode of the SAME season is already owned (e.g. own
+    /// S1E1, S1E3, S2E1 — advancing from S1E1), rolling over to S2E1 would
+    /// silently skip S1E3, so that case returns nil too. When duplicate
     /// files exist for the target, prefer one from the same torrent pack.
-    /// ponytail: rollover assumes E+1-missing means season finale; a
-    /// half-owned season followed by S+1E1 would skip — needs TMDB season
-    /// lengths to do better.
     public func nextEpisode(after itemKey: String) throws -> LibraryItem? {
         let keyDescriptor = FetchDescriptor<LibraryItem>(
             predicate: #Predicate { $0.itemKey == itemKey })
@@ -158,7 +159,13 @@ public final class LibraryStore {
             siblings.filter { $0.season == s && $0.episode == e }
         }
         var candidates = owned(season, episode + 1)
-        if candidates.isEmpty { candidates = owned(season + 1, 1) }
+        if candidates.isEmpty {
+            let isHighestInSeason = !siblings.contains {
+                $0.season == season && ($0.episode ?? episode) > episode
+            }
+            guard isHighestInSeason else { return nil }
+            candidates = owned(season + 1, 1)
+        }
         return candidates.first { $0.torrentID == current.torrentID } ?? candidates.first
     }
 

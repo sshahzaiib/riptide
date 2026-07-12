@@ -288,6 +288,14 @@ final class LibraryStoreTests: XCTestCase {
         XCTAssertNil(try store.nextEpisode(after: "T1#0"))
     }
 
+    func testNextEpisodeGapDoesNotRolloverWhenLaterSameSeasonEpisodeOwned() throws {
+        let store = try LibraryStore.inMemory()
+        // E2 missing but S1E3 IS owned, and S2E1 is also owned. Rolling over
+        // to S2E1 would silently skip S1E3 — must return nil instead.
+        try seedShow(store, episodes: [(1, 1, "T1"), (1, 3, "T1"), (2, 1, "T2")])
+        XCTAssertNil(try store.nextEpisode(after: "T1#0"))
+    }
+
     func testNextEpisodePrefersSamePack() throws {
         let store = try LibraryStore.inMemory()
         // E2 exists as a loose 4K file (T9) and inside the current pack (T1).
