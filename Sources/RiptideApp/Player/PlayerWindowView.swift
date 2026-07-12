@@ -69,14 +69,14 @@ struct PlayerWindowView: View {
                         Button(action: { model.skipIntro(); skipIntroUsed = true }) {
                             Label("Skip Intro", systemImage: "forward.frame")
                                 .padding(.horizontal, 12).padding(.vertical, 6)
-                                .background(.ultraThinMaterial, in: Capsule())
+                                .glassEffect(.regular, in: .capsule)
                         }
                         .buttonStyle(.plain)
                         .padding(.trailing, 16)
                     }
                     controls
                         .padding(12)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        .glassEffect(.regular, in: .rect(cornerRadius: 12))
                         .padding(16)
                 }
                 .transition(.opacity)
@@ -282,7 +282,7 @@ struct PlayerWindowView: View {
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .glassEffect(.regular, in: .rect(cornerRadius: 12))
         .allowsHitTesting(false)
     }
 
@@ -295,14 +295,14 @@ struct PlayerWindowView: View {
             HStack(spacing: 10) {
                 if upNextFailed {
                     Button("Retry") { clearUpNext(); beginUpNext() }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.glass)
                     Text("Couldn't fetch the stream").font(.callout).foregroundStyle(.secondary)
                 } else {
                     Button(action: { upNextTask?.cancel(); playUpNext() }) {
                         Label(upNextCountdown.map { "Playing in \($0)s" } ?? "Play Now",
                               systemImage: "play.fill")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent)
                     .disabled(upNextPlay == nil)
                 }
                 Button("Cancel") {
@@ -310,10 +310,11 @@ struct PlayerWindowView: View {
                     clearUpNext()
                     upNextDismissed = true
                 }
+                .buttonStyle(.glass)
             }
         }
         .padding(16)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .glassEffect(.regular, in: .rect(cornerRadius: 14))
         .animation(.easeInOut(duration: 0.2), value: upNextCountdown)
     }
 

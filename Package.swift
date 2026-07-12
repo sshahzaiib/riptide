@@ -1,9 +1,9 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 import PackageDescription
 
 let package = Package(
     name: "Riptide",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v26)],
     products: [.library(name: "StreamCore", targets: ["StreamCore"])],
     dependencies: [
         .package(url: "https://github.com/mpvkit/MPVKit.git", from: "0.41.0"),
