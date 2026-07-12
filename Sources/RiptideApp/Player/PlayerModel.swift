@@ -147,6 +147,7 @@ final class PlayerModel {
     /// into the live mpv instance. (.ended already saved the old item's
     /// final progress.)
     func advance(to next: PlayItem) {
+        flushProgress()
         if scrobbleStarted {
             scrobbleStarted = false
             scrobble(.stop)
@@ -164,6 +165,7 @@ final class PlayerModel {
         speed = 1.0
         controller?.setSpeed(1.0)
         controller?.loadFile(next.url, startAt: next.resumeFrom)
+        controller?.play()
     }
 
     // MARK: User intents

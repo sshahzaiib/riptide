@@ -196,6 +196,10 @@ final class MPVPlayerController: NSViewController {
         setFlag("pause", paused == 0)
     }
 
+    func play() {
+        setFlag("pause", false)
+    }
+
     func seek(to seconds: Double) {
         command("seek", args: [String(seconds), "absolute"])
     }
@@ -334,11 +338,22 @@ final class MPVPlayerController: NSViewController {
                     self.emit(.duration(duration))
                 case MPV_EVENT_END_FILE:
                     // Spec: mpv load failures surface in the player window.
-                    if let end = UnsafePointer<mpv_event_end_file>(OpaquePointer(event.pointee.data))?.pointee,
-                       end.reason == MPV_END_FILE_REASON_ERROR {
-                        self.emit(.error(String(cString: mpv_error_string(end.error))))
-                    } else {
-                        self.emit(.ended)
+                    if let end = UnsafePointer<mpv_event_end_file>(OpaquePointer(event.pointee.data))?.pointee {
+                        if end.reason == MPV_END_FILE_REASON_ERROR {
+                            self.emit(.error(String(cString: mpv_error_string(end.error))))
+                        } else if end.reason == MPV_END_FILE_REASON_EOF {
+                            // Only true natural end-of-file should signal .ended here.
+                            // advance(to:) issues `loadfile ... replace`, which fires
+                            // END_FILE with reason STOP for the outgoing file — that
+                            // event is dispatched to MainActor after the model has
+                            // already swapped to the next item, so emitting .ended for
+                            // non-EOF reasons would instantly re-trigger the Up Next
+                            // overlay / chain-skip on the new episode. Natural EOF under
+                            // keep-open is also signaled via the eof-reached property
+                            // observer, so this is a secondary/backup signal for EOF.
+                            self.emit(.ended)
+                        }
+                        // Other reasons (STOP, QUIT, REDIRECT) emit nothing.
                     }
                 case MPV_EVENT_LOG_MESSAGE:
                     if let msg = UnsafePointer<mpv_event_log_message>(OpaquePointer(event.pointee.data))?.pointee,
