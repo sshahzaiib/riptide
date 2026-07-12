@@ -29,6 +29,39 @@ public enum ReleaseNameParser {
         #"\b(WEB)\b"#,
     ]
 
+    // Multi-word phrases and words that only appear in bonus-material names.
+    // Deliberately conservative: a false positive hides a real episode.
+    private static let extrasPattern =
+        #"(?i)\b(extras?|deleted scenes?|featurettes?|behind the scenes|"# +
+        #"making of|screen tests?|interviews?|bloopers|gag reel|samples?|"# +
+        #"trailers?(?!\s+park)|nced|ncop)\b"#
+
+    /// True when a filename (or its directory path) marks bonus material —
+    /// deleted scenes, featurettes, samples. A match at the very start of
+    /// the name is exempt: there the word is the title ("Extras" the show,
+    /// "Extra Ordinary" the movie), not a marker.
+    public static func isExtra(filename: String, path: String? = nil) -> Bool {
+        if let path {
+            let dirs = path.split(separator: "/").dropLast().map { $0.lowercased() }
+            if dirs.contains("extras") || dirs.contains("featurettes") { return true }
+        }
+        var s = filename
+        if let dot = s.lastIndex(of: "."),
+           videoExtensions.contains(String(s[s.index(after: dot)...]).lowercased()) {
+            s = String(s[..<dot])
+        }
+        let normalized = s.replacingOccurrences(of: ".", with: " ")
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .trimmingCharacters(in: .whitespaces)
+        // ponytail: leading-token exemption is a heuristic — a pack file named
+        // literally "Sample.mkv" slips through; acceptable, packs prefix files
+        // with the show name in practice.
+        return matchesWithRange(extrasPattern, in: normalized)
+            .contains { $0.range.lowerBound > normalized.startIndex }
+    }
+
+
     public static func parse(_ name: String) -> ParsedRelease {
         var s = name
 

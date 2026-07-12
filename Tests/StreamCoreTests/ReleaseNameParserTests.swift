@@ -66,4 +66,43 @@ final class ReleaseNameParserTests: XCTestCase {
         XCTAssertTrue(ReleaseNameParser.parse("[G] B - 03 [720p].mkv").isTV)
         XCTAssertFalse(ReleaseNameParser.parse("A.2020.1080p.mkv").isTV)
     }
+
+    func testIsExtraDetection() {
+        // Real fixtures from a Breaking Bad S01 pack.
+        XCTAssertTrue(ReleaseNameParser.isExtra(
+            filename: "Breaking_Bad_-_S01_Extra_-_Inside_Breaking_Bad.m4v"))
+        XCTAssertTrue(ReleaseNameParser.isExtra(
+            filename: "Breaking_Bad_-_S01E01_Deleted_Scene_-_Walt_Jr__Helps_His_Dad.m4v"))
+        XCTAssertTrue(ReleaseNameParser.isExtra(
+            filename: "Breaking_Bad_-_S01_Extra_-_Making_Of_Breaking_Bad.m4v"))
+        XCTAssertTrue(ReleaseNameParser.isExtra(
+            filename: "Breaking_Bad_-_S01_Extra_-_Screen_Tests.m4v"))
+        XCTAssertTrue(ReleaseNameParser.isExtra(
+            filename: "Show.S01.Featurette.Behind.the.Scenes.mkv"))
+        XCTAssertTrue(ReleaseNameParser.isExtra(
+            filename: "Show.S01E04.Bloopers.mkv"))
+        // Path-component detection (RD pack paths include directories).
+        XCTAssertTrue(ReleaseNameParser.isExtra(
+            filename: "Interview.with.the.Cast.mkv",
+            path: "/Show.S01.1080p/Extras/Interview.with.the.Cast.mkv"))
+        XCTAssertTrue(ReleaseNameParser.isExtra(
+            filename: "clip.mkv", path: "/Show/Featurettes/clip.mkv"))
+
+        // Must NOT match: real episodes and titles containing extras-like words.
+        XCTAssertFalse(ReleaseNameParser.isExtra(
+            filename: "Breaking_Bad_S01E01_Pilot_(2160p_x265_10bit_Joy).mkv"))
+        XCTAssertFalse(ReleaseNameParser.isExtra(
+            filename: "Extras.S01E01.720p.mkv"))          // Gervais show: leading token IS the title
+        XCTAssertFalse(ReleaseNameParser.isExtra(
+            filename: "Extra.Ordinary.2019.1080p.mkv"))   // leading token
+        XCTAssertFalse(ReleaseNameParser.isExtra(
+            filename: "Trailer.Park.Boys.S01E01.mkv"))    // "trailer park" exclusion
+        XCTAssertFalse(ReleaseNameParser.isExtra(
+            filename: "Extraction.2020.1080p.mkv"))       // word boundary
+        XCTAssertFalse(ReleaseNameParser.isExtra(
+            filename: "The.Matrix.1999.1080p.BluRay.mkv"))
+        XCTAssertFalse(ReleaseNameParser.isExtra(
+            filename: "clean.name.mkv", path: "/Show.S01/Season 1/clean.name.mkv"))
+    }
 }
+
