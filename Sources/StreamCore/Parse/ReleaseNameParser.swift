@@ -34,7 +34,7 @@ public enum ReleaseNameParser {
     private static let extrasPattern =
         #"(?i)\b(extras?|deleted scenes?|featurettes?|behind the scenes|"# +
         #"making of|screen tests?|interviews?|bloopers|gag reel|samples?|"# +
-        #"trailers?(?!\s+park)|nced|ncop)\b"#
+        #"trailers?(?!\s+park\b)|nced|ncop)\b"#
 
     /// True when a filename (or its directory path) marks bonus material —
     /// deleted scenes, featurettes, samples. A match at the very start of
@@ -50,10 +50,9 @@ public enum ReleaseNameParser {
            videoExtensions.contains(String(s[s.index(after: dot)...]).lowercased()) {
             s = String(s[..<dot])
         }
-        let normalized = s.replacingOccurrences(of: ".", with: " ")
-            .replacingOccurrences(of: "_", with: " ")
-            .replacingOccurrences(of: "-", with: " ")
+        var normalized = s.replacingOccurrences(of: #"[._\-\s]+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespaces)
+        normalized = normalized.replacingOccurrences(of: #"^\[[^\]]*\]\s*"#, with: "", options: .regularExpression)
         // ponytail: leading-token exemption is a heuristic — a pack file named
         // literally "Sample.mkv" slips through; acceptable, packs prefix files
         // with the show name in practice.

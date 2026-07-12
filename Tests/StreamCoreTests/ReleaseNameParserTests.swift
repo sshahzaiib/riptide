@@ -103,6 +103,12 @@ final class ReleaseNameParserTests: XCTestCase {
             filename: "The.Matrix.1999.1080p.BluRay.mkv"))
         XCTAssertFalse(ReleaseNameParser.isExtra(
             filename: "clean.name.mkv", path: "/Show.S01/Season 1/clean.name.mkv"))
+
+        // Defects test cases (TDD)
+        XCTAssertFalse(ReleaseNameParser.isExtra(filename: "[SubsPlease] Extras S01E01.mkv"))
+        XCTAssertTrue(ReleaseNameParser.isExtra(filename: "[Group] Show S01 Deleted Scenes.mkv"))
+        XCTAssertTrue(ReleaseNameParser.isExtra(filename: "Show.S01.Deleted..Scenes.mkv"))
+        XCTAssertTrue(ReleaseNameParser.isExtra(filename: "Show.S01.Trailers.Parker.mkv"))
     }
 }
 
