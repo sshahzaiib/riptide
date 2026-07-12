@@ -16,14 +16,15 @@ final class PlayerModel {
     private(set) var playbackError: String?
     private(set) var muted = false
     private(set) var speed: Double = 1.0
+    private(set) var ended = false
 
     var audioTracks: [MPVTrack] { tracks.filter { $0.type == "audio" } }
     var subTracks: [MPVTrack] { tracks.filter { $0.type == "sub" } }
 
     private weak var controller: MPVPlayerController?
     private let store: LibraryStore
-    private let itemKey: String
-    private let traktMedia: TraktMedia?
+    private var itemKey: String
+    private var traktMedia: TraktMedia?
     private var lastSaved: Double = 0
     private var scrobbleStarted = false
     private var sleepActivity: NSObjectProtocol?
@@ -81,6 +82,10 @@ final class PlayerModel {
         switch event {
         case .position(let t):
             position = t
+            // keep-open holds the last frame; a user seek back from the end
+            // resumes position events — clear the end state so the overlay
+            // logic re-arms.
+            if ended, duration > 0, t < duration - 2 { ended = false }
             if !scrobbleStarted, duration > 0 {
                 scrobbleStarted = true
                 scrobble(.start)
@@ -105,6 +110,7 @@ final class PlayerModel {
                 NSLog("RIPTRACKS: \(t.map { "\($0.type)#\($0.id)\($0.selected ? "*" : "")" }.joined(separator: " "))")
             }
         case .ended:
+            ended = true
             if duration > 0 {
                 try? store.saveProgress(itemKey: itemKey, position: duration, duration: duration)
             }
@@ -134,6 +140,30 @@ final class PlayerModel {
         setSleepDisabled(false)
         flushProgress()
         controller?.shutdown()
+    }
+
+    /// In-window switch to the next episode: close out the old item's
+    /// scrobble, swap identity, reset per-file state, and load the new URL
+    /// into the live mpv instance. (.ended already saved the old item's
+    /// final progress.)
+    func advance(to next: PlayItem) {
+        if scrobbleStarted {
+            scrobbleStarted = false
+            scrobble(.stop)
+        }
+        itemKey = next.itemKey
+        traktMedia = TraktMedia(playItem: next)
+        position = 0
+        duration = 0
+        lastSaved = 0
+        cacheTime = 0
+        tracks = []
+        playbackError = nil
+        ended = false
+        buffering = false
+        speed = 1.0
+        controller?.setSpeed(1.0)
+        controller?.loadFile(next.url, startAt: next.resumeFrom)
     }
 
     // MARK: User intents
