@@ -19,6 +19,7 @@ struct PlayerWindowView: View {
     @State private var showResumePrompt = false
     @State private var keyMonitor: Any?
     @State private var skipIntroUsed = false
+    @State private var episodeName: String?
 
     @AppStorage("autoplayNext") private var autoplayNext = true
     @State private var upNextItem: LibraryItem?      // next episode, pre-unrestrict
@@ -143,7 +144,24 @@ struct PlayerWindowView: View {
                 }
             }
         }
+        .task(id: current.itemKey) {
+            episodeName = nil
+            guard let id = current.tmdbID, let s = current.season, let e = current.episode
+            else { return }
+            let token = AppSettings.shared.tmdbToken
+            guard !token.isEmpty else { return }
+            // Best-effort: a TMDB miss just leaves the numeric label.
+            episodeName = try? await TMDBClient(bearerToken: token)
+                .episode(showID: id, season: s, episode: e).name
+        }
         .animation(.easeInOut(duration: 0.2), value: controlsVisible)
+        .overlay(alignment: .topLeading) {
+            if controlsVisible {
+                nowPlayingTitle
+                    .padding(16)
+                    .transition(.opacity)
+            }
+        }
         .navigationTitle(current.title)
         .onDisappear {
             if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
@@ -242,6 +260,22 @@ struct PlayerWindowView: View {
         upNextCountdown = nil
         upNextFailed = false
         upNextTask = nil
+    }
+
+    /// Show/movie name (subtitleQuery is the parsed title — no SxEy suffix),
+    /// plus an episode line when TMDB knows the name.
+    private var nowPlayingTitle: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(current.subtitleQuery)
+                .font(.headline)
+            if let s = current.season, let e = current.episode {
+                Text("S\(s)E\(e)\(episodeName.map { " · \($0)" } ?? "")")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
     private func upNextCard(_ next: LibraryItem) -> some View {
