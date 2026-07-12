@@ -15,6 +15,17 @@ final class ShowPageModel {
     private(set) var cast: [TMDBCastMember] = []
     // season -> episodeNumber -> metadata
     private(set) var seasonMeta: [Int: [Int: TMDBSeasonEpisode]] = [:]
+    private(set) var imdbID: String?
+    private(set) var allSeasonNumbers: [Int] = []
+
+    struct EpisodeSlot: Identifiable {
+        let season: Int
+        let number: Int
+        let meta: TMDBSeasonEpisode?
+        let item: LibraryItem?
+        var id: String { item?.itemKey ?? "tmdb-\(season)-\(number)" }
+    }
+
     var selected: LibraryItem?
     private var stateByKey: [String: WatchState] = [:]
     private var userSelected = false
@@ -32,6 +43,45 @@ final class ShowPageModel {
         Dictionary(grouping: show.episodes) { $0.season ?? 0 }
             .map { (number: $0.key, episodes: $0.value) }
             .sorted { $0.number < $1.number }
+    }
+
+    /// Seasons to render: TMDB's full list merged with whatever the library
+    /// actually has. Specials (0) only when we own season-0 files — that
+    /// bucket also holds items whose filename parse found no season.
+    var visibleSeasonNumbers: [Int] {
+        var numbers = Set(allSeasonNumbers)
+        numbers.formUnion(seasons.map(\.number))
+        if !seasons.contains(where: { $0.number == 0 }) { numbers.remove(0) }
+        return numbers.sorted()
+    }
+
+    /// Row source per season: the TMDB episode list, each slot carrying the
+    /// matching library item if we have the file. Falls back to library-only
+    /// rows when TMDB metadata is missing (offline, no match).
+    var seasonSlots: [(number: Int, slots: [EpisodeSlot])] {
+        let libraryBySeason = Dictionary(grouping: show.episodes) { $0.season ?? 0 }
+        return visibleSeasonNumbers.map { season in
+            let items = (libraryBySeason[season] ?? [])
+                .sorted { ($0.episode ?? 0) < ($1.episode ?? 0) }
+            guard let meta = seasonMeta[season], !meta.isEmpty else {
+                return (season, items.map {
+                    EpisodeSlot(season: season, number: $0.episode ?? 0,
+                                meta: nil, item: $0)
+                })
+            }
+            let byEpisode = Dictionary(grouping: items) { $0.episode ?? 0 }
+            var slots = meta.keys.sorted().map { num in
+                EpisodeSlot(season: season, number: num, meta: meta[num],
+                            item: byEpisode[num]?.first)
+            }
+            // Library files with episode numbers TMDB doesn't list still render.
+            let known = Set(meta.keys)
+            slots += items.filter { !known.contains($0.episode ?? 0) }.map {
+                EpisodeSlot(season: season, number: $0.episode ?? 0,
+                            meta: nil, item: $0)
+            }
+            return (season, slots)
+        }
     }
 
     /// Most recently watched, unfinished episode of this show.
@@ -80,14 +130,21 @@ final class ShowPageModel {
 
     func load(tmdb: TMDBClient) async {
         guard let showID else { return }
-        if let fetched = try? await tmdb.showDetails(id: showID) { details = fetched }
+        if let fetched = try? await tmdb.showDetails(id: showID) {
+            details = fetched
+            allSeasonNumbers = fetched.seasonNumbers
+        }
         if let fetched = try? await tmdb.showCredits(id: showID) { cast = fetched }
-        for season in seasons {
-            guard seasonMeta[season.number] == nil,
+        // For Find Streams on missing episodes; empty imdb_id decodes as nil.
+        if let ids = try? await tmdb.externalIDs(showID: showID) {
+            imdbID = ids.imdbID
+        }
+        for season in visibleSeasonNumbers {
+            guard seasonMeta[season] == nil,
                   let episodes = try? await tmdb.seasonEpisodes(showID: showID,
-                                                                season: season.number)
+                                                                season: season)
             else { continue }
-            seasonMeta[season.number] = Dictionary(
+            seasonMeta[season] = Dictionary(
                 uniqueKeysWithValues: episodes.map { ($0.episodeNumber, $0) })
         }
     }
