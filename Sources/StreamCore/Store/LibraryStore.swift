@@ -136,6 +136,32 @@ public final class LibraryStore {
         return try context.fetch(descriptor).first
     }
 
+    /// The library item that is EXACTLY the next episode after `itemKey`:
+    /// (S, E+1), or (S+1, 1) when E+1 isn't owned (season rollover). A gap
+    /// returns nil — autoplay must never skip story content. When duplicate
+    /// files exist for the target, prefer one from the same torrent pack.
+    /// ponytail: rollover assumes E+1-missing means season finale; a
+    /// half-owned season followed by S+1E1 would skip — needs TMDB season
+    /// lengths to do better.
+    public func nextEpisode(after itemKey: String) throws -> LibraryItem? {
+        let keyDescriptor = FetchDescriptor<LibraryItem>(
+            predicate: #Predicate { $0.itemKey == itemKey })
+        guard let current = try context.fetch(keyDescriptor).first,
+              let showID = current.tmdbID,
+              let season = current.season,
+              let episode = current.episode else { return nil }
+        let id: Int? = showID
+        let siblings = try context.fetch(FetchDescriptor<LibraryItem>(
+            predicate: #Predicate { $0.tmdbID == id }))
+            .filter { $0.mediaKind == "episode" && $0.season != nil && $0.episode != nil }
+        func owned(_ s: Int, _ e: Int) -> [LibraryItem] {
+            siblings.filter { $0.season == s && $0.episode == e }
+        }
+        var candidates = owned(season, episode + 1)
+        if candidates.isEmpty { candidates = owned(season + 1, 1) }
+        return candidates.first { $0.torrentID == current.torrentID } ?? candidates.first
+    }
+
     /// Item count per torrent — lets the refresher skip torrentInfo calls for
     /// packs it has already expanded.
     public func entryCounts() throws -> [String: Int] {

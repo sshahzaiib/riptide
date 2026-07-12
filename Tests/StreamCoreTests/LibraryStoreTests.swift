@@ -246,6 +246,66 @@ final class LibraryStoreTests: XCTestCase {
         // Fresh timestamp ⇒ Trakt pull (strictly-newer-wins) can't overwrite it.
         XCTAssertGreaterThan(state.lastWatchedAt, Date(timeIntervalSinceNow: -60))
     }
+
+    // MARK: nextEpisode(after:)
+
+    /// Seed a show: each (season, episode, torrentID) becomes a matched
+    /// episode of TMDB show `showID`.
+    private func seedShow(_ store: LibraryStore, showID: Int = 100,
+                          episodes: [(s: Int, e: Int, torrent: String)]) throws {
+        let entries = episodes.enumerated().map { i, ep in
+            entry(torrentID: ep.torrent, fileIndex: i,
+                  filename: "Show.S\(String(format: "%02d", ep.s))E\(String(format: "%02d", ep.e)).1080p.mkv")
+        }
+        _ = try store.upsert(entries: entries)
+        for entry in entries {
+            try store.applyMatch(itemKey: entry.itemKey, tmdbID: showID,
+                                 mediaKind: "episode", posterPath: nil,
+                                 overview: nil, rating: nil)
+        }
+    }
+
+    func testNextEpisodeSequential() throws {
+        let store = try LibraryStore.inMemory()
+        try seedShow(store, episodes: [(1, 1, "T1"), (1, 2, "T1"), (1, 3, "T1")])
+        let next = try XCTUnwrap(try store.nextEpisode(after: "T1#0"))
+        XCTAssertEqual(next.season, 1)
+        XCTAssertEqual(next.episode, 2)
+    }
+
+    func testNextEpisodeSeasonRollover() throws {
+        let store = try LibraryStore.inMemory()
+        try seedShow(store, episodes: [(1, 8, "T1"), (2, 1, "T2")])
+        let next = try XCTUnwrap(try store.nextEpisode(after: "T1#0"))
+        XCTAssertEqual(next.season, 2)
+        XCTAssertEqual(next.episode, 1)
+    }
+
+    func testNextEpisodeGapReturnsNil() throws {
+        let store = try LibraryStore.inMemory()
+        // E2 missing and no next-season E1: never skip a gap.
+        try seedShow(store, episodes: [(1, 1, "T1"), (1, 3, "T1"), (2, 2, "T2")])
+        XCTAssertNil(try store.nextEpisode(after: "T1#0"))
+    }
+
+    func testNextEpisodePrefersSamePack() throws {
+        let store = try LibraryStore.inMemory()
+        // E2 exists as a loose 4K file (T9) and inside the current pack (T1).
+        try seedShow(store, episodes: [(1, 1, "T1"), (1, 2, "T9"), (1, 2, "T1")])
+        let next = try XCTUnwrap(try store.nextEpisode(after: "T1#0"))
+        XCTAssertEqual(next.torrentID, "T1")
+    }
+
+    func testNextEpisodeIgnoresOtherShowsAndMovies() throws {
+        let store = try LibraryStore.inMemory()
+        try seedShow(store, showID: 100, episodes: [(1, 1, "T1")])
+        try seedShow(store, showID: 200, episodes: [(1, 2, "T5")])   // other show's E2
+        XCTAssertNil(try store.nextEpisode(after: "T1#0"))
+        // Movies and unmatched items have no next episode.
+        _ = try store.upsert(entries: [entry(torrentID: "M1", filename: "The.Matrix.1999.mkv")])
+        XCTAssertNil(try store.nextEpisode(after: "M1#0"))
+        XCTAssertNil(try store.nextEpisode(after: "does-not-exist"))
+    }
 }
 
 
