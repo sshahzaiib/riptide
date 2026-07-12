@@ -11,6 +11,7 @@ public struct LibraryFileEntry: Sendable, Equatable {
     public let bytes: Int64
     public let added: String           // raw ISO-8601 from the torrent
     public let link: String            // debrid hoster link for THIS file
+    public let isExtra: Bool           // bonus material (deleted scene, featurette…)
 
     /// RD keys keep their pre-multi-debrid format so nothing re-syncs.
     public var itemKey: String {
@@ -18,7 +19,7 @@ public struct LibraryFileEntry: Sendable, Equatable {
     }
 
     public init(service: String = "rd", torrentID: String, fileIndex: Int,
-                filename: String, bytes: Int64, added: String, link: String) {
+                filename: String, bytes: Int64, added: String, link: String, isExtra: Bool = false) {
         self.service = service
         self.torrentID = torrentID
         self.fileIndex = fileIndex
@@ -26,6 +27,7 @@ public struct LibraryFileEntry: Sendable, Equatable {
         self.bytes = bytes
         self.added = added
         self.link = link
+        self.isExtra = isExtra
     }
 }
 

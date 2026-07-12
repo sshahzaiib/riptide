@@ -159,5 +159,26 @@ final class LibraryStoreTests: XCTestCase {
         let grouped = try store.cachedEntriesByTorrent()
         XCTAssertEqual(grouped["77"], [ad])
     }
+
+    func testUpsertClassifiesFlaggedEntriesAsExtras() throws {
+        let store = try LibraryStore.inMemory()
+        _ = try store.upsert(entries: [
+            LibraryFileEntry(torrentID: "T1", fileIndex: 0,
+                             filename: "Breaking_Bad_-_S01E01_Deleted_Scene_-_Walt.m4v",
+                             bytes: 100, added: "2026-06-01T00:00:00.000Z",
+                             link: "L0", isExtra: true),
+            entry(torrentID: "T1", fileIndex: 1,
+                  filename: "Breaking.Bad.S01E01.Pilot.mkv", link: "L1"),
+        ])
+        let items = try store.items()
+        XCTAssertEqual(items.first { $0.itemKey == "T1#0" }?.mediaKind, "extra")
+        XCTAssertEqual(items.first { $0.itemKey == "T1#1" }?.mediaKind, "episode")
+
+        // The flag survives the cached-entries fast path (round-trip from mediaKind).
+        let cached = try store.cachedEntries(torrentID: "T1")
+            .sorted { $0.fileIndex < $1.fileIndex }
+        XCTAssertTrue(cached[0].isExtra)
+        XCTAssertFalse(cached[1].isExtra)
+    }
 }
 

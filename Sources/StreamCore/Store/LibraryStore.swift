@@ -86,7 +86,8 @@ public final class LibraryStore {
                     item.season = parsed.season
                     item.episode = parsed.episode
                     item.quality = parsed.quality
-                    item.mediaKind = parsed.isTV ? "episode" : "movie"
+                    item.mediaKind = entry.isExtra ? "extra"
+                        : (parsed.isTV ? "episode" : "movie")
                     // Filename changed -> stale match; rematch on next refresh.
                     item.tmdbID = nil
                     item.posterPath = nil
@@ -96,8 +97,10 @@ public final class LibraryStore {
                     summary.updated += 1
                 }
             } else {
-                context.insert(LibraryItem(entry: entry,
-                                           parsed: ReleaseNameParser.parse(entry.filename)))
+                let item = LibraryItem(entry: entry,
+                                       parsed: ReleaseNameParser.parse(entry.filename))
+                if entry.isExtra { item.mediaKind = "extra" }
+                context.insert(item)
                 summary.inserted += 1
             }
         }
@@ -151,7 +154,8 @@ public final class LibraryStore {
         return try context.fetch(descriptor).map {
             LibraryFileEntry(service: $0.service, torrentID: $0.torrentID,
                              fileIndex: $0.fileIndex, filename: $0.filename,
-                             bytes: $0.sizeBytes, added: $0.addedAt, link: $0.link)
+                             bytes: $0.sizeBytes, added: $0.addedAt, link: $0.link,
+                             isExtra: $0.mediaKind == "extra")
         }
     }
 
@@ -161,7 +165,8 @@ public final class LibraryStore {
         Dictionary(grouping: try items().map {
             LibraryFileEntry(service: $0.service, torrentID: $0.torrentID,
                              fileIndex: $0.fileIndex, filename: $0.filename,
-                             bytes: $0.sizeBytes, added: $0.addedAt, link: $0.link)
+                             bytes: $0.sizeBytes, added: $0.addedAt, link: $0.link,
+                             isExtra: $0.mediaKind == "extra")
         }, by: \.torrentID)
     }
 
