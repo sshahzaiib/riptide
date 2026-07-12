@@ -21,15 +21,17 @@ public struct TraktSyncer {
 
     public func pull() async throws -> Summary {
         let items = try store.items()
-        var movieKeys: [Int: String] = [:]          // movie tmdb -> itemKey
-        var episodeKeys: [String: String] = [:]     // "showTmdb#s#e" -> itemKey
+        // Arrays, not single keys: duplicate files of one movie/episode
+        // (1080p + 4K) must all receive a remote state change.
+        var movieKeys: [Int: [String]] = [:]        // movie tmdb -> itemKeys
+        var episodeKeys: [String: [String]] = [:]   // "showTmdb#s#e" -> itemKeys
         var localShowIDs: Set<Int> = []             // show tmdb ids in library
         for item in items {
             guard let id = item.tmdbID else { continue }
             if item.mediaKind == "movie" {
-                movieKeys[id] = item.itemKey
+                movieKeys[id, default: []].append(item.itemKey)
             } else if let s = item.season, let e = item.episode {
-                episodeKeys["\(id)#\(s)#\(e)"] = item.itemKey
+                episodeKeys["\(id)#\(s)#\(e)", default: []].append(item.itemKey)
                 localShowIDs.insert(id)
             }
         }
@@ -39,28 +41,30 @@ public struct TraktSyncer {
         var summary = Summary()
 
         for entry in try await client.playback() {
-            let key: String? = switch entry.type {
-            case "movie": entry.movie?.ids.tmdb.flatMap { movieKeys[$0] }
+            let keys: [String] = switch entry.type {
+            case "movie": entry.movie?.ids.tmdb.flatMap { movieKeys[$0] } ?? []
             case "episode": entry.show?.ids.tmdb.flatMap { showID in
                 entry.episode.flatMap { episodeKeys["\(showID)#\($0.season)#\($0.number)"] }
+            } ?? []
+            default: []
             }
-            default: nil
+            guard let pausedAt = entry.pausedAt else { continue }
+            for key in keys {
+                let local = states[key]
+                // Percent -> seconds needs a duration: the file's real length
+                // when we have it, else Trakt's runtime (extended=full) so a
+                // fresh store still gets its Continue Watching row.
+                let runtime = entry.type == "movie" ? entry.movie?.runtime : entry.episode?.runtime
+                let duration = (local?.1).flatMap { $0 > 0 ? $0 : nil }
+                    ?? runtime.map { Double($0) * 60 }
+                guard let duration, duration > 0,
+                      pausedAt > (local?.0 ?? .distantPast) else { continue }
+                try store.applyRemoteProgress(itemKey: key,
+                                              position: entry.progress / 100 * duration,
+                                              duration: duration, watchedAt: pausedAt)
+                states[key] = (pausedAt, duration, false)
+                summary.playbackApplied += 1
             }
-            guard let key, let pausedAt = entry.pausedAt else { continue }
-            let local = states[key]
-            // Percent -> seconds needs a duration: the file's real length
-            // when we have it, else Trakt's runtime (extended=full) so a
-            // fresh store still gets its Continue Watching row.
-            let runtime = entry.type == "movie" ? entry.movie?.runtime : entry.episode?.runtime
-            let duration = (local?.1).flatMap { $0 > 0 ? $0 : nil }
-                ?? runtime.map { Double($0) * 60 }
-            guard let duration, duration > 0,
-                  pausedAt > (local?.0 ?? .distantPast) else { continue }
-            try store.applyRemoteProgress(itemKey: key,
-                                          position: entry.progress / 100 * duration,
-                                          duration: duration, watchedAt: pausedAt)
-            states[key] = (pausedAt, duration, false)
-            summary.playbackApplied += 1
         }
 
         func markWatched(key: String, at watchedAt: Date) throws {
@@ -74,8 +78,10 @@ public struct TraktSyncer {
         }
 
         for watched in try await client.watchedMovies() {
-            guard let id = watched.movie.ids.tmdb, let key = movieKeys[id] else { continue }
-            try markWatched(key: key, at: watched.lastWatchedAt)
+            guard let id = watched.movie.ids.tmdb else { continue }
+            for key in movieKeys[id] ?? [] {
+                try markWatched(key: key, at: watched.lastWatchedAt)
+            }
         }
         // The watched list is shallow (Trakt stopped inlining seasons); fetch
         // per-episode progress only for shows that exist in the local library.
@@ -85,9 +91,9 @@ public struct TraktSyncer {
             let progress = try await client.showProgress(traktID: traktID)
             for season in progress.seasons {
                 for episode in season.episodes where episode.completed {
-                    guard let key = episodeKeys["\(showID)#\(season.number)#\(episode.number)"]
-                    else { continue }
-                    try markWatched(key: key, at: episode.lastWatchedAt ?? show.lastWatchedAt)
+                    for key in episodeKeys["\(showID)#\(season.number)#\(episode.number)"] ?? [] {
+                        try markWatched(key: key, at: episode.lastWatchedAt ?? show.lastWatchedAt)
+                    }
                 }
             }
         }

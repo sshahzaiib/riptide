@@ -114,33 +114,35 @@ final class ShowPageModel {
     /// Context-menu mark: local write first (survives Trakt pulls), then a
     /// best-effort batched push to Trakt history.
     func setWatched(_ watched: Bool, items: [LibraryItem]) {
+        // A mark is episode-level (Trakt has no notion of files): expand each
+        // numbered item to every duplicate file of the same episode so 1080p
+        // and 4K copies never diverge. Unnumbered items pass through as-is.
+        let byEpisode = Dictionary(grouping: show.episodes.filter {
+            $0.season != nil && $0.episode != nil
+        }) { "\($0.season!)#\($0.episode!)" }
         var expanded: [LibraryItem] = []
         var seenKeys = Set<String>()
-        
         for item in items {
+            let siblings: [LibraryItem]
             if let season = item.season, let episode = item.episode {
-                let matches = show.episodes.filter { $0.season == season && $0.episode == episode }
-                for match in matches {
-                    if !seenKeys.contains(match.itemKey) {
-                        seenKeys.insert(match.itemKey)
-                        expanded.append(match)
-                    }
-                }
+                siblings = byEpisode["\(season)#\(episode)"] ?? [item]
             } else {
-                if !seenKeys.contains(item.itemKey) {
-                    seenKeys.insert(item.itemKey)
-                    expanded.append(item)
-                }
+                siblings = [item]
+            }
+            for sibling in siblings where seenKeys.insert(sibling.itemKey).inserted {
+                expanded.append(sibling)
             }
         }
-        
+
         for item in expanded {
             try? store.setWatched(itemKey: item.itemKey, watched: watched)
         }
         refreshWatchStates()
         guard let showID else { return }
+        var seenEpisodes = Set<String>()
         let media: [TraktMedia] = expanded.compactMap { item in
-            guard let season = item.season, let episode = item.episode else { return nil }
+            guard let season = item.season, let episode = item.episode,
+                  seenEpisodes.insert("\(season)#\(episode)").inserted else { return nil }
             return .episode(showTMDBID: showID, season: season, episode: episode)
         }
         TraktService.shared.setWatched(watched, media: media)
