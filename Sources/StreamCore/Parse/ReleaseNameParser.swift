@@ -52,7 +52,7 @@ public enum ReleaseNameParser {
         }
         var normalized = s.replacingOccurrences(of: #"[._\-\s]+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespaces)
-        normalized = normalized.replacingOccurrences(of: #"^\[[^\]]*\]\s*"#, with: "", options: .regularExpression)
+        normalized = normalized.replacingOccurrences(of: #"^(?:\[[^\]]*\]\s*)+"#, with: "", options: .regularExpression)
         // ponytail: leading-token exemption is a heuristic — a pack file named
         // literally "Sample.mkv" slips through; acceptable, packs prefix files
         // with the show name in practice.

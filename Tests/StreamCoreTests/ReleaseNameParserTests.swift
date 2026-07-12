@@ -106,6 +106,7 @@ final class ReleaseNameParserTests: XCTestCase {
 
         // Defects test cases (TDD)
         XCTAssertFalse(ReleaseNameParser.isExtra(filename: "[SubsPlease] Extras S01E01.mkv"))
+        XCTAssertFalse(ReleaseNameParser.isExtra(filename: "[Group] [1080p] Extras S01E01.mkv"))
         XCTAssertTrue(ReleaseNameParser.isExtra(filename: "[Group] Show S01 Deleted Scenes.mkv"))
         XCTAssertTrue(ReleaseNameParser.isExtra(filename: "Show.S01.Deleted..Scenes.mkv"))
         XCTAssertTrue(ReleaseNameParser.isExtra(filename: "Show.S01.Trailers.Parker.mkv"))
