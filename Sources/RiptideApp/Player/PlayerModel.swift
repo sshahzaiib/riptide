@@ -91,7 +91,10 @@ final class PlayerModel {
                 scrobble(.start)
                 setSleepDisabled(!paused)
             }
-            if abs(t - lastSaved) >= 5 {          // spec: autosave every 5 s
+            // duration == 0 means the next file hasn't loaded yet (advance
+            // resets it) — a stale old-file position event must not be saved
+            // under the new itemKey.
+            if duration > 0, abs(t - lastSaved) >= 5 {   // spec: autosave every 5 s
                 lastSaved = t
                 try? store.saveProgress(itemKey: itemKey, position: t, duration: duration)
             }
