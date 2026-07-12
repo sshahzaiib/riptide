@@ -10,6 +10,8 @@ struct SettingsView: View {
     @State private var traktClientSecret = TraktService.shared.clientSecret
     @State private var showTraktConnect = false
     @AppStorage("autoplayNext") private var autoplayNext = true
+    @AppStorage(StreamingCachePreset.storageKey)
+    private var streamingCache: StreamingCachePreset = .default
 
     private var trakt: TraktService { TraktService.shared }
 
@@ -18,6 +20,13 @@ struct SettingsView: View {
             Section("Playback") {
                 Toggle("Autoplay next episode", isOn: $autoplayNext)
                 Text("When an episode ends, the next one starts after a 10-second countdown.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Picker("Streaming cache", selection: $streamingCache) {
+                    ForEach(StreamingCachePreset.allCases, id: \.self) { preset in
+                        Text(preset.label).tag(preset)
+                    }
+                }
+                Text("Aggressive buffers several minutes ahead — helps high-bitrate 4K remuxes. Applies to newly opened players.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Real-Debrid") {
