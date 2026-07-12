@@ -130,14 +130,15 @@ struct ShowDetailView: View {
     @State private var model: ShowPageModel?
     @State private var busy = false
     @State private var playError: String?
+    @State private var streamRequest: StreamRequest?
 
     var body: some View {
         ScrollView {
             if let model {
                 VStack(alignment: .leading, spacing: 24) {
                     hero(model)
-                    ForEach(model.seasons, id: \.number) { season in
-                        seasonStrip(model, season: season.number, episodes: season.episodes)
+                    ForEach(model.seasonSlots, id: \.number) { season in
+                        seasonStrip(model, season: season.number, slots: season.slots)
                     }
                     CastRow(cast: model.cast)
                         .padding(.horizontal, 24)
@@ -147,6 +148,9 @@ struct ShowDetailView: View {
         }
         .ignoresSafeArea(edges: .top)
         .navigationTitle(show.title)
+        .sheet(item: $streamRequest) { request in
+            StreamPickerSheet(request: request)
+        }
         .task {
             let pageModel = ShowPageModel(show: show, store: library.store)
             model = pageModel
@@ -260,24 +264,67 @@ struct ShowDetailView: View {
 
     @ViewBuilder
     private func seasonStrip(_ model: ShowPageModel, season: Int,
-                             episodes: [LibraryItem]) -> some View {
+                             slots: [ShowPageModel.EpisodeSlot]) -> some View {
+        let owned = slots.compactMap(\.item)
         VStack(alignment: .leading, spacing: 10) {
             Text(season == 0 ? "Specials" : "Season \(season)")
                 .font(.title3.bold())
                 .padding(.horizontal, 24)
                 .contextMenu {
-                    Button("Mark Season Watched") { model.setWatched(true, items: episodes) }
-                    Button("Mark Season Unwatched") { model.setWatched(false, items: episodes) }
+                    if !owned.isEmpty {
+                        Button("Mark Season Watched") { model.setWatched(true, items: owned) }
+                        Button("Mark Season Unwatched") { model.setWatched(false, items: owned) }
+                    }
                 }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .top, spacing: 14) {
-                    ForEach(episodes, id: \.itemKey) { episode in
-                        episodeCard(model, episode: episode)
+                    ForEach(slots) { slot in
+                        if let item = slot.item {
+                            episodeCard(model, episode: item)
+                        } else {
+                            missingEpisodeCard(model, slot: slot)
+                        }
                     }
                 }
                 .padding(.horizontal, 24)
             }
         }
+    }
+
+    /// Episode we don't have a file for: dimmed TMDB still + Find Streams.
+    @ViewBuilder
+    private func missingEpisodeCard(_ model: ShowPageModel,
+                                    slot: ShowPageModel.EpisodeSlot) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ZStack {
+                AsyncImage(url: slot.meta?.stillPath.map {
+                    TMDB.imageURL(path: $0, width: 300)
+                }) { image in
+                    image.resizable().aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    ZStack {
+                        Rectangle().fill(.quaternary)
+                        Text("E\(slot.number)")
+                            .font(.title2.bold()).foregroundStyle(.secondary)
+                    }
+                }
+                .frame(width: 200, height: 112)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .opacity(0.55)
+
+                Image(systemName: "magnifyingglass")
+                    .font(.title3)
+                    .padding(8)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            Text("\(slot.number). \(slot.meta?.name ?? "Episode \(slot.number)")")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .frame(width: 200, alignment: .leading)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { findStreams(model, slot: slot) }
     }
 
     @ViewBuilder
@@ -339,6 +386,19 @@ struct ShowDetailView: View {
     }
 
     // MARK: Actions
+
+    private func findStreams(_ model: ShowPageModel, slot: ShowPageModel.EpisodeSlot) {
+        guard let imdbID = model.imdbID, let showID = model.showID else {
+            playError = "This show can't be searched on addons yet."
+            return
+        }
+        streamRequest = StreamRequest(type: .series,
+                                      imdbID: imdbID,
+                                      title: show.title,
+                                      season: slot.season,
+                                      episode: slot.number,
+                                      tmdbID: showID)
+    }
 
     private func play(_ model: ShowPageModel, resume: Bool) async {
         guard let item = model.selected else { return }
