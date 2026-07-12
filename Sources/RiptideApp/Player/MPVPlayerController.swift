@@ -157,6 +157,9 @@ final class MPVPlayerController: NSViewController {
         checkError(mpv_set_option_string(mpv, "hwdec", "videotoolbox"))
         checkError(mpv_set_option_string(mpv, "ytdl", "no"))
         checkError(mpv_set_option_string(mpv, "keep-open", "yes"))
+        // Auto-select English subtitles during load: a manual sid switch on
+        // a network stream drops the demuxer cache and rebuffers.
+        checkError(mpv_set_option_string(mpv, "slang", "en,eng"))
         if ProcessInfo.processInfo.environment["RIPTIDE_DEBUG_URL"] != nil {
             checkError(mpv_set_option_string(mpv, "loop-file", "inf"))
         }
