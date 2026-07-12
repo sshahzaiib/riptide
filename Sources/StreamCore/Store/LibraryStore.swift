@@ -76,7 +76,7 @@ public final class LibraryStore {
             guard processed.insert(entry.itemKey).inserted else { continue }
             if let item = byKey.removeValue(forKey: entry.itemKey) {
                 if item.filename != entry.filename || item.link != entry.link
-                    || item.sizeBytes != entry.bytes {
+                    || item.sizeBytes != entry.bytes || (item.mediaKind == "extra") != entry.isExtra {
                     let parsed = ReleaseNameParser.parse(entry.filename)
                     item.filename = entry.filename
                     item.sizeBytes = entry.bytes
@@ -183,6 +183,26 @@ public final class LibraryStore {
         item.rating = rating
         item.lastRefreshed = .now
         try context.save()
+    }
+
+    /// Cleanup for libraries synced before extras detection existed — the
+    /// cached-entries fast path never re-parses, so stale rows linger.
+    /// Filename-only (paths aren't stored). Idempotent; runs every refresh.
+    @discardableResult
+    public func reclassifyExtras() throws -> Int {
+        var flipped = 0
+        for item in try context.fetch(FetchDescriptor<LibraryItem>())
+        where item.mediaKind != "extra"
+            && ReleaseNameParser.isExtra(filename: item.filename) {
+            item.mediaKind = "extra"
+            item.tmdbID = nil          // any match was a mis-match
+            item.posterPath = nil
+            item.overview = nil
+            item.rating = nil
+            flipped += 1
+        }
+        if flipped > 0 { try context.save() }
+        return flipped
     }
 
     // MARK: Watch state

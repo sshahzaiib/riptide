@@ -64,10 +64,14 @@ public struct LibraryRefresher {
         }
         let upsert = try store.upsert(entries: entries, protecting: failed)
 
+        // Self-heal rows synced before extras detection existed.
+        try store.reclassifyExtras()
+
         // Grouped matching: one TMDB search per distinct (kind, title, year) —
         // a 23-episode pack costs one API call.
         var matched = 0, failed2 = 0
-        let unmatched = try store.items().filter { $0.tmdbID == nil }
+        let unmatched = try store.items()
+            .filter { $0.tmdbID == nil && $0.mediaKind != "extra" }
         let groups = Dictionary(grouping: unmatched) {
             "\($0.mediaKind)|\($0.title.lowercased())|\($0.year.map(String.init) ?? "")"
         }

@@ -180,5 +180,46 @@ final class LibraryStoreTests: XCTestCase {
         XCTAssertTrue(cached[0].isExtra)
         XCTAssertFalse(cached[1].isExtra)
     }
+
+    func testReclassifyExtrasFlipsPreDetectionRows() throws {
+        let store = try LibraryStore.inMemory()
+        // Simulate a library synced BEFORE detection existed: the deleted
+        // scene was stored as a matched S01E01 "episode".
+        _ = try store.upsert(entries: [
+            entry(torrentID: "T1", fileIndex: 0,
+                  filename: "Breaking_Bad_-_S01E01_Deleted_Scene_-_Walt.m4v"),
+            entry(torrentID: "T1", fileIndex: 1,
+                  filename: "Breaking.Bad.S01E01.Pilot.mkv", link: "L1"),
+        ])
+        try store.applyMatch(itemKey: "T1#0", tmdbID: 1396, mediaKind: "episode",
+                             posterPath: "/p.jpg", overview: "x", rating: 8)
+
+        XCTAssertEqual(try store.reclassifyExtras(), 1)
+        let items = try store.items()
+        let extra = try XCTUnwrap(items.first { $0.itemKey == "T1#0" })
+        XCTAssertEqual(extra.mediaKind, "extra")
+        XCTAssertNil(extra.tmdbID)                         // stale match cleared
+        XCTAssertEqual(items.first { $0.itemKey == "T1#1" }?.mediaKind, "episode")
+        XCTAssertEqual(try store.reclassifyExtras(), 0)    // idempotent
+    }
+
+    func testUpsertFlipsMediaKindWhenExtraFlagChanges() throws {
+        let store = try LibraryStore.inMemory()
+        
+        // 1. upsert an entry with isExtra: false (default is false)
+        let entry1 = entry(torrentID: "T1", fileIndex: 0, filename: "Breaking.Bad.S01E01.Pilot.mkv")
+        _ = try store.upsert(entries: [entry1])
+        XCTAssertEqual(try store.items().first?.mediaKind, "episode")
+        
+        // 2. re-upsert the SAME entry (same filename/link/bytes) with isExtra: true
+        let entry2 = LibraryFileEntry(torrentID: "T1", fileIndex: 0, filename: "Breaking.Bad.S01E01.Pilot.mkv", bytes: 100, added: "2026-06-01T00:00:00.000Z", link: "https://real-debrid.com/d/X", isExtra: true)
+        _ = try store.upsert(entries: [entry2])
+        XCTAssertEqual(try store.items().first?.mediaKind, "extra")
+        
+        // 3. re-upsert again with isExtra: false
+        _ = try store.upsert(entries: [entry1])
+        XCTAssertEqual(try store.items().first?.mediaKind, "episode")
+    }
 }
+
 

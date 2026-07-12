@@ -120,7 +120,8 @@ public struct RealDebridService: DebridService {
             if t.links.count <= 1 {
                 entries.append(LibraryFileEntry(torrentID: t.id, fileIndex: 0,
                                                 filename: t.filename, bytes: t.bytes,
-                                                added: t.added, link: t.links[0]))
+                                                added: t.added, link: t.links[0],
+                                                isExtra: ReleaseNameParser.isExtra(filename: t.filename)))
             } else if knownCounts[t.id] == t.links.count, let known = cached[t.id] {
                 // Already expanded on a previous refresh — no torrentInfo call.
                 entries.append(contentsOf: known)
@@ -132,7 +133,8 @@ public struct RealDebridService: DebridService {
                     let base = (file.path as NSString).lastPathComponent
                     entries.append(LibraryFileEntry(torrentID: t.id, fileIndex: i,
                                                     filename: base, bytes: file.bytes,
-                                                    added: t.added, link: t.links[i]))
+                                                    added: t.added, link: t.links[i],
+                                                    isExtra: ReleaseNameParser.isExtra(filename: base, path: file.path)))
                 }
             }
         }
@@ -202,7 +204,8 @@ public struct AllDebridService: DebridService {
                 entries.append(LibraryFileEntry(service: "ad", torrentID: id,
                                                 fileIndex: i, filename: f.name,
                                                 bytes: f.size, added: added,
-                                                link: f.link))
+                                                link: f.link,
+                                                isExtra: ReleaseNameParser.isExtra(filename: f.name, path: f.path)))
             }
         }
         return entries

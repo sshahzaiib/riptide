@@ -223,7 +223,49 @@ final class LibraryRefresherTests: XCTestCase {
                                                  tmdb: makeTMDB(), store: store).refresh()
         XCTAssertEqual(summary.authFailures, ["rd", "ad"])
     }
+
+    func testPackExtrasAreClassifiedAndSkipMatching() async throws {
+        let store = try LibraryStore.inMemory()
+        nonisolated(unsafe) var tvSearchCalls = 0
+        MockURLProtocol.setHandler { request in
+            let url = request.url!
+            if url.path.contains("/torrents/info/") {
+                return .json("""
+                {"id":"PACK","filename":"BB.S01","bytes":300,"progress":100,
+                 "status":"downloaded",
+                 "files":[
+                   {"id":1,"path":"/BB.S01/Breaking.Bad.S01E01.Pilot.mkv","bytes":90,"selected":1},
+                   {"id":2,"path":"/BB.S01/Breaking_Bad_-_S01E01_Deleted_Scene_-_Walt.m4v","bytes":5,"selected":1},
+                   {"id":3,"path":"/BB.S01/Extras/Cast.Interview.mkv","bytes":5,"selected":1}],
+                 "links":["https://rd/d/E1","https://rd/d/E2","https://rd/d/E3"]}
+                """)
+            }
+            if url.host!.contains("real-debrid") {
+                return .json("[\(Self.torrentJSON(id: "PACK", filename: "BB.S01", links: ["https://rd/d/E1", "https://rd/d/E2", "https://rd/d/E3"]))]")
+            }
+            if url.path.hasSuffix("/search/tv") {
+                tvSearchCalls += 1
+                return .json("""
+                {"results":[{"id":1396,"name":"Breaking Bad","overview":"...",
+                  "poster_path":"/bb.jpg","first_air_date":"2008-01-20","vote_average":8.9}]}
+                """)
+            }
+            return .json(#"{"results":[]}"#)
+        }
+        let summary = try await makeRefresher(store: store).refresh()
+
+        XCTAssertEqual(summary.matched, 1)                 // only the pilot
+        XCTAssertEqual(tvSearchCalls, 1)
+        let items = try store.items().sorted { $0.fileIndex < $1.fileIndex }
+        XCTAssertEqual(items[0].mediaKind, "episode")
+        XCTAssertEqual(items[0].tmdbID, 1396)
+        XCTAssertEqual(items[1].mediaKind, "extra")        // filename token
+        XCTAssertNil(items[1].tmdbID)
+        XCTAssertEqual(items[2].mediaKind, "extra")        // Extras/ directory
+        XCTAssertNil(items[2].tmdbID)
+    }
 }
+
 
 private struct StubLibraryService: DebridService {
     let serviceID: DebridServiceID
