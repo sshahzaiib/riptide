@@ -30,6 +30,7 @@ final class PlayerModel {
     private var scrobbleStarted = false
     private var sleepActivity: NSObjectProtocol?
     private var savedNormalFrame: NSRect?
+    private var savedCollectionBehavior: NSWindow.CollectionBehavior = []
     private var fullscreenExitObserver: NSObjectProtocol?
 
     init(store: LibraryStore, itemKey: String, traktMedia: TraktMedia? = nil) {
@@ -155,6 +156,10 @@ final class PlayerModel {
     /// into the live mpv instance. (.ended already saved the old item's
     /// final progress.)
     func advance(to next: PlayItem) {
+        // ponytail: the mini aspect lock can't be re-derived here (the next
+        // file's aspect is unknown until it loads) — just unlock; the next
+        // manual mini enter re-locks.
+        if isMiniPlayer { hostWindow?.resizeIncrements = NSSize(width: 1, height: 1) }
         flushProgress()
         if scrobbleStarted {
             scrobbleStarted = false
@@ -209,6 +214,9 @@ final class PlayerModel {
 
     private func enterMiniPlayer() {
         guard let window = hostWindow else { return }
+        // A pending observer means a fullscreen-exit transition is already
+        // in flight — re-entering would re-toggle fullscreen mid-transition.
+        guard fullscreenExitObserver == nil else { return }
         // From native fullscreen: exit first, enter mini once the window is
         // back to a normal frame (one-shot observer; also cleared in
         // shutdown() so closing mid-transition can't leak it).
@@ -226,6 +234,7 @@ final class PlayerModel {
             return
         }
         savedNormalFrame = window.frame
+        savedCollectionBehavior = window.collectionBehavior
         window.level = .floating
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.isMovableByWindowBackground = true
@@ -249,7 +258,7 @@ final class PlayerModel {
         // AppKit — resetting increments to 1×1 clears the aspect lock.
         window.resizeIncrements = NSSize(width: 1, height: 1)
         window.level = .normal
-        window.collectionBehavior = []
+        window.collectionBehavior = savedCollectionBehavior
         window.isMovableByWindowBackground = false
         // No animation: an in-flight frame animation fights the min-size
         // bump below and a follow-on fullscreen transition (mini → f), and
