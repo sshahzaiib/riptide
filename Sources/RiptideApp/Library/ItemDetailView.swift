@@ -255,7 +255,13 @@ struct ShowDetailView: View {
                 if busy { ProgressView().controlSize(.small) }
                 else { Image(systemName: "play.fill") }
                 if let resume, isResumingSelected {
-                    Text("Resume · \(format(resume.position))")
+                    if let s = resume.item.season, let e = resume.item.episode {
+                        Text("Resume S\(s)E\(e) · \(format(resume.position))")
+                    } else {
+                        Text("Resume · \(format(resume.position))")
+                    }
+                } else if let s = model.selected?.season, let e = model.selected?.episode {
+                    Text("Play S\(s)E\(e)")
                 } else {
                     Text("Play")
                 }

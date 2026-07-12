@@ -35,7 +35,7 @@ final class ShowPageModel {
         self.show = show
         self.store = store
         refreshWatchStates()
-        self.selected = resumeTarget?.item ?? show.episodes.first
+        self.selected = resumeTarget?.item ?? firstUnwatched ?? show.episodes.first
     }
 
     var showID: Int? { show.episodes.compactMap(\.tmdbID).first }
@@ -99,6 +99,19 @@ final class ShowPageModel {
             }
             .max { $0.1.lastWatchedAt < $1.1.lastWatchedAt }
             .map { ($0.0, $0.1.positionSeconds) }
+    }
+
+    /// First not-finished episode in (season, episode) order. An episode
+    /// counts as watched when ANY duplicate file of it is finished.
+    /// Season 0 (specials + unparsed) is excluded from next-up.
+    var firstUnwatched: LibraryItem? {
+        let numbered = show.episodes
+            .filter { ($0.season ?? 0) > 0 && $0.episode != nil }
+            .sorted { ($0.season!, $0.episode!) < ($1.season!, $1.episode!) }
+        let finishedEpisodes = Set(
+            numbered.filter { stateByKey[$0.itemKey]?.finished == true }
+                .map { "\($0.season!)#\($0.episode!)" })
+        return numbered.first { !finishedEpisodes.contains("\($0.season!)#\($0.episode!)") }
     }
 
     func watchState(for item: LibraryItem) -> (progress: Double, finished: Bool)? {
@@ -191,7 +204,7 @@ final class ShowPageModel {
         stateByKey = Dictionary(uniqueKeysWithValues: states.map { ($0.itemKey, $0) })
         // Follow playback progress unless the user picked an episode manually.
         if !userSelected {
-            selected = resumeTarget?.item ?? selected ?? show.episodes.first
+            selected = resumeTarget?.item ?? firstUnwatched ?? selected ?? show.episodes.first
         }
     }
 
