@@ -149,7 +149,7 @@ final class LibraryModel {
 
     /// First library item belonging to a torrent (itemKeys are "torrentID#fileIndex").
     func firstItem(torrentID: String) -> LibraryItem? {
-        items.first { $0.itemKey.hasPrefix("\(torrentID)#") }
+        items.first { $0.torrentID == torrentID }
     }
 
     /// Library-priority check for addon search (movies: season/episode nil).
