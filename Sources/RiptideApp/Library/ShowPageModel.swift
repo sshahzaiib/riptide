@@ -70,9 +70,13 @@ final class ShowPageModel {
                 })
             }
             let byEpisode = Dictionary(grouping: items) { $0.episode ?? 0 }
-            var slots = meta.keys.sorted().map { num in
-                EpisodeSlot(season: season, number: num, meta: meta[num],
-                            item: byEpisode[num]?.first)
+            var slots: [EpisodeSlot] = []
+            for num in meta.keys.sorted() {
+                if let matching = byEpisode[num], !matching.isEmpty {
+                    slots += matching.map { EpisodeSlot(season: season, number: num, meta: meta[num], item: $0) }
+                } else {
+                    slots.append(EpisodeSlot(season: season, number: num, meta: meta[num], item: nil))
+                }
             }
             // Library files with episode numbers TMDB doesn't list still render.
             let known = Set(meta.keys)
@@ -145,7 +149,9 @@ final class ShowPageModel {
                                                                 season: season)
             else { continue }
             seasonMeta[season] = Dictionary(
-                uniqueKeysWithValues: episodes.map { ($0.episodeNumber, $0) })
+                episodes.map { ($0.episodeNumber, $0) },
+                uniquingKeysWith: { first, _ in first }
+            )
         }
     }
 
