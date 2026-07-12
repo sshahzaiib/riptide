@@ -141,6 +141,18 @@ public struct ADMagnetUpload: Decodable, Sendable, Equatable {
         self.id = id; self.ready = ready; self.hash = hash
         self.name = name; self.size = size; self.error = error
     }
+
+    enum CodingKeys: String, CodingKey { case id, ready, hash, name, size, error }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try? c.decodeLaxInt(forKey: .id)   // live API stringifies ids
+        ready = try c.decodeIfPresent(Bool.self, forKey: .ready)
+        hash = try c.decodeIfPresent(String.self, forKey: .hash)
+        name = try c.decodeIfPresent(String.self, forKey: .name)
+        size = try c.decodeIfPresent(Int64.self, forKey: .size)
+        error = try c.decodeIfPresent(ADAPIError.self, forKey: .error)
+    }
 }
 
 struct ADAPIError: Decodable, Sendable, Equatable {
@@ -207,6 +219,18 @@ extension AllDebridClient {
     }
 }
 
+extension KeyedDecodingContainer {
+    /// The live API stringifies numeric ids on some endpoints (magnet/files
+    /// returns "631631077") but not others (magnet/status) — accept both.
+    func decodeLaxInt(forKey key: Key) throws -> Int {
+        if let int = try? decode(Int.self, forKey: key) { return int }
+        if let str = try? decode(String.self, forKey: key), let int = Int(str) { return int }
+        throw DecodingError.typeMismatch(Int.self, .init(
+            codingPath: codingPath + [key],
+            debugDescription: "expected Int or numeric String"))
+    }
+}
+
 /// v4.1 magnet/status entry. statusCode: 0–3 processing, 4 ready, ≥5 error.
 public struct ADMagnet: Decodable, Sendable, Equatable {
     public let id: Int
@@ -221,7 +245,7 @@ public struct ADMagnet: Decodable, Sendable, Equatable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decode(Int.self, forKey: .id)
+        id = try c.decodeLaxInt(forKey: .id)
         filename = try c.decodeIfPresent(String.self, forKey: .filename)
         size = try c.decodeIfPresent(Int64.self, forKey: .size) ?? 0
         status = try c.decodeIfPresent(String.self, forKey: .status)
@@ -239,7 +263,7 @@ public struct ADMagnetFiles: Decodable, Sendable, Equatable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decode(Int.self, forKey: .id)
+        id = try c.decodeLaxInt(forKey: .id)
         files = try c.decodeIfPresent([ADFileNode].self, forKey: .files) ?? []
     }
 }

@@ -115,6 +115,26 @@ final class AllDebridClientTests: XCTestCase {
         // parser's job downstream — flatten keeps every video file.
     }
 
+    /// The LIVE magnet/files endpoint returns id as a STRING ("631631077")
+    /// even though the docs (and magnet/status) say Int — observed 2026-07-12.
+    func testMagnetFilesDecodesStringID() async throws {
+        MockURLProtocol.setHandler { _ in
+            .json(#"{"status":"success","data":{"magnets":[{"id":"631631077","files":[{"n":"E01.mkv","s":900,"l":"https://alldebrid.com/f/aaa"}]}]}}"#)
+        }
+        let files = try await client().magnetFiles(ids: [631631077])
+        XCTAssertEqual(files.count, 1)
+        XCTAssertEqual(files[0].id, 631631077)
+    }
+
+    /// Same tolerance for magnet/status, in case it ever stringifies too.
+    func testMagnetStatusListDecodesStringID() async throws {
+        MockURLProtocol.setHandler { _ in
+            .json(#"{"status":"success","data":{"magnets":[{"id":"42","filename":"a.mkv","size":100,"status":"Ready","statusCode":4}]}}"#)
+        }
+        let list = try await client().magnetStatusList()
+        XCTAssertEqual(list.map(\.id), [42])
+    }
+
     func testMagnetFilesOmitFilesKeyDefaultsToEmpty() async throws {
         MockURLProtocol.setHandler { _ in
             .json(#"{"status":"success","data":{"magnets":[{"id":5}]}}"#)
