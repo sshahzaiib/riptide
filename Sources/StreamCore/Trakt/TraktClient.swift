@@ -21,6 +21,14 @@ struct RatingsBody: Encodable {
     var shows: [Item]?
 }
 
+struct HistoryBody: Encodable {
+    struct Show: Encodable { let ids: TraktIDsPayload; let seasons: [Season]? }
+    struct Season: Encodable { let number: Int; let episodes: [Episode] }
+    struct Episode: Encodable { let number: Int }
+    var movies: [TraktRefPayload]?
+    var shows: [Show]?
+}
+
 @MainActor
 public final class TraktClient {
     public var tokens: TraktTokens?
@@ -206,6 +214,51 @@ public final class TraktClient {
         }
         _ = try await send(path: "/sync/ratings", method: "POST",
                            body: try JSONEncoder().encode(body))
+    }
+
+    // MARK: History
+
+    /// Mark items watched in Trakt history. Episodes of the same show are
+    /// batched into one payload — a whole season is a single HTTP call.
+    public func addToHistory(_ media: [TraktMedia]) async throws {
+        _ = try await send(path: "/sync/history", method: "POST",
+                           body: try JSONEncoder().encode(Self.historyBody(media)))
+    }
+
+    public func removeFromHistory(_ media: [TraktMedia]) async throws {
+        _ = try await send(path: "/sync/history/remove", method: "POST",
+                           body: try JSONEncoder().encode(Self.historyBody(media)))
+    }
+
+    static func historyBody(_ media: [TraktMedia]) -> HistoryBody {
+        var movies: [TraktRefPayload] = []
+        var episodesByShow: [Int: [Int: [Int]]] = [:]   // show tmdb → season → episodes
+        for m in media {
+            switch m {
+            case .movie(let id):
+                movies.append(TraktRefPayload(ids: TraktIDsPayload(tmdb: id)))
+            case .show(let id):
+                if episodesByShow[id] == nil { episodesByShow[id] = [:] }
+            case .episode(let showID, let season, let episode):
+                episodesByShow[showID, default: [:]][season, default: []].append(episode)
+            }
+        }
+        var body = HistoryBody()
+        if !movies.isEmpty { body.movies = movies }
+        if !episodesByShow.isEmpty {
+            body.shows = episodesByShow.sorted { $0.key < $1.key }.map { showID, seasons in
+                HistoryBody.Show(
+                    ids: TraktIDsPayload(tmdb: showID),
+                    // No seasons = Trakt marks the entire show.
+                    seasons: seasons.isEmpty ? nil
+                        : seasons.sorted { $0.key < $1.key }.map { number, eps in
+                            HistoryBody.Season(
+                                number: number,
+                                episodes: eps.sorted().map { HistoryBody.Episode(number: $0) })
+                        })
+            }
+        }
+        return body
     }
 
     public func ratedMovies() async throws -> [TraktRatingEntry] {

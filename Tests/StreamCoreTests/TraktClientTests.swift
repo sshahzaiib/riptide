@@ -222,4 +222,50 @@ final class TraktClientTests: XCTestCase {
         XCTAssertEqual(shows[0]["ids"] as! [String: Int], ["tmdb": 1399])
         XCTAssertNil(json["movies"])
     }
+
+    func testAddToHistoryBatchesEpisodesByShowAndSeason() async throws {
+        nonisolated(unsafe) var capturedPath: String?
+        nonisolated(unsafe) var capturedBody: Data?
+        MockURLProtocol.setHandler { req in
+            capturedPath = req.url?.path
+            capturedBody = req.bodyData
+            return .json(#"{"added":{"episodes":3}}"#, status: 201)
+        }
+        try await makeClient(tokens: tok()).addToHistory([
+            .episode(showTMDBID: 1396, season: 1, episode: 2),
+            .episode(showTMDBID: 1396, season: 1, episode: 1),
+            .episode(showTMDBID: 1396, season: 2, episode: 5),
+        ])
+        XCTAssertEqual(capturedPath, "/sync/history")
+
+        let json = try JSONSerialization.jsonObject(
+            with: XCTUnwrap(capturedBody)) as! [String: Any]
+        let shows = try XCTUnwrap(json["shows"] as? [[String: Any]])
+        XCTAssertEqual(shows.count, 1)
+        XCTAssertEqual((shows[0]["ids"] as? [String: Int])?["tmdb"], 1396)
+        let seasons = try XCTUnwrap(shows[0]["seasons"] as? [[String: Any]])
+        XCTAssertEqual(seasons.map { $0["number"] as? Int }, [1, 2])
+        let s1Episodes = try XCTUnwrap(seasons[0]["episodes"] as? [[String: Int]])
+        XCTAssertEqual(s1Episodes.map { $0["number"] }, [1, 2])   // sorted
+        XCTAssertNil(json["movies"])
+    }
+
+    func testRemoveFromHistoryMovieRoute() async throws {
+        nonisolated(unsafe) var capturedPath: String?
+        nonisolated(unsafe) var capturedBody: Data?
+        MockURLProtocol.setHandler { req in
+            capturedPath = req.url?.path
+            capturedBody = req.bodyData
+            return .json(#"{"deleted":{"movies":1}}"#)
+        }
+        try await makeClient(tokens: tok())
+            .removeFromHistory([.movie(tmdbID: 603)])
+        XCTAssertEqual(capturedPath, "/sync/history/remove")
+        let json = try JSONSerialization.jsonObject(
+            with: XCTUnwrap(capturedBody)) as! [String: Any]
+        let movies = try XCTUnwrap(json["movies"] as? [[String: [String: Int]]])
+        XCTAssertEqual(movies, [["ids": ["tmdb": 603]]])
+        XCTAssertNil(json["shows"])
+    }
 }
+
