@@ -16,6 +16,7 @@ final class ShowPageModel {
     // season -> episodeNumber -> metadata
     private(set) var seasonMeta: [Int: [Int: TMDBSeasonEpisode]] = [:]
     private(set) var imdbID: String?
+    private(set) var remoteStates: [String: (progress: Double, finished: Bool)] = [:]
     private(set) var allSeasonNumbers: [Int] = []
 
     struct EpisodeSlot: Identifiable {
@@ -154,6 +155,10 @@ final class ShowPageModel {
         return seasonMeta[season]?[episode]
     }
 
+    func remoteState(season: Int, episode: Int) -> (progress: Double, finished: Bool)? {
+        remoteStates["\(season)#\(episode)"]
+    }
+
     func load(tmdb: TMDBClient) async {
         guard let showID else { return }
         if let fetched = try? await tmdb.showDetails(id: showID) {
@@ -174,6 +179,9 @@ final class ShowPageModel {
                 episodes.map { ($0.episodeNumber, $0) },
                 uniquingKeysWith: { first, _ in first }
             )
+        }
+        if let fetched = await TraktService.shared.showEpisodeStates(tmdbID: showID) {
+            remoteStates = fetched
         }
     }
 

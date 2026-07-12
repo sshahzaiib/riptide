@@ -77,6 +77,9 @@ struct ItemDetailView: View {
                         .frame(maxWidth: 640, alignment: .leading)
                 }
 
+                Text("\(item.service.uppercased()) · \(item.filename)")
+                    .font(.caption).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle).frame(maxWidth: 640, alignment: .leading)
+
                 HStack(spacing: 12) {
                     Button(action: { Task { await play(resume: resumePosition != nil) } }) {
                         HStack {
@@ -236,6 +239,9 @@ struct ShowDetailView: View {
                         .lineLimit(3)
                         .frame(maxWidth: 640, alignment: .leading)
                 }
+
+                Text("\(item.service.uppercased()) · \(item.filename)")
+                    .font(.caption).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle).frame(maxWidth: 640, alignment: .leading)
             }
         }
     }
@@ -296,7 +302,7 @@ struct ShowDetailView: View {
     private func missingEpisodeCard(_ model: ShowPageModel,
                                     slot: ShowPageModel.EpisodeSlot) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            ZStack {
+            ZStack(alignment: .bottomLeading) {
                 AsyncImage(url: slot.meta?.stillPath.map {
                     TMDB.imageURL(path: $0, width: 300)
                 }) { image in
@@ -316,7 +322,25 @@ struct ShowDetailView: View {
                     .font(.title3)
                     .padding(8)
                     .background(.ultraThinMaterial, in: Circle())
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+
+                if let state = model.remoteState(season: slot.season, episode: slot.number) {
+                    if state.finished {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.white, .green)
+                            .padding(6)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    } else if state.progress > 0 {
+                        GeometryReader { geo in
+                            Rectangle().fill(.orange)
+                                .frame(width: geo.size.width * state.progress, height: 3)
+                        }
+                        .frame(height: 3)
+                    }
+                }
             }
+            .frame(width: 200, height: 112)
+
             Text("\(slot.number). \(slot.meta?.name ?? "Episode \(slot.number)")")
                 .font(.caption)
                 .foregroundStyle(.secondary)

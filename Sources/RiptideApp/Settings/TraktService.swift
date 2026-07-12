@@ -139,6 +139,32 @@ final class TraktService {
         }
     }
 
+    /// Best-effort remote episode states for one show: "season#episode" -> (progress 0…1, finished). nil when not connected or on any error.
+    func showEpisodeStates(tmdbID: Int) async -> [String: (progress: Double, finished: Bool)]? {
+        guard let client, isConnected else { return nil }
+        do {
+            var states: [String: (progress: Double, finished: Bool)] = [:]
+            for entry in try await client.playback()
+            where entry.type == "episode" && entry.show?.ids.tmdb == tmdbID {
+                if let ep = entry.episode, entry.progress > 0 {
+                    states["\(ep.season)#\(ep.number)"] = (entry.progress / 100, false)
+                }
+            }
+            if let show = try await client.watchedShows()
+                .first(where: { $0.show.ids.tmdb == tmdbID }),
+               let traktID = show.show.ids.trakt {
+                for season in try await client.showProgress(traktID: traktID).seasons {
+                    for ep in season.episodes where ep.completed {
+                        states["\(season.number)#\(ep.number)"] = (1, true)
+                    }
+                }
+            }
+            return states
+        } catch TraktError.unauthorized { needsReauth = true; return nil }
+        catch { return nil }
+    }
+
+
 
     /// TEMP: dump Trakt's current playback-progress state (RIPTIDE_TRAKT_PROBE=1).
     func probePlayback() async {
