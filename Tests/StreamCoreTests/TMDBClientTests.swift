@@ -79,4 +79,29 @@ final class TMDBClientTests: XCTestCase {
         XCTAssertEqual(TMDB.imageURL(path: "/p.jpg").absoluteString,
                        "https://image.tmdb.org/t/p/w500/p.jpg")
     }
+
+    func testLogoPathPrefersTopVotedEnglish() async throws {
+        nonisolated(unsafe) var seen: URL?
+        MockURLProtocol.setHandler { request in
+            seen = request.url
+            return .json("""
+            {"logos":[
+              {"file_path":"/de.png","iso_639_1":"de","vote_average":9.0},
+              {"file_path":"/en-low.png","iso_639_1":"en","vote_average":3.0},
+              {"file_path":"/en-top.png","iso_639_1":"en","vote_average":7.5}
+            ]}
+            """)
+        }
+        let path = try await client().logoPath(showID: 1399)
+        XCTAssertEqual(path, "/en-top.png")
+        let url = try XCTUnwrap(seen)
+        XCTAssertTrue(url.path.hasSuffix("/tv/1399/images"))
+        XCTAssertTrue(url.query?.contains("include_image_language") == true)
+    }
+
+    func testLogoPathEmptyReturnsNil() async throws {
+        MockURLProtocol.setHandler { _ in .json(#"{"logos":[]}"#) }
+        let path = try await client().logoPath(movieID: 603)
+        XCTAssertNil(path)
+    }
 }

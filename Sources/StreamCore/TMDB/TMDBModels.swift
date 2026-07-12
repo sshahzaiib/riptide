@@ -155,6 +155,22 @@ struct TMDBCreditsEnvelope: Decodable {
     let cast: [TMDBCastMember]
 }
 
+struct TMDBImagesEnvelope: Decodable {
+    let logos: [TMDBImage]
+}
+
+struct TMDBImage: Decodable {
+    let filePath: String
+    let language: String?
+    let voteAverage: Double
+
+    enum CodingKeys: String, CodingKey {
+        case filePath = "file_path"
+        case language = "iso_639_1"
+        case voteAverage = "vote_average"
+    }
+}
+
 public struct TMDBExternalIDs: Sendable, Equatable, Decodable {
     public let imdbID: String?
 

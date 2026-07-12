@@ -88,4 +88,22 @@ public struct TMDBClient: Sendable {
     public func externalIDs(showID: Int) async throws -> TMDBExternalIDs {
         try decode(TMDBExternalIDs.self, from: try await get("tv/\(showID)/external_ids", query: [:]))
     }
+
+    /// Clean title-treatment logo (transparent PNG, Stremio-style loading
+    /// art). Highest-voted English logo, else any language. nil = none.
+    public func logoPath(showID: Int) async throws -> String? {
+        try await logoPath(kind: "tv", id: showID)
+    }
+
+    public func logoPath(movieID: Int) async throws -> String? {
+        try await logoPath(kind: "movie", id: movieID)
+    }
+
+    private func logoPath(kind: String, id: Int) async throws -> String? {
+        let data = try await get("\(kind)/\(id)/images",
+                                 query: ["include_image_language": "en,null"])
+        let logos = try decode(TMDBImagesEnvelope.self, from: data).logos
+            .sorted { $0.voteAverage > $1.voteAverage }
+        return (logos.first { $0.language == "en" } ?? logos.first)?.filePath
+    }
 }

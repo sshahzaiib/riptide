@@ -32,6 +32,12 @@ struct PlayerWindowView: View {
     // prev/next controls; nil disables the button.
     @State private var prevEpisodeItem: LibraryItem?
     @State private var nextEpisodeItem: LibraryItem?
+    // Stremio-style loading screen: set while a prev/next/up-next swap is
+    // unrestricting + loading; also shown on initial open (duration == 0).
+    @State private var switchingTo: LibraryItem?
+    @State private var logoURL: URL?                 // TMDB title-treatment art
+    @State private var logoFetchedFor: Int?
+    @State private var loadingPulse = false
 
     init(item: PlayItem, store: LibraryStore) {
         self.item = item
@@ -65,6 +71,11 @@ struct PlayerWindowView: View {
                     .padding(10)
                     .background(.red.opacity(0.8), in: RoundedRectangle(cornerRadius: 8))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+
+            if model.playbackError == nil, switchingTo != nil || model.duration == 0 {
+                loadingOverlay
+                    .transition(.opacity)
             }
 
             if controlsVisible {
@@ -159,17 +170,31 @@ struct PlayerWindowView: View {
             episodeName = nil
             prevEpisodeItem = (try? store.previousEpisode(before: current.itemKey)) ?? nil
             nextEpisodeItem = (try? store.nextEpisode(after: current.itemKey)) ?? nil
-            guard let id = current.tmdbID, let s = current.season, let e = current.episode
-            else { return }
+            guard let id = current.tmdbID else { logoURL = nil; return }
             let token = AppSettings.shared.tmdbToken
             guard !token.isEmpty else { return }
+            let client = TMDBClient(bearerToken: token)
+            // Loading-screen art (best-effort, cached per title — prev/next
+            // within a show reuse it instantly).
+            if logoFetchedFor != id {
+                let path = current.season == nil
+                    ? try? await client.logoPath(movieID: id)
+                    : try? await client.logoPath(showID: id)
+                guard !Task.isCancelled else { return }
+                logoURL = path.map { TMDB.imageURL(path: $0) }
+                logoFetchedFor = id
+            }
+            guard let s = current.season, let e = current.episode else { return }
             // Best-effort: a TMDB miss just leaves the numeric label.
-            let name = try? await TMDBClient(bearerToken: token)
-                .episode(showID: id, season: s, episode: e).name
+            let name = try? await client.episode(showID: id, season: s, episode: e).name
             // A cancelled fetch (advance mid-flight) must not clobber the
             // replacement task's result.
             guard !Task.isCancelled else { return }
             episodeName = name
+        }
+        .onChange(of: model.duration) {
+            // The next file's metadata arrived — the swap is done.
+            if model.duration > 0 { switchingTo = nil }
         }
         .overlay(alignment: .topLeading) {
             if controlsVisible {
@@ -264,6 +289,7 @@ struct PlayerWindowView: View {
 
     private func playUpNext() {
         guard let next = upNextPlay else { return }
+        switchingTo = upNextItem
         advanceWindow(to: next)
         clearUpNext()
     }
@@ -282,11 +308,13 @@ struct PlayerWindowView: View {
         guard let target else { return }
         upNextTask?.cancel()
         clearUpNext()
+        switchingTo = target
         Task {
             // ponytail: unrestrict failure just leaves the current episode
             // playing — the button stays enabled, clicking again retries.
             guard let built = try? await PlayItemBuilder.make(
-                for: target, store: store, autoResume: true) else { return }
+                for: target, store: store, autoResume: true)
+            else { switchingTo = nil; return }
             advanceWindow(to: built)
         }
     }
@@ -297,6 +325,51 @@ struct PlayerWindowView: View {
         upNextCountdown = nil
         upNextFailed = false
         upNextTask = nil
+    }
+
+    /// Stremio-style loading screen: the title's logo art (fallback: styled
+    /// title text) pulsing on black while a stream unrestricts and loads.
+    private var loadingOverlay: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            VStack(spacing: 24) {
+                Group {
+                    if let logoURL {
+                        AsyncImage(url: logoURL) { phase in
+                            if case .success(let image) = phase {
+                                image.resizable().scaledToFit()
+                            } else {
+                                loadingTitleText
+                            }
+                        }
+                    } else {
+                        loadingTitleText
+                    }
+                }
+                .frame(maxWidth: 420, maxHeight: 150)
+                .opacity(loadingPulse ? 1.0 : 0.35)
+
+                if let target = switchingTo, let s = target.season, let e = target.episode {
+                    Text("S\(s)E\(e)")
+                        .font(.callout.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .onAppear {
+            loadingPulse = false
+            withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+                loadingPulse = true
+            }
+        }
+    }
+
+    private var loadingTitleText: some View {
+        Text(switchingTo?.title ?? current.subtitleQuery)
+            .font(.system(size: 40, weight: .heavy, design: .rounded))
+            .foregroundStyle(.white.opacity(0.9))
+            .lineLimit(2)
+            .multilineTextAlignment(.center)
     }
 
     /// Show/movie name (subtitleQuery is the parsed title — no SxEy suffix),
@@ -378,8 +451,8 @@ struct PlayerWindowView: View {
             HStack(spacing: 10) {
                 if current.season != nil {
                     Button(action: { skip(to: prevEpisodeItem) }) {
-                        Image(systemName: "backward.end.fill")
-                            .font(.body)
+                        Image(systemName: "backward.end")
+                            .font(.body.weight(.medium))
                     }
                     .buttonStyle(.plain)
                     .disabled(prevEpisodeItem == nil)
@@ -388,15 +461,15 @@ struct PlayerWindowView: View {
                 }
 
                 Button(action: { model.togglePause() }) {
-                    Image(systemName: model.paused ? "play.fill" : "pause.fill")
-                        .font(.title2)
+                    Image(systemName: model.paused ? "play" : "pause")
+                        .font(.title2.weight(.medium))
                 }
                 .buttonStyle(.plain)
 
                 if current.season != nil {
                     Button(action: { skip(to: nextEpisodeItem) }) {
-                        Image(systemName: "forward.end.fill")
-                            .font(.body)
+                        Image(systemName: "forward.end")
+                            .font(.body.weight(.medium))
                     }
                     .buttonStyle(.plain)
                     .disabled(nextEpisodeItem == nil)
