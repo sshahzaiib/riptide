@@ -42,6 +42,21 @@ public struct AllDebridClient: Sendable {
         self.sleep = sleep
     }
 
+    // MARK: Diagnostics
+
+    /// Decode failures always log (stderr) — they're rare and otherwise
+    /// collapse into an opaque `badResponse`. Set RIPTIDE_AD_LOG=1 to also
+    /// log every request/response.
+    static let verbose = ProcessInfo.processInfo.environment["RIPTIDE_AD_LOG"] != nil
+
+    static func log(_ message: String) {
+        FileHandle.standardError.write(Data("[AllDebrid] \(message)\n".utf8))
+    }
+
+    static func snippet(_ data: Data) -> String {
+        String(data: data.prefix(600), encoding: .utf8) ?? "<non-utf8, \(data.count) bytes>"
+    }
+
     // MARK: Request layer
 
     /// POST with form params; retries 429/503 up to maxRetries. Returns the
@@ -58,6 +73,9 @@ public struct AllDebridClient: Sendable {
 
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse else { throw AllDebridError.badResponse }
+            if Self.verbose {
+                Self.log("POST \(path) → \(http.statusCode): \(Self.snippet(data))")
+            }
             if http.statusCode == 429 || http.statusCode == 503 {
                 guard attempt < config.maxRetries else { throw AllDebridError.rateLimited }
                 attempt += 1
@@ -79,10 +97,18 @@ public struct AllDebridClient: Sendable {
 
     /// Unwraps the {status, data|error} envelope and decodes `data`.
     func decodeData<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
-        guard let env = try? JSONDecoder().decode(Envelope<T>.self, from: data)
-        else { throw AllDebridError.badResponse }
+        let env: Envelope<T>
+        do {
+            env = try JSONDecoder().decode(Envelope<T>.self, from: data)
+        } catch {
+            Self.log("decoding \(T.self) failed: \(error)\n  body: \(Self.snippet(data))")
+            throw AllDebridError.badResponse
+        }
         if let error = env.error { throw AllDebridError.map(error) }
-        guard let payload = env.data else { throw AllDebridError.badResponse }
+        guard let payload = env.data else {
+            Self.log("envelope has neither data nor error — body: \(Self.snippet(data))")
+            throw AllDebridError.badResponse
+        }
         return payload
     }
 
