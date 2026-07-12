@@ -83,43 +83,48 @@ struct PlayerWindowView: View {
             }
 
             if controlsVisible {
-                VStack(spacing: 8) {
-                    if showSkipIntro {
-                        Button(action: { model.skipIntro(); skipIntroUsed = true }) {
-                            Label("Skip Intro", systemImage: "forward.frame")
-                                .padding(.horizontal, 12).padding(.vertical, 6)
-                                .glassEffect(.clear, in: .capsule)
+                if model.isMiniPlayer {
+                    miniControls
+                        .transition(.opacity)
+                } else {
+                    VStack(spacing: 8) {
+                        if showSkipIntro {
+                            Button(action: { model.skipIntro(); skipIntroUsed = true }) {
+                                Label("Skip Intro", systemImage: "forward.frame")
+                                    .padding(.horizontal, 12).padding(.vertical, 6)
+                                    .glassEffect(.clear, in: .capsule)
+                            }
+                            .buttonStyle(.plain)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                            .padding(.trailing, 16)
                         }
-                        .buttonStyle(.plain)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                        .padding(.trailing, 16)
+                        controls
+                            .padding(12)
+                            // Floating pill, not a full-width bar: 45% of the
+                            // window, clamped so sliders stay usable on small
+                            // windows and it never exceeds the old edge insets.
+                            .containerRelativeFrame(.horizontal) { length, _ in
+                                min(max(length * 0.45, 560), max(length - 32, 320))
+                            }
+                            .glassEffect(.clear, in: .rect(cornerRadius: 16))
+                            .padding(16)
+                            .offset(controlsOffset)
+                            // Drag the pill by any non-interactive spot (sliders
+                            // and buttons keep gesture priority).
+                            .gesture(
+                                DragGesture()
+                                    .onChanged { value in
+                                        let start = controlsDragStart ?? controlsOffset
+                                        controlsDragStart = start
+                                        controlsOffset = clampedControlsOffset(
+                                            CGSize(width: start.width + value.translation.width,
+                                                   height: start.height + value.translation.height))
+                                    }
+                                    .onEnded { _ in controlsDragStart = nil }
+                            )
                     }
-                    controls
-                        .padding(12)
-                        // Floating pill, not a full-width bar: 45% of the
-                        // window, clamped so sliders stay usable on small
-                        // windows and it never exceeds the old edge insets.
-                        .containerRelativeFrame(.horizontal) { length, _ in
-                            min(max(length * 0.45, 560), max(length - 32, 320))
-                        }
-                        .glassEffect(.clear, in: .rect(cornerRadius: 16))
-                        .padding(16)
-                        .offset(controlsOffset)
-                        // Drag the pill by any non-interactive spot (sliders
-                        // and buttons keep gesture priority).
-                        .gesture(
-                            DragGesture()
-                                .onChanged { value in
-                                    let start = controlsDragStart ?? controlsOffset
-                                    controlsDragStart = start
-                                    controlsOffset = clampedControlsOffset(
-                                        CGSize(width: start.width + value.translation.width,
-                                               height: start.height + value.translation.height))
-                                }
-                                .onEnded { _ in controlsDragStart = nil }
-                        )
+                    .transition(.opacity)
                 }
-                .transition(.opacity)
             }
 
             if let next = upNextItem {
@@ -216,10 +221,14 @@ struct PlayerWindowView: View {
         }
         .onGeometryChange(for: CGSize.self, of: \.size) { size in
             windowSize = size
-            controlsOffset = clampedControlsOffset(controlsOffset)
+            // Mini mode: the pill is hidden and the window tiny — clamping
+            // here would permanently wreck the user's dragged offset.
+            if !model.isMiniPlayer {
+                controlsOffset = clampedControlsOffset(controlsOffset)
+            }
         }
         .overlay(alignment: .topLeading) {
-            if controlsVisible {
+            if controlsVisible && !model.isMiniPlayer {
                 nowPlayingTitle
                     .padding(16)
                     .transition(.opacity)
@@ -273,7 +282,11 @@ struct PlayerWindowView: View {
         case 124: model.seek(relative: 10)     // →
         case 126: bumpVolume(5)                // ↑
         case 125: bumpVolume(-5)               // ↓
-        case 53:                               // esc — dismiss Up Next card
+        case 53:                               // esc — exit mini, else dismiss Up Next
+            if model.isMiniPlayer {
+                model.toggleMiniPlayer()
+                break
+            }
             guard upNextItem != nil else { return false }
             upNextTask?.cancel()
             clearUpNext()
@@ -282,6 +295,7 @@ struct PlayerWindowView: View {
             switch event.charactersIgnoringModifiers?.lowercased() {
             case "f": model.toggleFullscreen()
             case "m": model.toggleMute()
+            case "p": model.toggleMiniPlayer()
             case "s": if showSkipIntro { model.skipIntro(); skipIntroUsed = true }
             default: return false
             }
@@ -422,6 +436,35 @@ struct PlayerWindowView: View {
         .allowsHitTesting(false)
     }
 
+    /// Mini-player hover overlay: play/pause, restore, close — nothing else.
+    /// Everything heavier (seek, tracks, volume) means restoring first.
+    private var miniControls: some View {
+        HStack(spacing: 14) {
+            Button(action: { model.togglePause() }) {
+                Image(systemName: model.paused ? "play" : "pause")
+                    .font(.title3.weight(.medium))
+            }
+            .buttonStyle(.plain)
+
+            Button(action: { model.toggleMiniPlayer() }) {
+                Image(systemName: "pip.exit")
+                    .font(.title3.weight(.medium))
+            }
+            .buttonStyle(.plain)
+            .help("Exit mini player")
+
+            Button(action: { model.hostWindow?.close() }) {
+                Image(systemName: "xmark")
+                    .font(.title3.weight(.medium))
+            }
+            .buttonStyle(.plain)
+            .help("Close")
+        }
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .glassEffect(.clear, in: .capsule)
+        .padding(12)
+    }
+
     private func upNextCard(_ next: LibraryItem) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Up Next").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
@@ -558,6 +601,12 @@ struct PlayerWindowView: View {
                 Slider(value: $volume, in: 0...100)
                     .frame(width: 90)
                     .onChange(of: volume) { model.setVolume(volume) }
+
+                Button(action: { model.toggleMiniPlayer() }) {
+                    Image(systemName: "pip.enter")
+                }
+                .buttonStyle(.plain)
+                .help("Mini player")
 
                 Button(action: { model.toggleFullscreen() }) {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")

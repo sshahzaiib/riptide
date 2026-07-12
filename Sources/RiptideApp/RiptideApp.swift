@@ -41,7 +41,6 @@ struct Riptide: App {
         WindowGroup(for: PlayItem.self) { $item in
             if let item {
                 PlayerWindowView(item: item, store: store)
-                    .frame(minWidth: 800, minHeight: 450)
             }
         }
         .windowStyle(.hiddenTitleBar)
