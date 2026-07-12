@@ -151,10 +151,13 @@ struct PlayerWindowView: View {
             let token = AppSettings.shared.tmdbToken
             guard !token.isEmpty else { return }
             // Best-effort: a TMDB miss just leaves the numeric label.
-            episodeName = try? await TMDBClient(bearerToken: token)
+            let name = try? await TMDBClient(bearerToken: token)
                 .episode(showID: id, season: s, episode: e).name
+            // A cancelled fetch (advance mid-flight) must not clobber the
+            // replacement task's result.
+            guard !Task.isCancelled else { return }
+            episodeName = name
         }
-        .animation(.easeInOut(duration: 0.2), value: controlsVisible)
         .overlay(alignment: .topLeading) {
             if controlsVisible {
                 nowPlayingTitle
@@ -162,6 +165,7 @@ struct PlayerWindowView: View {
                     .transition(.opacity)
             }
         }
+        .animation(.easeInOut(duration: 0.2), value: controlsVisible)
         .navigationTitle(current.title)
         .onDisappear {
             if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
@@ -247,6 +251,7 @@ struct PlayerWindowView: View {
 
     private func playUpNext() {
         guard let next = upNextPlay else { return }
+        episodeName = nil          // don't flash the old episode's name
         current = next
         resolvedStart = .some(next.resumeFrom)
         skipIntroUsed = false
@@ -268,14 +273,17 @@ struct PlayerWindowView: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(current.subtitleQuery)
                 .font(.headline)
+                .lineLimit(1)
             if let s = current.season, let e = current.episode {
                 Text("S\(s)E\(e)\(episodeName.map { " · \($0)" } ?? "")")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .allowsHitTesting(false)
     }
 
     private func upNextCard(_ next: LibraryItem) -> some View {
