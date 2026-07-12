@@ -114,12 +114,32 @@ final class ShowPageModel {
     /// Context-menu mark: local write first (survives Trakt pulls), then a
     /// best-effort batched push to Trakt history.
     func setWatched(_ watched: Bool, items: [LibraryItem]) {
+        var expanded: [LibraryItem] = []
+        var seenKeys = Set<String>()
+        
         for item in items {
+            if let season = item.season, let episode = item.episode {
+                let matches = show.episodes.filter { $0.season == season && $0.episode == episode }
+                for match in matches {
+                    if !seenKeys.contains(match.itemKey) {
+                        seenKeys.insert(match.itemKey)
+                        expanded.append(match)
+                    }
+                }
+            } else {
+                if !seenKeys.contains(item.itemKey) {
+                    seenKeys.insert(item.itemKey)
+                    expanded.append(item)
+                }
+            }
+        }
+        
+        for item in expanded {
             try? store.setWatched(itemKey: item.itemKey, watched: watched)
         }
         refreshWatchStates()
         guard let showID else { return }
-        let media: [TraktMedia] = items.compactMap { item in
+        let media: [TraktMedia] = expanded.compactMap { item in
             guard let season = item.season, let episode = item.episode else { return nil }
             return .episode(showTMDBID: showID, season: season, episode: episode)
         }
