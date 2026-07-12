@@ -340,6 +340,7 @@ struct ShowDetailView: View {
                 }
             }
             .frame(width: 200, height: 112)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
 
             Text("\(slot.number). \(slot.meta?.name ?? "Episode \(slot.number)")")
                 .font(.caption)

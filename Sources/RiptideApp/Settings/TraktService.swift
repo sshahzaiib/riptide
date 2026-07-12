@@ -139,17 +139,24 @@ final class TraktService {
         }
     }
 
-    /// Best-effort remote episode states for one show: "season#episode" -> (progress 0…1, finished). nil when not connected or on any error.
+    /// Best-effort remote episode states for one show: "season#episode" ->
+    /// (progress 0…1, finished). Each fetch fails independently so playback
+    /// progress still renders when the watched-history call errors (and vice
+    /// versa). A completed mark wins over a stale paused entry — the caller's
+    /// question is "did I already watch this?".
     func showEpisodeStates(tmdbID: Int) async -> [String: (progress: Double, finished: Bool)]? {
         guard let client, isConnected else { return nil }
+        var states: [String: (progress: Double, finished: Bool)] = [:]
         do {
-            var states: [String: (progress: Double, finished: Bool)] = [:]
             for entry in try await client.playback()
             where entry.type == "episode" && entry.show?.ids.tmdb == tmdbID {
                 if let ep = entry.episode, entry.progress > 0 {
                     states["\(ep.season)#\(ep.number)"] = (entry.progress / 100, false)
                 }
             }
+        } catch TraktError.unauthorized { needsReauth = true; return nil }
+        catch {}
+        do {
             if let show = try await client.watchedShows()
                 .first(where: { $0.show.ids.tmdb == tmdbID }),
                let traktID = show.show.ids.trakt {
@@ -159,9 +166,9 @@ final class TraktService {
                     }
                 }
             }
-            return states
         } catch TraktError.unauthorized { needsReauth = true; return nil }
-        catch { return nil }
+        catch {}
+        return states
     }
 
 
