@@ -69,7 +69,7 @@ struct PlayerWindowView: View {
                         Button(action: { model.skipIntro(); skipIntroUsed = true }) {
                             Label("Skip Intro", systemImage: "forward.frame")
                                 .padding(.horizontal, 12).padding(.vertical, 6)
-                                .glassEffect(.regular, in: .capsule)
+                                .glassEffect(.clear, in: .capsule)
                         }
                         .buttonStyle(.plain)
                         .frame(maxWidth: .infinity, alignment: .trailing)
@@ -83,7 +83,7 @@ struct PlayerWindowView: View {
                         .containerRelativeFrame(.horizontal) { length, _ in
                             min(max(length * 0.45, 560), max(length - 32, 320))
                         }
-                        .glassEffect(.regular, in: .rect(cornerRadius: 16))
+                        .glassEffect(.clear, in: .rect(cornerRadius: 16))
                         .padding(16)
                 }
                 .transition(.opacity)
@@ -289,7 +289,7 @@ struct PlayerWindowView: View {
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
-        .glassEffect(.regular, in: .rect(cornerRadius: 12))
+        .glassEffect(.clear, in: .rect(cornerRadius: 12))
         .allowsHitTesting(false)
     }
 
@@ -321,7 +321,7 @@ struct PlayerWindowView: View {
             }
         }
         .padding(16)
-        .glassEffect(.regular, in: .rect(cornerRadius: 16))
+        .glassEffect(.clear, in: .rect(cornerRadius: 16))
         .animation(.easeInOut(duration: 0.2), value: upNextCountdown)
     }
 
