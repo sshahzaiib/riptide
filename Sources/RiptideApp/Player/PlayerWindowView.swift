@@ -64,7 +64,7 @@ struct PlayerWindowView: View {
             }
 
             if controlsVisible {
-                VStack(alignment: .trailing, spacing: 8) {
+                VStack(spacing: 8) {
                     if showSkipIntro {
                         Button(action: { model.skipIntro(); skipIntroUsed = true }) {
                             Label("Skip Intro", systemImage: "forward.frame")
@@ -72,10 +72,17 @@ struct PlayerWindowView: View {
                                 .glassEffect(.regular, in: .capsule)
                         }
                         .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                         .padding(.trailing, 16)
                     }
                     controls
                         .padding(12)
+                        // Floating pill, not a full-width bar: 45% of the
+                        // window, clamped so sliders stay usable on small
+                        // windows and it never exceeds the old edge insets.
+                        .containerRelativeFrame(.horizontal) { length, _ in
+                            min(max(length * 0.45, 560), max(length - 32, 320))
+                        }
                         .glassEffect(.regular, in: .rect(cornerRadius: 16))
                         .padding(16)
                 }
