@@ -38,6 +38,10 @@ struct PlayerWindowView: View {
     @State private var logoURL: URL?                 // TMDB title-treatment art
     @State private var logoFetchedFor: Int?
     @State private var loadingPulse = false
+    // Controls pill drag: offset from its default bottom-center anchor.
+    @State private var controlsOffset: CGSize = .zero
+    @State private var controlsDragStart: CGSize?
+    @State private var windowSize: CGSize = .zero
 
     init(item: PlayItem, store: LibraryStore) {
         self.item = item
@@ -100,6 +104,20 @@ struct PlayerWindowView: View {
                         }
                         .glassEffect(.clear, in: .rect(cornerRadius: 16))
                         .padding(16)
+                        .offset(controlsOffset)
+                        // Drag the pill by any non-interactive spot (sliders
+                        // and buttons keep gesture priority).
+                        .gesture(
+                            DragGesture()
+                                .onChanged { value in
+                                    let start = controlsDragStart ?? controlsOffset
+                                    controlsDragStart = start
+                                    controlsOffset = clampedControlsOffset(
+                                        CGSize(width: start.width + value.translation.width,
+                                               height: start.height + value.translation.height))
+                                }
+                                .onEnded { _ in controlsDragStart = nil }
+                        )
                 }
                 .transition(.opacity)
             }
@@ -196,6 +214,10 @@ struct PlayerWindowView: View {
             // The next file's metadata arrived — the swap is done.
             if model.duration > 0 { switchingTo = nil }
         }
+        .onGeometryChange(for: CGSize.self, of: \.size) { size in
+            windowSize = size
+            controlsOffset = clampedControlsOffset(controlsOffset)
+        }
         .overlay(alignment: .topLeading) {
             if controlsVisible {
                 nowPlayingTitle
@@ -227,6 +249,15 @@ struct PlayerWindowView: View {
                 upNextDismissed = false
             }
         }
+    }
+
+    /// Keep the dragged pill reachable: never past the window edges (the
+    /// pill anchors bottom-center, so up is negative height).
+    private func clampedControlsOffset(_ offset: CGSize) -> CGSize {
+        guard windowSize.width > 0 else { return offset }
+        let halfSpan = max(windowSize.width / 2 - 120, 0)
+        return CGSize(width: min(max(offset.width, -halfSpan), halfSpan),
+                      height: min(max(offset.height, -max(windowSize.height - 140, 0)), 0))
     }
 
     private func bumpVolume(_ delta: Double) {
