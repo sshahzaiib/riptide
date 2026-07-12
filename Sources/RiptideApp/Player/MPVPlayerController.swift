@@ -160,6 +160,11 @@ final class MPVPlayerController: NSViewController {
         // Auto-select English subtitles during load: a manual sid switch on
         // a network stream drops the demuxer cache and rebuffers.
         checkError(mpv_set_option_string(mpv, "slang", "en,eng"))
+        // Streaming cache preset (issue #13). checkError only NSLogs on a
+        // rejected option, so a bad value can't take down playback.
+        for option in StreamingCachePreset.current.mpvOptions {
+            checkError(mpv_set_option_string(mpv, option.name, option.value))
+        }
         if ProcessInfo.processInfo.environment["RIPTIDE_DEBUG_URL"] != nil {
             checkError(mpv_set_option_string(mpv, "loop-file", "inf"))
         }
