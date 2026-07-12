@@ -37,6 +37,10 @@ final class MPVVideoView: NSView {
     var onResize: (() -> Void)?
     var onDoubleClick: (() -> Void)?
 
+    // Mini-player drag-anywhere. isMovableByWindowBackground gates this to
+    // mini mode (it stays false in normal mode).
+    override var mouseDownCanMoveWindow: Bool { true }
+
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
@@ -96,9 +100,19 @@ final class MPVPlayerController: NSViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        videoView.onDoubleClick = { [weak self] in self?.toggleFullscreen() }
+        videoView.onDoubleClick = { [weak self] in
+            guard let self else { return }
+            (self.onFullscreenIntent ?? self.toggleFullscreen)()
+        }
         videoView.onResize = { [weak self] in self?.scheduleSurfaceAdopt() }
         setupMpv()
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        // Min size lives AppKit-side (not SwiftUI .frame) so mini-player
+        // mode can lower it synchronously before setting the small frame.
+        view.window?.contentMinSize = NSSize(width: 800, height: 450)
     }
 
     /// MPVKit's 'moltenvk' gpu-context reads the layer's drawableSize ONLY at
@@ -225,6 +239,14 @@ final class MPVPlayerController: NSViewController {
     func setMuted(_ muted: Bool) {
         setFlag("mute", muted)
     }
+
+    /// Display aspect of the current video (0 until known) — mini-player
+    /// mode locks the window to it.
+    var videoAspect: Double { getDouble("video-params/aspect") }
+
+    /// Set by PlayerModel so double-click fullscreen routes through the
+    /// model (which exits mini mode first). Falls back to the direct toggle.
+    var onFullscreenIntent: (() -> Void)?
 
     func toggleFullscreen() {
         guard let window = view.window else { return }

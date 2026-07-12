@@ -17,6 +17,7 @@ final class PlayerModel {
     private(set) var muted = false
     private(set) var speed: Double = 1.0
     private(set) var ended = false
+    private(set) var isMiniPlayer = false
 
     var audioTracks: [MPVTrack] { tracks.filter { $0.type == "audio" } }
     var subTracks: [MPVTrack] { tracks.filter { $0.type == "sub" } }
@@ -28,6 +29,8 @@ final class PlayerModel {
     private var lastSaved: Double = 0
     private var scrobbleStarted = false
     private var sleepActivity: NSObjectProtocol?
+    private var savedNormalFrame: NSRect?
+    private var fullscreenExitObserver: NSObjectProtocol?
 
     init(store: LibraryStore, itemKey: String, traktMedia: TraktMedia? = nil) {
         self.store = store
@@ -43,6 +46,7 @@ final class PlayerModel {
         controller.onEvent = { [weak self] event in
             self?.handle(event)
         }
+        controller.onFullscreenIntent = { [weak self] in self?.toggleFullscreen() }
     }
 
     /// Clamped: seeks/EOF can push position past duration, and Trakt 400s
@@ -136,6 +140,7 @@ final class PlayerModel {
 
     /// Window closing: persist position, then destroy the mpv instance.
     func shutdown() {
+        clearFullscreenExitObserver()
         if scrobbleStarted {
             scrobbleStarted = false
             scrobble(.stop)
@@ -190,6 +195,77 @@ final class PlayerModel {
         speed = newSpeed
         controller?.setSpeed(newSpeed)
     }
-    func toggleFullscreen() { controller?.toggleFullscreen() }
+    func toggleFullscreen() {
+        if isMiniPlayer { exitMiniPlayer() }   // spec: mini → fullscreen exits mini first
+        controller?.toggleFullscreen()
+    }
     func skipIntro() { controller?.skipIntro() }
+
+    // MARK: Mini player (issue #11)
+
+    func toggleMiniPlayer() {
+        isMiniPlayer ? exitMiniPlayer() : enterMiniPlayer()
+    }
+
+    private func enterMiniPlayer() {
+        guard let window = hostWindow else { return }
+        // From native fullscreen: exit first, enter mini once the window is
+        // back to a normal frame (one-shot observer; also cleared in
+        // shutdown() so closing mid-transition can't leak it).
+        if window.styleMask.contains(.fullScreen) {
+            fullscreenExitObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didExitFullScreenNotification,
+                object: window, queue: .main) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.clearFullscreenExitObserver()
+                    self.enterMiniPlayer()
+                }
+            }
+            window.toggleFullScreen(nil)
+            return
+        }
+        savedNormalFrame = window.frame
+        window.level = .floating
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        window.isMovableByWindowBackground = true
+        let raw = controller?.videoAspect ?? 0
+        // Lock only when the aspect is known — a pre-load 16:9 guess must not
+        // stay stuck on a 4:3 file. The fallback drives the frame size only.
+        if raw > 0 { window.contentAspectRatio = NSSize(width: raw, height: 1) }
+        let aspect = raw > 0 ? raw : 16.0 / 9.0
+        window.contentMinSize = NSSize(width: 320, height: 180)
+        let size = NSSize(width: 480, height: 480 / aspect)
+        let screen = (window.screen ?? NSScreen.main)?.visibleFrame ?? window.frame
+        let origin = NSPoint(x: screen.maxX - size.width - 20, y: screen.minY + 20)
+        window.setFrame(NSRect(origin: origin, size: size),
+                        display: true, animate: true)
+        isMiniPlayer = true
+    }
+
+    private func exitMiniPlayer() {
+        guard let window = hostWindow else { return }
+        // contentAspectRatio and resizeIncrements are mutually exclusive in
+        // AppKit — resetting increments to 1×1 clears the aspect lock.
+        window.resizeIncrements = NSSize(width: 1, height: 1)
+        window.level = .normal
+        window.collectionBehavior = []
+        window.isMovableByWindowBackground = false
+        // No animation: an in-flight frame animation fights the min-size
+        // bump below and a follow-on fullscreen transition (mini → f), and
+        // mpv's debounced VO-reconfig renders the upscale blurry mid-flight.
+        if let frame = savedNormalFrame {
+            window.setFrame(frame, display: true)
+        }
+        savedNormalFrame = nil
+        window.contentMinSize = NSSize(width: 800, height: 450)
+        isMiniPlayer = false
+    }
+
+    private func clearFullscreenExitObserver() {
+        if let fullscreenExitObserver {
+            NotificationCenter.default.removeObserver(fullscreenExitObserver)
+        }
+        fullscreenExitObserver = nil
+    }
 }
