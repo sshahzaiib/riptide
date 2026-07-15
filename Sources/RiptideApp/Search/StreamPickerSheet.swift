@@ -8,6 +8,7 @@ struct StreamPickerSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openWindow) private var openWindow
     @Environment(LibraryModel.self) private var library
+    @Environment(DownloadsModel.self) private var downloads
     @State private var model = StreamPickerModel()
 
     private enum UncachedSend {
@@ -200,6 +201,7 @@ struct StreamPickerSheet: View {
                 guard !Task.isCancelled else { return }
                 switch outcome {
                 case .added(let service, let transferID):
+                    downloads.kick()
                     // Failover placement: the resolver URL is bound to the
                     // addon's own service and can't stream a transfer that
                     // landed on the other one — report instead of auto-play.
@@ -215,6 +217,7 @@ struct StreamPickerSheet: View {
                         uncachedSend = .failed(bothTried: false)
                     }
                 case .probed:
+                    downloads.kick()
                     uncachedSend = .sent(fallback: nil)   // registered blind; nothing to poll
                 case .failed(let bothTried):
                     uncachedSend = .failed(bothTried: bothTried)
