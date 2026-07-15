@@ -196,12 +196,18 @@ struct StreamPickerSheet: View {
             uncachedSend = .inFlight
             uncachedTask = Task {
                 let outcome = await model.registerUncached(row: row)
+                // A successful registration created a remote transfer even if
+                // the sheet was dismissed mid-flight — the poller must hear
+                // about it regardless of this task's cancellation.
+                switch outcome {
+                case .added, .probed: downloads.kick()
+                case .failed: break
+                }
                 // A cancelled task (sheet dismissed) must not repaint state —
                 // cancellation is not a failure.
                 guard !Task.isCancelled else { return }
                 switch outcome {
                 case .added(let service, let transferID):
-                    downloads.kick()
                     // Failover placement: the resolver URL is bound to the
                     // addon's own service and can't stream a transfer that
                     // landed on the other one — report instead of auto-play.
