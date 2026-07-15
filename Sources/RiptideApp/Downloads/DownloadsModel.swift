@@ -50,26 +50,33 @@ final class DownloadsModel {
 
     /// (Re)start the poll loop — view appeared, visibility flipped, or the
     /// stream picker registered an uncached add.
+    ///
+    /// The loop lives in the Task closure (not an instance method) so `self`
+    /// is only strongly held for the duration of one poll pass — never across
+    /// the sleeps. A discarded model deallocates and the loop exits on its
+    /// own instead of leaking until downloads hit zero.
     func kick() {
         pollTask?.cancel()
-        pollTask = Task { [weak self] in await self?.poll() }
+        pollTask = Task { [weak self] in
+            var interval: Double = 0   // first tick: only the debounce floor applies
+            while !Task.isCancelled {
+                // Debounce: rapid kick()s (sidebar toggling) must not spam
+                // the APIs — 3s floor since the last poll, then the regular
+                // interval. `self` is NOT retained while sleeping.
+                let sinceLast = Date.now.timeIntervalSince(self?.lastPollAt ?? .distantPast)
+                let wait = max(interval, sinceLast < 3 ? 3 - sinceLast : 0)
+                if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
+                guard !Task.isCancelled, let self else { return }
+                self.lastPollAt = .now
+                await self.pollOnce()
+                // Idle account → stop polling entirely; the next kick() restarts.
+                guard self.rows.contains(where: \.isProcessing) else { return }
+                interval = self.isVisible ? 5 : 30
+            }   // `self` binding leaves scope here, before the next sleep
+        }
     }
 
     private var lastPollAt = Date.distantPast
-
-    private func poll() async {
-        while !Task.isCancelled {
-            // Debounce: rapid kick()s (sidebar toggling) must not spam the APIs.
-            let sinceLast = Date.now.timeIntervalSince(lastPollAt)
-            if sinceLast < 3 { try? await Task.sleep(for: .seconds(3 - sinceLast)) }
-            guard !Task.isCancelled else { return }
-            lastPollAt = .now
-            await pollOnce()
-            // Idle account → stop polling entirely; the next kick() restarts.
-            guard rows.contains(where: \.isProcessing) else { return }
-            try? await Task.sleep(for: .seconds(isVisible ? 5 : 30))
-        }
-    }
 
     private var services: [any DebridService] {
         let settings = AppSettings.shared
@@ -85,6 +92,16 @@ final class DownloadsModel {
 
     private func pollOnce() async {
         let services = self.services
+        guard !services.isEmpty else {
+            // Both tokens removed mid-session: nothing can be polled, so
+            // stale rows must clear (the failed-count guard below would
+            // otherwise early-return on 0 < 0 and freeze them on screen).
+            rows = []
+            lastStatuses = [:]
+            lastProgress = [:]
+            pollFailed = false
+            return
+        }
         var byKey: [String: DebridTransfer] = [:]
         var merged: [Row] = []
         var failed: Set<DebridServiceID> = []

@@ -40,8 +40,12 @@ final class ReadyNotifier: NSObject, UNUserNotificationCenterDelegate {
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             didReceive response: UNNotificationResponse,
                                             withCompletionHandler completionHandler: @escaping () -> Void) {
-        Task { @MainActor in self.onClick?() }
-        completionHandler()
+        // Complete only after the click handler has run — signalling done
+        // early lets the OS suspend the app before navigation happens.
+        Task { @MainActor in
+            self.onClick?()
+            completionHandler()
+        }
     }
 
     // Banners should show while the app is frontmost too.
