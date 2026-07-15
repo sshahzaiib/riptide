@@ -204,6 +204,10 @@ struct LibraryRootView: View {
                 showToast("Added — refresh again once Real-Debrid finishes.")
             }
         case .downloading:
+            // Uncached add via the sheet, same as the stream picker's
+            // registerUncached path — the poller must pick up this transfer
+            // or its ready notification (and library refresh) never fires.
+            downloads.kick()
             showToast("Added — downloading on Real-Debrid.")
         }
     }

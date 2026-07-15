@@ -70,7 +70,11 @@ final class DownloadsModel {
                 self.lastPollAt = .now
                 await self.pollOnce()
                 // Idle account → stop polling entirely; the next kick() restarts.
-                guard self.rows.contains(where: \.isProcessing) else { return }
+                // A failed poll doesn't count as "idle": we don't actually know
+                // the current state, and the "retrying" banner (pollFailed +
+                // lastUpdated) promises a live retry — so keep looping until a
+                // poll actually succeeds with zero non-terminal transfers.
+                guard self.pollFailed || self.rows.contains(where: \.isProcessing) else { return }
                 interval = self.isVisible ? 5 : 30
             }   // `self` binding leaves scope here, before the next sleep
         }
@@ -141,13 +145,24 @@ final class DownloadsModel {
         lastProgress = lastProgress.filter { statuses.keys.contains($0.key) }
         if rows.contains(where: \.isProcessing) { notifier.requestAuthorizationIfNeeded() }
         let ready = TransferDiff.newlyReady(previous: lastStatuses, current: statuses)
-        lastStatuses = statuses
-        guard !ready.isEmpty else { return }
+        guard !ready.isEmpty else {
+            lastStatuses = statuses
+            return
+        }
         for key in ready {
             let name = byKey[key]?.filename ?? ""
             notifier.notifyReady(name: name.isEmpty ? "A download" : name)
         }
-        await library.refresh()
+        // Shielded from a kick()-triggered cancellation of *this* poll task
+        // (e.g. a notification click lands on Downloads' onAppear mid-refresh):
+        // a plain `await library.refresh()` here would inherit that
+        // cancellation and can throw out of the network layer partway
+        // through. A fresh, non-cancelled Task always runs refresh() to
+        // completion, and lastStatuses only commits afterward — so a ready
+        // transition can never be marked "already handled" while the library
+        // sync that was supposed to surface it got torn off.
+        await Task { await self.library.refresh() }.value
+        lastStatuses = statuses
     }
 
     /// AllDebrid speed: bytes-downloaded delta between two consecutive polls.
