@@ -8,6 +8,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
     case movies = "Movies"
     case shows = "TV Shows"
     case files = "Other Files"
+    case downloads = "Downloads"
     var id: String { rawValue }
     var icon: String {
         switch self {
@@ -15,6 +16,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
         case .movies: "film"
         case .shows: "tv"
         case .files: "doc"
+        case .downloads: "arrow.down.circle"
         }
     }
 }
@@ -174,6 +176,7 @@ struct LibraryRootView: View {
         case .movies: MovieGrid()
         case .shows: ShowsList()
         case .files: FileList()
+        case .downloads: Text("Downloads")   // replaced by DownloadsView in the next task
         }
     }
 
