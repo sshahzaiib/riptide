@@ -29,6 +29,9 @@ final class LibraryModel {
     var searchText = ""
     var errorMessage: String?
     var needsAuth = false
+    /// Lifted from LibraryRootView so the notification click handler can
+    /// navigate to the Downloads section.
+    var sidebarSelection: SidebarSection = .movies
 
     let store: LibraryStore
 

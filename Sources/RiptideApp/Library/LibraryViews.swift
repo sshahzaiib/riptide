@@ -8,6 +8,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
     case movies = "Movies"
     case shows = "TV Shows"
     case files = "Other Files"
+    case downloads = "Downloads"
     var id: String { rawValue }
     var icon: String {
         switch self {
@@ -15,13 +16,14 @@ enum SidebarSection: String, CaseIterable, Identifiable {
         case .movies: "film"
         case .shows: "tv"
         case .files: "doc"
+        case .downloads: "arrow.down.circle"
         }
     }
 }
 
 struct LibraryRootView: View {
     @State private var model: LibraryModel
-    @State private var selection: SidebarSection = .movies
+    @State private var downloads: DownloadsModel
     @State private var showSettings = false
     @State private var showAddTorrent = false
     @State private var addTorrentPrefill: String?
@@ -32,13 +34,17 @@ struct LibraryRootView: View {
     @State private var droppedTorrentFile: URL?
 
     init(store: LibraryStore) {
-        _model = State(initialValue: LibraryModel(store: store))
+        let model = LibraryModel(store: store)
+        _model = State(initialValue: model)
+        _downloads = State(initialValue: DownloadsModel(library: model))
     }
 
     var body: some View {
         NavigationSplitView {
-            List(SidebarSection.allCases, selection: $selection) { section in
-                Label(section.rawValue, systemImage: section.icon).tag(section)
+            List(SidebarSection.allCases, selection: $model.sidebarSelection) { section in
+                Label(section.rawValue, systemImage: section.icon)
+                    .badge(section == .downloads ? downloads.activeCount : 0)
+                    .tag(section)
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: 200)
         } detail: {
@@ -80,7 +86,7 @@ struct LibraryRootView: View {
                         }
                     }
             }
-            .id(selection)
+            .id(model.sidebarSelection)
         }
         .sheet(isPresented: $showSettings, onDismiss: { Task { await model.refresh() } }) {
             SettingsView()
@@ -122,6 +128,12 @@ struct LibraryRootView: View {
             }
         }
         .environment(model)
+        .environment(downloads)
+        .onChange(of: downloads.toastMessage) {
+            guard let message = downloads.toastMessage else { return }
+            showToast(message)
+            downloads.toastMessage = nil
+        }
         // ponytail: dropped support for dragging raw magnet TEXT (not a link) — needs a custom multi-representation Transferable to safely coexist with the URL dropDestination; ⌘V paste and dragging an actual magnet: link both already work.
         .dropDestination(for: URL.self) { urls, _ in
             guard let url = urls.first else { return false }
@@ -158,7 +170,7 @@ struct LibraryRootView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .onChange(of: selection) {
+        .onChange(of: model.sidebarSelection) {
             if suppressPathReset {
                 suppressPathReset = false
             } else {
@@ -169,11 +181,12 @@ struct LibraryRootView: View {
 
     @ViewBuilder
     private var detailView: some View {
-        switch selection {
+        switch model.sidebarSelection {
         case .continueWatching: ContinueWatchingGrid()
         case .movies: MovieGrid()
         case .shows: ShowsList()
         case .files: FileList()
+        case .downloads: DownloadsView()
         }
     }
 
@@ -184,13 +197,17 @@ struct LibraryRootView: View {
             if let item = model.firstItem(torrentID: added.torrentID) {
                 let newSelection: SidebarSection = item.mediaKind == "episode" ? .shows
                     : (item.tmdbID != nil ? .movies : .files)
-                if selection != newSelection { suppressPathReset = true }
-                selection = newSelection
+                if model.sidebarSelection != newSelection { suppressPathReset = true }
+                model.sidebarSelection = newSelection
                 path = NavigationPath([item.itemKey])
             } else {
                 showToast("Added — refresh again once Real-Debrid finishes.")
             }
         case .downloading:
+            // Uncached add via the sheet, same as the stream picker's
+            // registerUncached path — the poller must pick up this transfer
+            // or its ready notification (and library refresh) never fires.
+            downloads.kick()
             showToast("Added — downloading on Real-Debrid.")
         }
     }

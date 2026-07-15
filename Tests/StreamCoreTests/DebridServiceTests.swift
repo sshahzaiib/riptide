@@ -103,4 +103,52 @@ final class DebridServiceTests: XCTestCase {
         do { _ = try await adService().transferStatus(id: "not-a-number"); XCTFail("expected throw") }
         catch AllDebridError.badResponse {} catch { XCTFail("wrong error \(error)") }
     }
+
+    // MARK: activeTransfers
+
+    func testRDActiveTransfersMapsListItems() async throws {
+        MockURLProtocol.setHandler { _ in
+            .json(#"[{"id":"A","filename":"a.mkv","bytes":1000,"progress":40,"status":"downloading","added":"2026-01-01T00:00:00.000Z","links":[],"speed":111,"seeders":5},{"id":"B","filename":"b.mkv","bytes":9,"progress":100,"status":"downloaded","added":"2026-01-01T00:00:00.000Z","links":["l"]},{"id":"C","filename":"c.mkv","bytes":9,"progress":0,"status":"dead","added":"2026-01-01T00:00:00.000Z","links":[]}]"#)
+        }
+        let transfers = try await rdService().activeTransfers()
+        XCTAssertEqual(transfers, [
+            DebridTransfer(id: "A", status: .processing(progress: 40),
+                           filename: "a.mkv", bytes: 1000, speedBps: 111, seeders: 5),
+            DebridTransfer(id: "B", status: .ready, filename: "b.mkv", bytes: 9),
+            DebridTransfer(id: "C", status: .failed("dead"), filename: "c.mkv", bytes: 9),
+        ])
+    }
+
+    func testADActiveTransfersMapsMagnets() async throws {
+        MockURLProtocol.setHandler { _ in
+            .json(#"{"status":"success","data":{"magnets":[{"id":1,"filename":"x.mkv","size":200,"status":"Downloading","statusCode":1,"downloaded":50},{"id":2,"filename":"y.mkv","size":0,"status":"Downloading","statusCode":1,"downloaded":0},{"id":3,"filename":"z.mkv","size":10,"status":"Ready","statusCode":4,"downloaded":10}]}}"#)
+        }
+        let transfers = try await adService().activeTransfers()
+        XCTAssertEqual(transfers, [
+            DebridTransfer(id: "1", status: .processing(progress: 25), filename: "x.mkv", bytes: 200),
+            DebridTransfer(id: "2", status: .processing(progress: 0), filename: "y.mkv", bytes: 0),
+            DebridTransfer(id: "3", status: .ready, filename: "z.mkv", bytes: 10),
+        ])
+    }
+
+    // MARK: RD model decoding
+
+    func testTorrentListItemDecodesOptionalSpeedAndSeeders() throws {
+        let json = #"""
+        [{"id":"A","filename":"a.mkv","bytes":1000,"progress":40,"status":"downloading",
+          "added":"2026-01-01T00:00:00.000Z","links":[],"speed":123456,"seeders":7},
+         {"id":"B","filename":"b.mkv","bytes":1,"progress":100,"status":"downloaded",
+          "added":"2026-01-01T00:00:00.000Z","links":["l"]}]
+        """#
+        let items = try JSONDecoder().decode([TorrentListItem].self, from: Data(json.utf8))
+        XCTAssertEqual(items[0].speed, 123_456)
+        XCTAssertEqual(items[0].seeders, 7)
+        XCTAssertNil(items[1].speed)
+        XCTAssertNil(items[1].seeders)
+
+        let infoJSON = #"{"id":"A","status":"downloading","speed":99,"seeders":3}"#
+        let info = try JSONDecoder().decode(TorrentInfo.self, from: Data(infoJSON.utf8))
+        XCTAssertEqual(info.speed, 99)
+        XCTAssertEqual(info.seeders, 3)
+    }
 }

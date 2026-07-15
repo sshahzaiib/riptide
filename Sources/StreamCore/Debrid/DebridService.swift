@@ -30,10 +30,20 @@ public struct DebridTransfer: Sendable, Equatable {
     }
     public let id: String
     public let status: Status
+    // Downloads-view fields; empty/nil when a provider doesn't report them.
+    public let filename: String
+    public let bytes: Int64
+    public let speedBps: Int64?
+    public let seeders: Int?
 
-    public init(id: String, status: Status) {
+    public init(id: String, status: Status, filename: String = "", bytes: Int64 = 0,
+                speedBps: Int64? = nil, seeders: Int? = nil) {
         self.id = id
         self.status = status
+        self.filename = filename
+        self.bytes = bytes
+        self.speedBps = speedBps
+        self.seeders = seeders
     }
 }
 
@@ -47,6 +57,9 @@ public protocol DebridService: Sendable {
     func transferStatus(id: String) async throws -> DebridTransfer
     /// Current transfer IDs — the account-diff fallback for hashless picks.
     func transferIDs() async throws -> Set<String>
+    /// Snapshot of every transfer on the account, any status. The Downloads
+    /// poller diffs consecutive snapshots for ready transitions.
+    func activeTransfers() async throws -> [DebridTransfer]
     /// Finish a transfer another client added (RD: complete file selection).
     func finishForeignAdd(id: String) async throws
     func unrestrict(link: String) async throws -> URL
@@ -82,18 +95,30 @@ public struct RealDebridService: DebridService {
         return try await transferStatus(id: added.torrentID)
     }
 
+    private func mapStatus(_ raw: String, progress: Double) -> DebridTransfer.Status {
+        switch raw {
+        case "downloaded": .ready
+        case "magnet_error", "error", "virus", "dead": .failed(raw)
+        default: .processing(progress: progress)
+        }
+    }
+
     public func transferStatus(id: String) async throws -> DebridTransfer {
         let info = try await rd.torrentInfo(id)
-        let status: DebridTransfer.Status = switch info.status {
-        case "downloaded": .ready
-        case "magnet_error", "error", "virus", "dead": .failed(info.status)
-        default: .processing(progress: info.progress)
-        }
-        return DebridTransfer(id: id, status: status)
+        return DebridTransfer(id: id, status: mapStatus(info.status, progress: info.progress),
+                              filename: info.filename, bytes: info.bytes)
     }
 
     public func transferIDs() async throws -> Set<String> {
         Set(try await rd.allTorrents().map(\.id))
+    }
+
+    public func activeTransfers() async throws -> [DebridTransfer] {
+        try await rd.allTorrents().map {
+            DebridTransfer(id: $0.id, status: mapStatus($0.status, progress: $0.progress),
+                           filename: $0.filename, bytes: $0.bytes,
+                           speedBps: $0.speed, seeders: $0.seeders)
+        }
     }
 
     public func finishForeignAdd(id: String) async throws {
@@ -159,20 +184,31 @@ public struct AllDebridService: DebridService {
                               status: (up.ready ?? false) ? .ready : .processing(progress: 0))
     }
 
-    public func transferStatus(id: String) async throws -> DebridTransfer {
-        guard let numeric = Int(id) else { throw AllDebridError.badResponse }
-        let magnet = try await client.magnetStatus(id: numeric)
-        let status: DebridTransfer.Status = switch magnet.statusCode {
+    private func mapStatus(_ magnet: ADMagnet) -> DebridTransfer.Status {
+        switch magnet.statusCode {
         case 4: .ready
         case 5...: .failed(magnet.status ?? "error \(magnet.statusCode)")
         default: .processing(progress: magnet.size > 0
             ? Double(magnet.downloaded) / Double(magnet.size) * 100 : 0)
         }
-        return DebridTransfer(id: id, status: status)
+    }
+
+    public func transferStatus(id: String) async throws -> DebridTransfer {
+        guard let numeric = Int(id) else { throw AllDebridError.badResponse }
+        let magnet = try await client.magnetStatus(id: numeric)
+        return DebridTransfer(id: id, status: mapStatus(magnet),
+                              filename: magnet.filename ?? "", bytes: magnet.size)
     }
 
     public func transferIDs() async throws -> Set<String> {
         Set(try await client.magnetStatusList().map { String($0.id) })
+    }
+
+    public func activeTransfers() async throws -> [DebridTransfer] {
+        try await client.magnetStatusList().map {
+            DebridTransfer(id: String($0.id), status: mapStatus($0),
+                           filename: $0.filename ?? "", bytes: $0.size)
+        }
     }
 
     public func unrestrict(link: String) async throws -> URL {

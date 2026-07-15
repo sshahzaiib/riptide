@@ -16,6 +16,7 @@ private struct StubService: DebridService {
         DebridTransfer(id: id, status: .ready)
     }
     func transferIDs() async throws -> Set<String> { [] }
+    func activeTransfers() async throws -> [DebridTransfer] { [] }
     func unrestrict(link: String) async throws -> URL { URL(string: "https://stub")! }
     func delete(id: String) async throws {}
     func libraryEntries(knownCounts: [String: Int],

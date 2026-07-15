@@ -8,6 +8,7 @@ struct StreamPickerSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openWindow) private var openWindow
     @Environment(LibraryModel.self) private var library
+    @Environment(DownloadsModel.self) private var downloads
     @State private var model = StreamPickerModel()
 
     private enum UncachedSend {
@@ -195,6 +196,13 @@ struct StreamPickerSheet: View {
             uncachedSend = .inFlight
             uncachedTask = Task {
                 let outcome = await model.registerUncached(row: row)
+                // A successful registration created a remote transfer even if
+                // the sheet was dismissed mid-flight — the poller must hear
+                // about it regardless of this task's cancellation.
+                switch outcome {
+                case .added, .probed: downloads.kick()
+                case .failed: break
+                }
                 // A cancelled task (sheet dismissed) must not repaint state —
                 // cancellation is not a failure.
                 guard !Task.isCancelled else { return }
@@ -215,6 +223,7 @@ struct StreamPickerSheet: View {
                         uncachedSend = .failed(bothTried: false)
                     }
                 case .probed:
+                    downloads.kick()
                     uncachedSend = .sent(fallback: nil)   // registered blind; nothing to poll
                 case .failed(let bothTried):
                     uncachedSend = .failed(bothTried: bothTried)
