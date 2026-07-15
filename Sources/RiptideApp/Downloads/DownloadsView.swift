@@ -50,6 +50,9 @@ private struct TransferRow: View {
             }
             switch row.transfer.status {
             case .processing(let progress):
+                // Raw APIs can report >100 (downloaded > claimed size);
+                // ProgressView requires value within 0...total.
+                let progress = min(max(progress, 0), 100)
                 ProgressView(value: progress, total: 100).controlSize(.small)
                 HStack(spacing: 12) {
                     Text("\(Int(progress))%")
