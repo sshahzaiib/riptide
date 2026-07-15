@@ -47,9 +47,11 @@ public struct TorrentInfo: Sendable, Equatable, Decodable {
     public let status: String
     public let files: [TorrentFile]
     public let links: [String]
+    public let speed: Int64?
+    public let seeders: Int?
 
     enum CodingKeys: String, CodingKey {
-        case id, filename, bytes, progress, status, files, links
+        case id, filename, bytes, progress, status, files, links, speed, seeders
     }
 
     public init(from decoder: Decoder) throws {
@@ -61,13 +63,17 @@ public struct TorrentInfo: Sendable, Equatable, Decodable {
         progress = try c.decodeIfPresent(Double.self, forKey: .progress) ?? 0
         files = try c.decodeIfPresent([TorrentFile].self, forKey: .files) ?? []
         links = try c.decodeIfPresent([String].self, forKey: .links) ?? []
+        speed = try c.decodeIfPresent(Int64.self, forKey: .speed)
+        seeders = try c.decodeIfPresent(Int.self, forKey: .seeders)
     }
 
     /// Direct memberwise init for tests/fixtures.
     init(id: String, filename: String = "", bytes: Int64 = 0, progress: Double = 0,
-         status: String, files: [TorrentFile] = [], links: [String] = []) {
+         status: String, files: [TorrentFile] = [], links: [String] = [],
+         speed: Int64? = nil, seeders: Int? = nil) {
         self.id = id; self.filename = filename; self.bytes = bytes
         self.progress = progress; self.status = status; self.files = files; self.links = links
+        self.speed = speed; self.seeders = seeders
     }
 }
 
@@ -95,13 +101,16 @@ public struct TorrentListItem: Sendable, Equatable, Decodable {
     public let added: String           // raw ISO-8601
     public let links: [String]
     public let ended: String?
+    public let speed: Int64?           // bytes/sec, present only while downloading
+    public let seeders: Int?
 
     public init(id: String, filename: String, bytes: Int64, progress: Double,
                 status: String, added: String, links: [String], ended: String?,
-                hash: String? = nil) {
+                hash: String? = nil, speed: Int64? = nil, seeders: Int? = nil) {
         self.id = id; self.filename = filename; self.bytes = bytes
         self.progress = progress; self.status = status; self.added = added
         self.links = links; self.ended = ended; self.hash = hash
+        self.speed = speed; self.seeders = seeders
     }
 }
 

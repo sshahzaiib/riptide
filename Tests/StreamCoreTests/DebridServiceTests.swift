@@ -103,4 +103,25 @@ final class DebridServiceTests: XCTestCase {
         do { _ = try await adService().transferStatus(id: "not-a-number"); XCTFail("expected throw") }
         catch AllDebridError.badResponse {} catch { XCTFail("wrong error \(error)") }
     }
+
+    // MARK: RD model decoding
+
+    func testTorrentListItemDecodesOptionalSpeedAndSeeders() throws {
+        let json = #"""
+        [{"id":"A","filename":"a.mkv","bytes":1000,"progress":40,"status":"downloading",
+          "added":"2026-01-01T00:00:00.000Z","links":[],"speed":123456,"seeders":7},
+         {"id":"B","filename":"b.mkv","bytes":1,"progress":100,"status":"downloaded",
+          "added":"2026-01-01T00:00:00.000Z","links":["l"]}]
+        """#
+        let items = try JSONDecoder().decode([TorrentListItem].self, from: Data(json.utf8))
+        XCTAssertEqual(items[0].speed, 123_456)
+        XCTAssertEqual(items[0].seeders, 7)
+        XCTAssertNil(items[1].speed)
+        XCTAssertNil(items[1].seeders)
+
+        let infoJSON = #"{"id":"A","status":"downloading","speed":99,"seeders":3}"#
+        let info = try JSONDecoder().decode(TorrentInfo.self, from: Data(infoJSON.utf8))
+        XCTAssertEqual(info.speed, 99)
+        XCTAssertEqual(info.seeders, 3)
+    }
 }
