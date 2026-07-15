@@ -278,6 +278,7 @@ private struct StubLibraryService: DebridService {
     func addMagnet(_ magnet: String) async throws -> DebridTransfer { fatalError("unused") }
     func transferStatus(id: String) async throws -> DebridTransfer { fatalError("unused") }
     func transferIDs() async throws -> Set<String> { [] }
+    func activeTransfers() async throws -> [DebridTransfer] { [] }
     func unrestrict(link: String) async throws -> URL { fatalError("unused") }
     func delete(id: String) async throws {}
 }
