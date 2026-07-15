@@ -24,6 +24,13 @@ final class TransferDiffTests: XCTestCase {
             current: ["rd#A": .failed("dead")]), [])
     }
 
+    func testVanishedTransferIgnoredWhileOthersTransition() {
+        XCTAssertEqual(TransferDiff.newlyReady(
+            previous: ["rd#A": .processing(progress: 40),
+                       "rd#B": .processing(progress: 10)],
+            current: ["rd#B": .ready]), ["rd#B"])
+    }
+
     func testMultipleTransitionsSorted() {
         XCTAssertEqual(TransferDiff.newlyReady(
             previous: ["rd#B": .processing(progress: 1),
