@@ -145,10 +145,22 @@ final class PlayerModel {
         }
     }
 
-    /// Flush current position (window closing, app quitting).
+    /// Flush current position (window closing, app quitting, episode advance).
+    ///
+    /// Leaving from inside the credits means the episode is watched even though
+    /// we never reached EOF and `.ended` never ran its 100% save — and
+    /// saveProgress only marks finished at >= 95%. A 24-minute episode whose
+    /// credits start at 22:30 exits at ~94.4% and would sit in Continue Watching
+    /// forever. Decided from position rather than by the caller, so every exit
+    /// out of the credits counts alike: autoplay, Play Next, the prev/next
+    /// controls, and closing the window.
     func flushProgress() {
         guard position > 0, duration > 0 else { return }
-        try? store.saveProgress(itemKey: itemKey, position: position, duration: duration)
+        if let credits = markers.creditsStart, position >= credits {
+            try? store.saveProgress(itemKey: itemKey, position: duration, duration: duration)
+        } else {
+            try? store.saveProgress(itemKey: itemKey, position: position, duration: duration)
+        }
     }
 
     /// Window closing: persist position, then destroy the mpv instance.
@@ -165,25 +177,14 @@ final class PlayerModel {
 
     /// In-window switch to the next episode: close out the old item's
     /// scrobble, swap identity, reset per-file state, and load the new URL
-    /// into the live mpv instance.
-    ///
-    /// Leaving from inside the credits means the episode is watched, even though
-    /// we never reached EOF and `.ended` never ran its 100% save — and
-    /// saveProgress only marks finished at >= 95%. A 24-minute episode whose
-    /// credits start at 22:30 leaves at ~94.4% and would sit in Continue Watching
-    /// forever. Decided from position rather than by the caller so every exit out
-    /// of the credits counts — autoplay, the Play Next button, and the prev/next
-    /// controls alike — while a jump from mid-episode still just flushes.
+    /// into the live mpv instance. flushProgress() finalizes the outgoing
+    /// item, including the leaving-during-credits case — see there.
     func advance(to next: PlayItem) {
         // ponytail: the mini aspect lock can't be re-derived here (the next
         // file's aspect is unknown until it loads) — just unlock; the next
         // manual mini enter re-locks.
         if isMiniPlayer { hostWindow?.resizeIncrements = NSSize(width: 1, height: 1) }
-        if let credits = markers.creditsStart, position >= credits, duration > 0 {
-            try? store.saveProgress(itemKey: itemKey, position: duration, duration: duration)
-        } else {
-            flushProgress()
-        }
+        flushProgress()
         if scrobbleStarted {
             scrobbleStarted = false
             scrobble(.stop)
