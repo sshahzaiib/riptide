@@ -215,8 +215,13 @@ final class PlayerModel {
         }
     }
 
-    func addSubtitle(path: String) {
-        controller?.addSubtitle(path: path)   // default select: true
+    /// expecting: the itemKey the caller downloaded this subtitle for — a
+    /// stale in-flight download (episode auto-advanced meanwhile) must not
+    /// attach to, or persist against, the NEW item. nil (debug-sub path)
+    /// skips the check.
+    func addSubtitle(path: String, expecting key: String? = nil) {
+        if let key, key != itemKey { return }
+        controller?.addSubtitle(path: path)   // default select: true ("cached")
         persistSubSelection("external:\((path as NSString).lastPathComponent)")
     }
 

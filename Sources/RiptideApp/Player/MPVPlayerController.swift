@@ -307,8 +307,11 @@ final class MPVPlayerController: NSViewController {
 
     /// select: false loads the track without activating it (mpv's default
     /// sub-add flag is "select", so "auto" must be passed explicitly).
+    /// select: true uses "cached": selects, but reuses an already-added
+    /// track with the same filename instead of duplicating it (re-picking
+    /// a restored file from the menu would otherwise double the track).
     func addSubtitle(path: String, select: Bool = true) {
-        command("sub-add", args: [path, select ? "select" : "auto"])
+        command("sub-add", args: [path, select ? "cached" : "auto"])
     }
 
     private func setFlag(_ name: String, _ flag: Bool) {
