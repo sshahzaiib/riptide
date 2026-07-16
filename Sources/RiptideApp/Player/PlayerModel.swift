@@ -25,6 +25,8 @@ final class PlayerModel {
     private weak var controller: MPVPlayerController?
     private let store: LibraryStore
     private var itemKey: String
+    private(set) var subDelay: Double = 0
+    private var subtitleStateAppliedFor: String?
     private var traktMedia: TraktMedia?
     private var lastSaved: Double = 0
     private var scrobbleStarted = false
@@ -114,6 +116,12 @@ final class PlayerModel {
         case .cacheTime(let t):  cacheTime = t
         case .tracksChanged(let t):
             tracks = t
+            // mpv teardown during advance fires .tracksChanged with an empty
+            // list before the real FILE_LOADED emission; applying here would
+            // show the restored-OSD too early and have it wiped by the new
+            // file's VO init. Sub properties are sticky on the handle, so
+            // waiting for the real (non-empty) emission is still correct.
+            if !t.isEmpty { applyPerFileSubtitleState() }
             if ProcessInfo.processInfo.environment["RIPTIDE_DEBUG_SUB"] != nil {
                 NSLog("RIPTRACKS: \(t.map { "\($0.type)#\($0.id)\($0.selected ? "*" : "")" }.joined(separator: " "))")
             }
@@ -175,6 +183,12 @@ final class PlayerModel {
         playbackError = nil
         ended = false
         buffering = false
+        subDelay = 0
+        controller?.setSubDelay(0)
+        // nil (not "leave the old key"): advancing to the SAME itemKey
+        // (replay, or debug-URL streams where itemKey == "") would otherwise
+        // fail the inequality guard and skip the style/delay re-apply.
+        subtitleStateAppliedFor = nil
         // speed deliberately survives the swap: like volume/mute it's a
         // session preference (a 1.25x binge stays 1.25x), and mpv itself
         // persists it across loadfile.
@@ -190,6 +204,67 @@ final class PlayerModel {
     func setAudioTrack(_ id: Int) { controller?.setAudioTrack(id: id) }
     func setSubtitleTrack(_ id: Int?) { controller?.setSubtitleTrack(id: id) }
     func addSubtitle(path: String) { controller?.addSubtitle(path: path) }
+
+    static let subDelayStep = 0.05  // 50 ms, VLC's default
+
+    func adjustSubDelay(by delta: Double) {
+        // Pre-load keypresses are dropped: no subtitles are visible yet, and
+        // persisting here would clobber the stored value under the CURRENT
+        // itemKey before applyPerFileSubtitleState() ever restores it.
+        guard subtitleStateAppliedFor != nil else { return }
+        subDelay += delta
+        controller?.setSubDelay(subDelay)
+        controller?.showOSD("Sub delay: \(Self.formatMS(subDelay))")
+        persistSubDelay()
+    }
+
+    func resetSubDelay() {
+        // Pre-load keypresses are dropped: no subtitles are visible yet, and
+        // persisting here would clobber the stored value under the CURRENT
+        // itemKey before applyPerFileSubtitleState() ever restores it.
+        guard subtitleStateAppliedFor != nil else { return }
+        subDelay = 0
+        controller?.setSubDelay(0)
+        controller?.showOSD("Sub delay: 0 ms")
+        persistSubDelay()
+    }
+
+    func applySubtitleStyle(_ style: SubtitleStyle) {
+        controller?.setSubStyle(fontSize: style.fontSize, pos: style.pos, color: style.color)
+    }
+
+    static func formatMS(_ seconds: Double) -> String {
+        let ms = Int((seconds * 1000).rounded())
+        if ms == 0 { return "0 ms" }
+        return ms < 0 ? "−\(-ms) ms" : "+\(ms) ms"  // U+2212 minus, per spec copy
+    }
+
+    private func persistSubDelay() {
+        guard !itemKey.isEmpty else { return }  // debug-URL playback: session-only
+        let key = "subDelay.\(itemKey)"
+        // Rounded-ms zero check: repeated ±0.05 accumulation can leave
+        // float dust (e.g. 1e-17) that a strict == 0 would persist forever.
+        if Int((subDelay * 1000).rounded()) == 0 {
+            UserDefaults.standard.removeObject(forKey: key)
+        } else {
+            UserDefaults.standard.set(subDelay, forKey: key)
+        }
+    }
+
+    /// Style + persisted delay, once per item. Re-runs after an
+    /// autoplay advance because itemKey changes.
+    private func applyPerFileSubtitleState() {
+        guard subtitleStateAppliedFor != itemKey else { return }
+        subtitleStateAppliedFor = itemKey
+        applySubtitleStyle(SubtitleStyle.load())
+        let stored = itemKey.isEmpty
+            ? 0 : UserDefaults.standard.double(forKey: "subDelay.\(itemKey)")
+        subDelay = stored
+        controller?.setSubDelay(stored)
+        if stored != 0 {
+            controller?.showOSD("Sub delay restored: \(Self.formatMS(stored))")
+        }
+    }
 
     func seek(relative seconds: Double) { controller?.seek(relative: seconds) }
     func toggleMute() {
