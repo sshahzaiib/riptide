@@ -250,7 +250,17 @@ final class PlayerModel {
     }
 
     func applySubtitleStyle(_ style: SubtitleStyle) {
-        controller?.setSubStyle(fontSize: style.fontSize, pos: style.pos, color: style.color)
+        controller?.setSubStyle(fontSize: style.fontSize, color: style.color)
+    }
+
+    /// Lift subs clear of the controls pill while it's on screen. Stored so a
+    /// file load (or an autoplay advance) can re-apply it — mpv resets sub-pos
+    /// per file.
+    private var subtitlesRaised = false
+
+    func setSubtitlesRaised(_ raised: Bool) {
+        subtitlesRaised = raised
+        controller?.setSubPos(raised ? SubtitleStyle.raisedPos : SubtitleStyle.basePos)
     }
 
     static func formatMS(_ seconds: Double) -> String {
@@ -282,6 +292,7 @@ final class PlayerModel {
         guard subtitleStateAppliedFor != itemKey else { return }
         subtitleStateAppliedFor = itemKey
         applySubtitleStyle(SubtitleStyle.load())
+        setSubtitlesRaised(subtitlesRaised)
         let stored = itemKey.isEmpty
             ? 0 : UserDefaults.standard.double(forKey: "subDelay.\(itemKey)")
         subDelay = stored

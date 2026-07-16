@@ -1,31 +1,26 @@
 import SwiftUI
 import AppKit
 
-/// Sliders + color picker bound to the SubtitleStyle UserDefaults keys.
+/// Size picker + color picker bound to the SubtitleStyle UserDefaults keys.
 /// Pass `onChange` to apply edits live to an open player.
 struct SubtitleStyleControls: View {
-    @AppStorage(SubtitleStyle.sizeKey) private var fontSize = SubtitleStyle.defaultSize
-    @AppStorage(SubtitleStyle.posKey) private var pos = SubtitleStyle.defaultPos
+    @AppStorage(SubtitleSize.storageKey) private var size = SubtitleSize.default
     @AppStorage(SubtitleStyle.colorKey) private var colorHex = SubtitleStyle.defaultColor
     // Explicit nil default: a plain optional var gets NO default in the
-    // memberwise init, so Task 4's `SubtitleStyleControls()` wouldn't compile.
+    // memberwise init, so `SubtitleStyleControls()` wouldn't compile.
     var onChange: ((SubtitleStyle) -> Void)? = nil
 
     var body: some View {
-        Slider(value: $fontSize, in: 20...120, step: 1) {
-            Text("Size")
-        } minimumValueLabel: { Text("A").font(.caption2) }
-          maximumValueLabel: { Text("A").font(.title3) }
-        Slider(value: Binding(get: { Double(pos) }, set: { pos = Int($0) }),
-               in: 0...100, step: 1) {
-            Text("Position")
-        } minimumValueLabel: { Image(systemName: "arrow.up.to.line").font(.caption2) }
-          maximumValueLabel: { Image(systemName: "arrow.down.to.line").font(.caption2) }
+        Picker("Size", selection: $size) {
+            ForEach(SubtitleSize.allCases, id: \.self) { Text($0.label).tag($0) }
+        }
+        // supportsOpacity: false — subHexString() drops alpha, so an opacity
+        // slider would silently discard whatever the user set on it.
         ColorPicker("Color", selection: Binding(
             get: { Color(subHex: colorHex) },
-            set: { colorHex = $0.subHexString() }))
-        .onChange(of: fontSize) { notify() }
-        .onChange(of: pos) { notify() }
+            set: { colorHex = $0.subHexString() }),
+                    supportsOpacity: false)
+        .onChange(of: size) { notify() }
         .onChange(of: colorHex) { notify() }
     }
 

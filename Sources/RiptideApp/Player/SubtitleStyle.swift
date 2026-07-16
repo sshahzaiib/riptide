@@ -1,26 +1,63 @@
 import Foundation
 
+/// User-facing subtitle sizes mapped to mpv `sub-font-size` values.
+enum SubtitleSize: String, CaseIterable {
+    case small
+    case medium
+    case large
+    case extraLarge
+    case huge
+
+    static let storageKey = "subSize"
+    static let `default`: SubtitleSize = .medium
+
+    static var current: SubtitleSize {
+        UserDefaults.standard.string(forKey: storageKey)
+            .flatMap(SubtitleSize.init(rawValue:)) ?? .default
+    }
+
+    var label: String {
+        switch self {
+        case .small: "Small"
+        case .medium: "Medium"
+        case .large: "Large"
+        case .extraLarge: "Extra Large"
+        case .huge: "Huge"
+        }
+    }
+
+    /// `.medium` is mpv's own sub-font-size default (55).
+    var fontSize: Double {
+        switch self {
+        case .small: 40
+        case .medium: 55
+        case .large: 70
+        case .extraLarge: 85
+        case .huge: 100
+        }
+    }
+}
+
 /// Global subtitle styling, UserDefaults-backed. Applied to each mpv
 /// instance on file load and live from the style controls.
 struct SubtitleStyle {
-    static let sizeKey = "subFontSize"
-    static let posKey = "subPos"
     static let colorKey = "subColor"
-    static let defaultSize = 55.0   // mpv's own sub-font-size default
-    static let defaultPos = 100     // bottom
     static let defaultColor = "#FFFFFF"
 
+    /// mpv `sub-pos`: 100 is the bottom edge. Subs lift to `raisedPos` while
+    /// the controls pill is on screen so it never covers them.
+    /// ponytail: a fixed % of video height, not a measured pill height —
+    /// the pill is a fixed-size overlay, so this clears it at any window
+    /// size. Measure the pill if a user ever drags it somewhere exotic.
+    static let basePos = 100
+    static let raisedPos = 88
+
     var fontSize: Double
-    var pos: Int
     var color: String
 
     static func load() -> SubtitleStyle {
-        let d = UserDefaults.standard
-        let size = d.object(forKey: sizeKey) as? Double ?? defaultSize
-        let pos = d.object(forKey: posKey) as? Int ?? defaultPos
-        let stored = d.string(forKey: colorKey) ?? defaultColor
-        return SubtitleStyle(fontSize: size,
-                             pos: pos,
+        let stored = UserDefaults.standard.string(forKey: colorKey) ?? defaultColor
+        return SubtitleStyle(fontSize: SubtitleSize.current.fontSize,
                              color: isValidHex(stored) ? stored : defaultColor)
     }
 

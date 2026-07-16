@@ -235,6 +235,10 @@ struct PlayerWindowView: View {
                     .transition(.opacity)
             }
         }
+        .onChange(of: controlsVisible, initial: true) {
+            // Mini mode shows a tiny bar, not the pill — nothing to clear.
+            model.setSubtitlesRaised(controlsVisible && !model.isMiniPlayer)
+        }
         .animation(.easeInOut(duration: 0.2), value: controlsVisible)
         .navigationTitle(current.title)
         .onDisappear {

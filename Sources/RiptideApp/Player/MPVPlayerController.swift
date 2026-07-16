@@ -243,13 +243,17 @@ final class MPVPlayerController: NSViewController {
         command("show-text", args: [text, "1500"])
     }
 
-    func setSubStyle(fontSize: Double, pos: Int, color: String) {
+    func setSubStyle(fontSize: Double, color: String) {
         guard mpv != nil else { return }
         var size = fontSize
         mpv_set_property(mpv, "sub-font-size", MPV_FORMAT_DOUBLE, &size)
+        mpv_set_property_string(mpv, "sub-color", color)
+    }
+
+    func setSubPos(_ pos: Int) {
+        guard mpv != nil else { return }
         var p = Int64(pos)
         mpv_set_property(mpv, "sub-pos", MPV_FORMAT_INT64, &p)
-        mpv_set_property_string(mpv, "sub-color", color)
     }
 
     func setSpeed(_ speed: Double) {
