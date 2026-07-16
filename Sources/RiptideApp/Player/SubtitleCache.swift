@@ -4,18 +4,25 @@ import Foundation
 /// listing IS the record of downloads — no manifest, no database.
 /// Layout: ~/Library/Application Support/Riptide/subs/<itemKey>/<fileID>-<name>
 enum SubtitleCache {
-    /// The item's cache folder, created on demand. nil for empty itemKey
-    /// (debug-URL playback) or on creation failure — callers degrade to
-    /// the old un-cached behavior.
-    static func directory(for itemKey: String) -> URL? {
+    /// The item's cache folder, created only when `create` is true — reads
+    /// use the default (no create) so they never litter empty folders on
+    /// disk. nil for empty itemKey (debug-URL playback), for an itemKey
+    /// containing a path separator (defense against malformed upstream ids
+    /// reaching the filesystem; itemKey always contains "#" so it can never
+    /// be ".." itself), or on creation failure — callers degrade to the old
+    /// un-cached behavior.
+    static func directory(for itemKey: String, create: Bool = false) -> URL? {
         guard !itemKey.isEmpty,
+              !itemKey.contains("/"),
               let base = FileManager.default.urls(
                   for: .applicationSupportDirectory, in: .userDomainMask).first
         else { return nil }
         let dir = base.appendingPathComponent("Riptide/subs/\(itemKey)", isDirectory: true)
-        do {
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        } catch { return nil }
+        if create {
+            do {
+                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            } catch { return nil }
+        }
         return dir
     }
 
@@ -43,9 +50,7 @@ enum SubtitleCache {
     static func prefixed(_ file: URL, fileID: Int) throws -> URL {
         let dest = file.deletingLastPathComponent()
             .appendingPathComponent("\(fileID)-\(file.lastPathComponent)")
-        if FileManager.default.fileExists(atPath: dest.path) {
-            try FileManager.default.removeItem(at: dest)
-        }
+        try? FileManager.default.removeItem(at: dest)  // no exists-check: TOCTOU-free
         try FileManager.default.moveItem(at: file, to: dest)
         return dest
     }
