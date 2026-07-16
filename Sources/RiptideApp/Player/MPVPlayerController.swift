@@ -231,6 +231,26 @@ final class MPVPlayerController: NSViewController {
         mpv_set_property(mpv, "volume", MPV_FORMAT_DOUBLE, &v)
     }
 
+    func setSubDelay(_ seconds: Double) {
+        guard mpv != nil else { return }
+        var v = seconds
+        mpv_set_property(mpv, "sub-delay", MPV_FORMAT_DOUBLE, &v)
+    }
+
+    /// Flash mpv's native OSD for 1.5 s.
+    func showOSD(_ text: String) {
+        command("show-text", args: [text, "1500"])
+    }
+
+    func setSubStyle(fontSize: Double, pos: Int, color: String) {
+        guard mpv != nil else { return }
+        var size = fontSize
+        mpv_set_property(mpv, "sub-font-size", MPV_FORMAT_DOUBLE, &size)
+        var p = Int64(pos)
+        mpv_set_property(mpv, "sub-pos", MPV_FORMAT_INT64, &p)
+        mpv_set_property_string(mpv, "sub-color", color)
+    }
+
     func setSpeed(_ speed: Double) {
         var s = speed
         mpv_set_property(mpv, "speed", MPV_FORMAT_DOUBLE, &s)
@@ -286,24 +306,6 @@ final class MPVPlayerController: NSViewController {
 
     func addSubtitle(path: String) {
         command("sub-add", args: [path, "select"])
-    }
-
-    func setSubDelay(_ seconds: Double) {
-        var v = seconds
-        mpv_set_property(mpv, "sub-delay", MPV_FORMAT_DOUBLE, &v)
-    }
-
-    /// Flash mpv's native OSD for 1.5 s.
-    func showOSD(_ text: String) {
-        command("show-text", args: [text, "1500"])
-    }
-
-    func setSubStyle(fontSize: Double, pos: Int, color: String) {
-        var size = fontSize
-        mpv_set_property(mpv, "sub-font-size", MPV_FORMAT_DOUBLE, &size)
-        var p = Int64(pos)
-        mpv_set_property(mpv, "sub-pos", MPV_FORMAT_INT64, &p)
-        mpv_set_property_string(mpv, "sub-color", color)
     }
 
     private func setFlag(_ name: String, _ flag: Bool) {
