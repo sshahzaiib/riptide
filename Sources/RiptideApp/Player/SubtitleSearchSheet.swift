@@ -108,7 +108,15 @@ struct SubtitleSearchSheet: View {
             }
             var file = try await client.downloadSubtitle(fileID: result.fileID, into: dir)
             if itemDir != nil {
-                file = try SubtitleCache.prefixed(file, fileID: result.fileID)
+                do {
+                    file = try SubtitleCache.prefixed(file, fileID: result.fileID)
+                } catch {
+                    // Un-prefixed leftovers are never cache hits — remove so a
+                    // retry can't strand quota-burning orphans.
+                    try? FileManager.default.removeItem(at: file)
+                    throw error
+                }
+                cachedIDs.insert(result.fileID)
             }
             onPicked(file.path)
             dismiss()
