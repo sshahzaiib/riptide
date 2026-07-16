@@ -288,6 +288,24 @@ final class MPVPlayerController: NSViewController {
         command("sub-add", args: [path, "select"])
     }
 
+    func setSubDelay(_ seconds: Double) {
+        var v = seconds
+        mpv_set_property(mpv, "sub-delay", MPV_FORMAT_DOUBLE, &v)
+    }
+
+    /// Flash mpv's native OSD for 1.5 s.
+    func showOSD(_ text: String) {
+        command("show-text", args: [text, "1500"])
+    }
+
+    func setSubStyle(fontSize: Double, pos: Int, color: String) {
+        var size = fontSize
+        mpv_set_property(mpv, "sub-font-size", MPV_FORMAT_DOUBLE, &size)
+        var p = Int64(pos)
+        mpv_set_property(mpv, "sub-pos", MPV_FORMAT_INT64, &p)
+        mpv_set_property_string(mpv, "sub-color", color)
+    }
+
     private func setFlag(_ name: String, _ flag: Bool) {
         guard mpv != nil else { return }
         var data: Int32 = flag ? 1 : 0
