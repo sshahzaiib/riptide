@@ -180,6 +180,10 @@ final class PlayerModel {
         buffering = false
         subDelay = 0
         controller?.setSubDelay(0)
+        // nil (not "leave the old key"): advancing to the SAME itemKey
+        // (replay, or debug-URL streams where itemKey == "") would otherwise
+        // fail the inequality guard and skip the style/delay re-apply.
+        subtitleStateAppliedFor = nil
         // speed deliberately survives the swap: like volume/mute it's a
         // session preference (a 1.25x binge stays 1.25x), and mpv itself
         // persists it across loadfile.
