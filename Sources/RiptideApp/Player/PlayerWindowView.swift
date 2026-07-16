@@ -14,6 +14,7 @@ struct PlayerWindowView: View {
     @State private var controlsVisible = true
     @State private var lastActivity = Date()
     @State private var showSubtitleSearch = false
+    @State private var showSubtitleStyle = false
     // Double-optional: nil = resume decision pending, .some(start) = decided.
     @State private var resolvedStart: Double??
     @State private var showResumePrompt = false
@@ -297,6 +298,8 @@ struct PlayerWindowView: View {
             case "m": model.toggleMute()
             case "p": model.toggleMiniPlayer()
             case "s": if showSkipIntro { model.skipIntro(); skipIntroUsed = true }
+            case "g": model.adjustSubDelay(by: -PlayerModel.subDelayStep)
+            case "h": model.adjustSubDelay(by: PlayerModel.subDelayStep)
             default: return false
             }
         }
@@ -589,9 +592,25 @@ struct PlayerWindowView: View {
                     }
                     Divider()
                     Button("Search OpenSubtitles…") { showSubtitleSearch = true }
+                    Divider()
+                    if model.subDelay != 0 {
+                        Text("Delay: \(PlayerModel.formatMS(model.subDelay))")
+                        Button("Reset Delay") { model.resetSubDelay() }
+                    }
+                    Button("Subtitle Style…") { showSubtitleStyle = true }
                 } label: { Image(systemName: "captions.bubble") }
                 .menuStyle(.borderlessButton)
                 .frame(width: 32)
+                .popover(isPresented: $showSubtitleStyle, arrowEdge: .top) {
+                    Form {
+                        SubtitleStyleControls { model.applySubtitleStyle($0) }
+                    }
+                    .formStyle(.grouped)
+                    .frame(width: 280)
+                    // ponytail: live-applies only to THIS window's mpv; other
+                    // open players pick styling up on next file load. Upgrade
+                    // path: NotificationCenter broadcast.
+                }
 
                 Button(action: { model.toggleMute() }) {
                     Image(systemName: model.muted ? "speaker.slash" : "speaker.wave.2")
