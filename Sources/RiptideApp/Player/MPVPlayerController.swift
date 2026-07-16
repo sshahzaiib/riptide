@@ -18,6 +18,7 @@ struct MPVTrack: Identifiable, Equatable {
     let lang: String?
     let title: String?
     let selected: Bool
+    let externalFilename: String?   // source path for external tracks, nil for embedded
 
     var label: String {
         let name = [title, lang].compactMap { $0 }.joined(separator: " · ")
@@ -304,8 +305,10 @@ final class MPVPlayerController: NSViewController {
         mpv_set_property_string(mpv, "sid", id.map(String.init) ?? "no")
     }
 
-    func addSubtitle(path: String) {
-        command("sub-add", args: [path, "select"])
+    /// select: false loads the track without activating it (mpv's default
+    /// sub-add flag is "select", so "auto" must be passed explicitly).
+    func addSubtitle(path: String, select: Bool = true) {
+        command("sub-add", args: [path, select ? "select" : "auto"])
     }
 
     private func setFlag(_ name: String, _ flag: Bool) {
@@ -363,7 +366,8 @@ final class MPVPlayerController: NSViewController {
                      type: getString("track-list/\(i)/type") ?? "",
                      lang: getString("track-list/\(i)/lang"),
                      title: getString("track-list/\(i)/title"),
-                     selected: getFlag("track-list/\(i)/selected"))
+                     selected: getFlag("track-list/\(i)/selected"),
+                     externalFilename: getString("track-list/\(i)/external-filename"))
         }
     }
 
