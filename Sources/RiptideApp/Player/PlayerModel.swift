@@ -116,7 +116,12 @@ final class PlayerModel {
         case .cacheTime(let t):  cacheTime = t
         case .tracksChanged(let t):
             tracks = t
-            applyPerFileSubtitleState()
+            // mpv teardown during advance fires .tracksChanged with an empty
+            // list before the real FILE_LOADED emission; applying here would
+            // show the restored-OSD too early and have it wiped by the new
+            // file's VO init. Sub properties are sticky on the handle, so
+            // waiting for the real (non-empty) emission is still correct.
+            if !t.isEmpty { applyPerFileSubtitleState() }
             if ProcessInfo.processInfo.environment["RIPTIDE_DEBUG_SUB"] != nil {
                 NSLog("RIPTRACKS: \(t.map { "\($0.type)#\($0.id)\($0.selected ? "*" : "")" }.joined(separator: " "))")
             }
@@ -203,6 +208,10 @@ final class PlayerModel {
     static let subDelayStep = 0.05  // 50 ms, VLC's default
 
     func adjustSubDelay(by delta: Double) {
+        // Pre-load keypresses are dropped: no subtitles are visible yet, and
+        // persisting here would clobber the stored value under the CURRENT
+        // itemKey before applyPerFileSubtitleState() ever restores it.
+        guard subtitleStateAppliedFor != nil else { return }
         subDelay += delta
         controller?.setSubDelay(subDelay)
         controller?.showOSD("Sub delay: \(Self.formatMS(subDelay))")
@@ -210,6 +219,10 @@ final class PlayerModel {
     }
 
     func resetSubDelay() {
+        // Pre-load keypresses are dropped: no subtitles are visible yet, and
+        // persisting here would clobber the stored value under the CURRENT
+        // itemKey before applyPerFileSubtitleState() ever restores it.
+        guard subtitleStateAppliedFor != nil else { return }
         subDelay = 0
         controller?.setSubDelay(0)
         controller?.showOSD("Sub delay: 0 ms")
