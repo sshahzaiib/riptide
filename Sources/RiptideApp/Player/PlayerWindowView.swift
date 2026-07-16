@@ -252,6 +252,12 @@ struct PlayerWindowView: View {
                 // key against itself and always pass.
                 model.addSubtitle(path: path, expecting: key)
             }
+            // Identity pinned to the item: an episode auto-advance while the
+            // sheet is open would otherwise keep the OLD episode's @State
+            // (results/cachedIDs) under the NEW itemKey — a tap would file the
+            // old episode's subtitle under the new one. .id() resets the sheet
+            // to a fresh search for the new item instead.
+            .id(current.itemKey)
         }
         .onChange(of: model.ended) {
             if model.ended {
