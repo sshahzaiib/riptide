@@ -58,9 +58,13 @@ public struct ChapterMarkers: Equatable, Sendable {
         // ponytail: a post-credits scene would make the final chapter the
         // credits marker instead of the actual credits. Bounded — the window is
         // still real file data, so the card just appears at the wrong span.
+        // Credits need content before them, just as an intro needs content
+        // after it: the sole span of a single-chapter file is never the
+        // credits, or the whole file reads as "credits from 0:00".
         let (creditsSpanStart, creditsSpanEnd) = spans[lastIndex]
         let creditsLength = creditsSpanEnd - creditsSpanStart
-        let creditsStart: Double? = creditsLength >= 0 && creditsLength <= creditsMax
+        let creditsStart: Double? = lastIndex > 0
+            && creditsLength >= 0 && creditsLength <= creditsMax
             ? creditsSpanStart : nil
 
         return ChapterMarkers(intro: introIndex.map { spans[$0].0..<spans[$0].1 },

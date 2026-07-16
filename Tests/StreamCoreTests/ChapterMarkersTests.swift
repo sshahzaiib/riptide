@@ -61,6 +61,15 @@ final class ChapterMarkersTests: XCTestCase {
                        ChapterMarkers.none)
     }
 
+    func testShortSingleChapterFileIsNone() {
+        // Regression: with the final span excluded from intro candidates, the
+        // sole span of a short single-chapter file was falling through to
+        // credits detection and returning creditsStart 0 — declaring the whole
+        // file "credits from 0:00".
+        XCTAssertEqual(ChapterMarkers.detect(chapterStarts: [0], duration: 100),
+                       ChapterMarkers.none)
+    }
+
     func testZeroDurationIsNone() {
         XCTAssertEqual(ChapterMarkers.detect(chapterStarts: gotStarts, duration: 0),
                        ChapterMarkers.none)
