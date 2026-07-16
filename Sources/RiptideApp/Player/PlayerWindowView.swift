@@ -244,10 +244,20 @@ struct PlayerWindowView: View {
             model.shutdown()
         }
         .sheet(isPresented: $showSubtitleSearch) {
-            SubtitleSearchSheet(query: current.subtitleQuery,
-                                season: current.season, episode: current.episode) { path in
-                model.addSubtitle(path: path)
+            SubtitleSearchSheet(query: current.subtitleQuery, itemKey: current.itemKey,
+                                season: current.season, episode: current.episode) { path, key in
+                // key = the sheet's value-captured itemKey, NOT current.itemKey:
+                // @State reads here are dynamic, so an episode auto-advance
+                // mid-download would make the staleness guard compare the new
+                // key against itself and always pass.
+                model.addSubtitle(path: path, expecting: key)
             }
+            // Identity pinned to the item: an episode auto-advance while the
+            // sheet is open would otherwise keep the OLD episode's @State
+            // (results/cachedIDs) under the NEW itemKey — a tap would file the
+            // old episode's subtitle under the new one. .id() resets the sheet
+            // to a fresh search for the new item instead.
+            .id(current.itemKey)
         }
         .onChange(of: model.ended) {
             if model.ended {

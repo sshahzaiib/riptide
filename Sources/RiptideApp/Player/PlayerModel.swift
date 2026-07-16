@@ -202,8 +202,28 @@ final class PlayerModel {
     func seek(to seconds: Double) { controller?.seek(to: seconds) }
     func setVolume(_ v: Double) { controller?.setVolume(v) }
     func setAudioTrack(_ id: Int) { controller?.setAudioTrack(id: id) }
-    func setSubtitleTrack(_ id: Int?) { controller?.setSubtitleTrack(id: id) }
-    func addSubtitle(path: String) { controller?.addSubtitle(path: path) }
+    func setSubtitleTrack(_ id: Int?) {
+        controller?.setSubtitleTrack(id: id)
+        guard let id else { persistSubSelection("off"); return }
+        // externalFilename is mpv's own external-track marker (titles can be
+        // overridden by in-file metadata, so they are NOT a reliable signal).
+        let track = tracks.first { $0.type == "sub" && $0.id == id }
+        if let external = track?.externalFilename {
+            persistSubSelection("external:\((external as NSString).lastPathComponent)")
+        } else {
+            persistSubSelection("embedded:\(id)")
+        }
+    }
+
+    /// expecting: the itemKey the caller downloaded this subtitle for — a
+    /// stale in-flight download (episode auto-advanced meanwhile) must not
+    /// attach to, or persist against, the NEW item. nil (debug-sub path)
+    /// skips the check.
+    func addSubtitle(path: String, expecting key: String? = nil) {
+        if let key, key != itemKey { return }
+        controller?.addSubtitle(path: path)   // default select: true ("cached")
+        persistSubSelection("external:\((path as NSString).lastPathComponent)")
+    }
 
     static let subDelayStep = 0.05  // 50 ms, VLC's default
 
@@ -251,8 +271,13 @@ final class PlayerModel {
         }
     }
 
-    /// Style + persisted delay, once per item. Re-runs after an
-    /// autoplay advance because itemKey changes.
+    private func persistSubSelection(_ value: String) {
+        guard !itemKey.isEmpty else { return }  // debug-URL playback: session-only
+        UserDefaults.standard.set(value, forKey: "subSelection.\(itemKey)")
+    }
+
+    /// Style + persisted delay + cached subtitles, once per item. Re-runs
+    /// after an autoplay advance because itemKey changes.
     private func applyPerFileSubtitleState() {
         guard subtitleStateAppliedFor != itemKey else { return }
         subtitleStateAppliedFor = itemKey
@@ -261,9 +286,51 @@ final class PlayerModel {
             ? 0 : UserDefaults.standard.double(forKey: "subDelay.\(itemKey)")
         subDelay = stored
         controller?.setSubDelay(stored)
-        if stored != 0 {
+        let subsRestored = restoreCachedSubtitles()
+        // One OSD only — a second show-text would clobber the first.
+        switch (subsRestored, stored != 0) {
+        case (true, true):
+            controller?.showOSD("Subtitles restored · delay \(Self.formatMS(stored))")
+        case (true, false):
+            controller?.showOSD("Subtitles restored")
+        case (false, true):
             controller?.showOSD("Sub delay restored: \(Self.formatMS(stored))")
+        case (false, false):
+            break
         }
+    }
+
+    /// Re-add every previously downloaded subtitle for this item and restore
+    /// the last selection. External restore rides sub-add's "select" flag —
+    /// no track-list matching (mpv_command is synchronous, so the sid writes
+    /// below are ordered after the adds). Calls the controller directly (not
+    /// the persisting user intents) so restoring never re-writes the stored
+    /// selection. Returns whether a selection (external/embedded) was applied.
+    private func restoreCachedSubtitles() -> Bool {
+        guard !itemKey.isEmpty else { return false }
+        let selection = UserDefaults.standard.string(forKey: "subSelection.\(itemKey)")
+        var restored = false
+        for file in SubtitleCache.cachedFiles(for: itemKey) {
+            let isChosen = selection == "external:\(file.lastPathComponent)"
+            controller?.addSubtitle(path: file.path, select: isChosen)
+            if isChosen { restored = true }
+        }
+        switch selection {
+        case "off":
+            controller?.setSubtitleTrack(id: nil)
+        case let s? where s.hasPrefix("embedded:"):
+            // Only re-select ids that exist in THIS file's embedded tracks
+            // (tracks here predate the sub-adds above, so it can't match a
+            // re-added external track's id).
+            if let id = Int(s.dropFirst("embedded:".count)),
+               tracks.contains(where: { $0.type == "sub" && $0.id == id }) {
+                controller?.setSubtitleTrack(id: id)
+                restored = true
+            }
+        default:
+            break
+        }
+        return restored
     }
 
     func seek(relative seconds: Double) { controller?.seek(relative: seconds) }
