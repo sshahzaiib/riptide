@@ -244,7 +244,7 @@ struct PlayerWindowView: View {
             model.shutdown()
         }
         .sheet(isPresented: $showSubtitleSearch) {
-            SubtitleSearchSheet(query: current.subtitleQuery,
+            SubtitleSearchSheet(query: current.subtitleQuery, itemKey: current.itemKey,
                                 season: current.season, episode: current.episode) { path in
                 model.addSubtitle(path: path)
             }
