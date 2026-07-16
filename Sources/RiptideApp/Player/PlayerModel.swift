@@ -13,6 +13,8 @@ final class PlayerModel {
     private(set) var buffering = false
     private(set) var cacheTime: Double = 0
     private(set) var tracks: [MPVTrack] = []
+    /// Intro/credits windows for the current file; `.none` until FILE_LOADED.
+    private(set) var markers = ChapterMarkers.none
     private(set) var playbackError: String?
     private(set) var muted = false
     private(set) var speed: Double = 1.0
@@ -125,6 +127,8 @@ final class PlayerModel {
             if ProcessInfo.processInfo.environment["RIPTIDE_DEBUG_SUB"] != nil {
                 NSLog("RIPTRACKS: \(t.map { "\($0.type)#\($0.id)\($0.selected ? "*" : "")" }.joined(separator: " "))")
             }
+        case .chapterMarkers(let m):
+            markers = m
         case .ended:
             ended = true
             if duration > 0 {
@@ -141,10 +145,22 @@ final class PlayerModel {
         }
     }
 
-    /// Flush current position (window closing, app quitting).
+    /// Flush current position (window closing, app quitting, episode advance).
+    ///
+    /// Leaving from inside the credits means the episode is watched even though
+    /// we never reached EOF and `.ended` never ran its 100% save — and
+    /// saveProgress only marks finished at >= 95%. A 24-minute episode whose
+    /// credits start at 22:30 exits at ~94.4% and would sit in Continue Watching
+    /// forever. Decided from position rather than by the caller, so every exit
+    /// out of the credits counts alike: autoplay, Play Next, the prev/next
+    /// controls, and closing the window.
     func flushProgress() {
         guard position > 0, duration > 0 else { return }
-        try? store.saveProgress(itemKey: itemKey, position: position, duration: duration)
+        if let credits = markers.creditsStart, position >= credits {
+            try? store.saveProgress(itemKey: itemKey, position: duration, duration: duration)
+        } else {
+            try? store.saveProgress(itemKey: itemKey, position: position, duration: duration)
+        }
     }
 
     /// Window closing: persist position, then destroy the mpv instance.
@@ -161,8 +177,8 @@ final class PlayerModel {
 
     /// In-window switch to the next episode: close out the old item's
     /// scrobble, swap identity, reset per-file state, and load the new URL
-    /// into the live mpv instance. (.ended already saved the old item's
-    /// final progress.)
+    /// into the live mpv instance. flushProgress() finalizes the outgoing
+    /// item, including the leaving-during-credits case — see there.
     func advance(to next: PlayItem) {
         // ponytail: the mini aspect lock can't be re-derived here (the next
         // file's aspect is unknown until it loads) — just unlock; the next
@@ -180,6 +196,7 @@ final class PlayerModel {
         lastSaved = 0
         cacheTime = 0
         tracks = []
+        markers = .none
         playbackError = nil
         ended = false
         buffering = false
@@ -357,7 +374,12 @@ final class PlayerModel {
         if isMiniPlayer { exitMiniPlayer() }   // spec: mini → fullscreen exits mini first
         controller?.toggleFullscreen()
     }
-    func skipIntro() { controller?.skipIntro() }
+    /// Seek to the end of the detected intro. Absolute, never relative: the old
+    /// +90s/next-chapter jump fast-forwarded from wherever the user happened to be.
+    func skipIntro() {
+        guard let intro = markers.intro else { return }
+        seek(to: intro.upperBound)
+    }
 
     // MARK: Mini player (issue #11)
 

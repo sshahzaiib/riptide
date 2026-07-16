@@ -1,5 +1,6 @@
 import AppKit
 import Libmpv
+import StreamCore
 
 enum PlayerEvent {
     case position(Double)
@@ -8,6 +9,7 @@ enum PlayerEvent {
     case buffering(Bool)
     case cacheTime(Double)
     case tracksChanged([MPVTrack])
+    case chapterMarkers(ChapterMarkers)
     case ended
     case error(String)     // terminal load/decode failure, surfaced in the window
 }
@@ -288,18 +290,6 @@ final class MPVPlayerController: NSViewController {
         command("seek", args: [String(seconds), "relative"])
     }
 
-    /// Next chapter if the file has one ahead; otherwise +90s.
-    func skipIntro() {
-        let chapterCount = getInt("chapter-list/count")
-        let current = getInt("chapter")
-        if chapterCount > 0, current + 1 < chapterCount {
-            var next = Int64(current + 1)
-            mpv_set_property(mpv, "chapter", MPV_FORMAT_INT64, &next)
-        } else {
-            seek(relative: 90)
-        }
-    }
-
     func setAudioTrack(id: Int) {
         mpv_set_property_string(mpv, "aid", String(id))
     }
@@ -332,6 +322,17 @@ final class MPVPlayerController: NSViewController {
         var cargs = strArgs.map { $0.flatMap { UnsafePointer<CChar>(strdup($0)) } }
         defer { for ptr in cargs where ptr != nil { free(UnsafeMutablePointer(mutating: ptr!)) } }
         checkError(mpv_command(mpv, &cargs))
+    }
+
+    /// Chapter starts → intro/credits windows. Computed here rather than in
+    /// PlayerModel because the chapter list and duration are both readable
+    /// synchronously at file load; emitting raw chapters would race the .duration
+    /// event and detect against a stale duration.
+    private func currentChapterMarkers(duration: Double) -> ChapterMarkers {
+        let count = getInt("chapter-list/count")
+        guard count > 0 else { return .none }
+        let starts = (0..<count).map { getDouble("chapter-list/\($0)/time") }
+        return ChapterMarkers.detect(chapterStarts: starts, duration: duration)
     }
 
     // MARK: Property reads
@@ -397,6 +398,7 @@ final class MPVPlayerController: NSViewController {
                     let duration = self.getDouble("duration")
                     self.emit(.tracksChanged(tracks))
                     self.emit(.duration(duration))
+                    self.emit(.chapterMarkers(self.currentChapterMarkers(duration: duration)))
                 case MPV_EVENT_END_FILE:
                     // Spec: mpv load failures surface in the player window.
                     if let end = UnsafePointer<mpv_event_end_file>(OpaquePointer(event.pointee.data))?.pointee {
@@ -440,6 +442,10 @@ final class MPVPlayerController: NSViewController {
         case "duration":
             guard let value = UnsafePointer<Double>(OpaquePointer(property.data))?.pointee else { return }
             emit(.duration(value))
+            // Re-detect: a stream whose duration resolves only after FILE_LOADED would
+            // otherwise be stuck with .none markers — and a silently dead Skip Intro —
+            // for the whole playback. Cheap: duration changes about once per file.
+            emit(.chapterMarkers(currentChapterMarkers(duration: value)))
         case "pause":
             guard let value = UnsafePointer<Int32>(OpaquePointer(property.data))?.pointee else { return }
             emit(.paused(value != 0))
