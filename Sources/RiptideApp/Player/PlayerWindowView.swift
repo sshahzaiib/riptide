@@ -58,6 +58,15 @@ struct PlayerWindowView: View {
         return intro.contains(model.position)
     }
 
+    // Up Next used to wait for EOF, which meant sitting through the whole credits
+    // and then a 10s countdown. Offer it when the credits chapter starts; files
+    // with no credits chapter keep the EOF behavior.
+    private var shouldOfferUpNext: Bool {
+        if model.ended { return true }
+        if let credits = model.markers.creditsStart { return model.position >= credits }
+        return false
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             if let start = resolvedStart {
@@ -264,11 +273,12 @@ struct PlayerWindowView: View {
             // to a fresh search for the new item instead.
             .id(current.itemKey)
         }
-        .onChange(of: model.ended) {
-            if model.ended {
+        .onChange(of: shouldOfferUpNext) {
+            if shouldOfferUpNext {
                 beginUpNext()
             } else {
-                // Seek back from the end frame: retract the card and re-arm.
+                // Seek back out of the credits (or back from the end frame):
+                // retract the card and re-arm.
                 upNextTask?.cancel()
                 clearUpNext()
                 upNextDismissed = false
