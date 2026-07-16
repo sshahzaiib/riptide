@@ -29,6 +29,11 @@ struct SettingsView: View {
                 Text("Aggressive buffers several minutes ahead — helps high-bitrate 4K remuxes. Applies to newly opened players.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            Section("Subtitles") {
+                SubtitleStyleControls()
+                Text("Applies to newly opened players. Adjust live from the player's captions menu.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section("Real-Debrid") {
                 SecureField("API token", text: $rdToken).frame(maxWidth: .infinity)
                 Link("Get your token at real-debrid.com/apitoken",
