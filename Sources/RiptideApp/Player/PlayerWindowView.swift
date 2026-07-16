@@ -19,7 +19,6 @@ struct PlayerWindowView: View {
     @State private var resolvedStart: Double??
     @State private var showResumePrompt = false
     @State private var keyMonitor: Any?
-    @State private var skipIntroUsed = false
     @State private var episodeName: String?
 
     @AppStorage("autoplayNext") private var autoplayNext = true
@@ -52,9 +51,11 @@ struct PlayerWindowView: View {
                                                  traktMedia: TraktMedia(playItem: item)))
     }
 
-    // Episodes only, once per playback, and only during the first 6 minutes.
+    // Episodes only, and only while the detected intro is actually playing.
+    // No `used` flag needed: pressing it seeks past the window, which closes it.
     private var showSkipIntro: Bool {
-        current.season != nil && !skipIntroUsed && model.position > 0 && model.position < 360
+        guard current.season != nil, let intro = model.markers.intro else { return false }
+        return intro.contains(model.position)
     }
 
     var body: some View {
@@ -90,7 +91,7 @@ struct PlayerWindowView: View {
                 } else {
                     VStack(spacing: 8) {
                         if showSkipIntro {
-                            Button(action: { model.skipIntro(); skipIntroUsed = true }) {
+                            Button(action: { model.skipIntro() }) {
                                 Label("Skip Intro", systemImage: "forward.frame")
                                     .padding(.horizontal, 12).padding(.vertical, 6)
                                     .glassEffect(.clear, in: .capsule)
@@ -311,7 +312,7 @@ struct PlayerWindowView: View {
             case "f": model.toggleFullscreen()
             case "m": model.toggleMute()
             case "p": model.toggleMiniPlayer()
-            case "s": if showSkipIntro { model.skipIntro(); skipIntroUsed = true }
+            case "s": if showSkipIntro { model.skipIntro() }
             case "g": model.adjustSubDelay(by: -PlayerModel.subDelayStep)
             case "h": model.adjustSubDelay(by: PlayerModel.subDelayStep)
             default: return false
@@ -361,7 +362,6 @@ struct PlayerWindowView: View {
         episodeName = nil          // don't flash the old episode's name
         current = built
         resolvedStart = .some(built.resumeFrom)
-        skipIntroUsed = false
         model.advance(to: built)
     }
 

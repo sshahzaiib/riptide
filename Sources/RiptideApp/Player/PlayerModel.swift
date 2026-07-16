@@ -13,6 +13,8 @@ final class PlayerModel {
     private(set) var buffering = false
     private(set) var cacheTime: Double = 0
     private(set) var tracks: [MPVTrack] = []
+    /// Intro/credits windows for the current file; `.none` until FILE_LOADED.
+    private(set) var markers = ChapterMarkers.none
     private(set) var playbackError: String?
     private(set) var muted = false
     private(set) var speed: Double = 1.0
@@ -125,6 +127,8 @@ final class PlayerModel {
             if ProcessInfo.processInfo.environment["RIPTIDE_DEBUG_SUB"] != nil {
                 NSLog("RIPTRACKS: \(t.map { "\($0.type)#\($0.id)\($0.selected ? "*" : "")" }.joined(separator: " "))")
             }
+        case .chapterMarkers(let m):
+            markers = m
         case .ended:
             ended = true
             if duration > 0 {
@@ -180,6 +184,7 @@ final class PlayerModel {
         lastSaved = 0
         cacheTime = 0
         tracks = []
+        markers = .none
         playbackError = nil
         ended = false
         buffering = false
@@ -357,7 +362,12 @@ final class PlayerModel {
         if isMiniPlayer { exitMiniPlayer() }   // spec: mini → fullscreen exits mini first
         controller?.toggleFullscreen()
     }
-    func skipIntro() { controller?.skipIntro() }
+    /// Seek to the end of the detected intro. Absolute, never relative: the old
+    /// +90s/next-chapter jump fast-forwarded from wherever the user happened to be.
+    func skipIntro() {
+        guard let intro = markers.intro else { return }
+        seek(to: intro.upperBound)
+    }
 
     // MARK: Mini player (issue #11)
 
