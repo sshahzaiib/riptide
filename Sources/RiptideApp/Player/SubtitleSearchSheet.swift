@@ -5,7 +5,11 @@ struct SubtitleSearchSheet: View {
     let itemKey: String            // "" for debug-URL playback → no caching
     let season: Int?
     let episode: Int?
-    let onPicked: (String) -> Void
+    // (path, itemKey): the sheet passes back the itemKey it downloaded FOR.
+    // The caller must not re-read its own (possibly advanced) current item —
+    // @State reads in escaping closures are dynamic, so only the sheet's
+    // value-captured key identifies the download's true target.
+    let onPicked: (String, String) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var query: String
@@ -16,7 +20,7 @@ struct SubtitleSearchSheet: View {
     @State private var cachedIDs: Set<Int> = []
 
     init(query: String, itemKey: String, season: Int?, episode: Int?,
-         onPicked: @escaping (String) -> Void) {
+         onPicked: @escaping (String, String) -> Void) {
         _query = State(initialValue: query)
         self.itemKey = itemKey
         self.season = season
@@ -87,7 +91,7 @@ struct SubtitleSearchSheet: View {
     private func download(_ result: SubtitleResult) async {
         // Cache hit: load from disk, no API call (OpenSubtitles quotas are per-download).
         if let cached = SubtitleCache.cachedFile(for: itemKey, fileID: result.fileID) {
-            onPicked(cached.path)
+            onPicked(cached.path, itemKey)
             dismiss()
             return
         }
@@ -118,7 +122,7 @@ struct SubtitleSearchSheet: View {
                 }
                 cachedIDs.insert(result.fileID)
             }
-            onPicked(file.path)
+            onPicked(file.path, itemKey)
             dismiss()
         } catch {
             status = "Download failed: \(error)"

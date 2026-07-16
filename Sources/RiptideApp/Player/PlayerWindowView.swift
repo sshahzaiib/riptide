@@ -245,8 +245,12 @@ struct PlayerWindowView: View {
         }
         .sheet(isPresented: $showSubtitleSearch) {
             SubtitleSearchSheet(query: current.subtitleQuery, itemKey: current.itemKey,
-                                season: current.season, episode: current.episode) { path in
-                model.addSubtitle(path: path, expecting: current.itemKey)
+                                season: current.season, episode: current.episode) { path, key in
+                // key = the sheet's value-captured itemKey, NOT current.itemKey:
+                // @State reads here are dynamic, so an episode auto-advance
+                // mid-download would make the staleness guard compare the new
+                // key against itself and always pass.
+                model.addSubtitle(path: path, expecting: key)
             }
         }
         .onChange(of: model.ended) {
