@@ -35,15 +35,20 @@ public struct ChapterMarkers: Equatable, Sendable {
     public static func detect(chapterStarts: [Double], duration: Double) -> ChapterMarkers {
         guard duration > 0, !chapterStarts.isEmpty else { return .none }
         let spans = Array(zip(chapterStarts, Array(chapterStarts.dropFirst()) + [duration]))
+        let lastIndex = spans.count - 1
 
         // Shortest — not first — so a show that opens with a cold open before
         // the titles picks the titles. `min(by:)` only replaces on strictly
         // less, so ties resolve to the earliest span for free.
+        // The final span is never the intro: an intro always has content after
+        // it, and without that guard a short trailing chapter outbids the real
+        // titles in a very short file.
         // ponytail: a recap chapter (~40s) ahead of the titles would win on
         // "shortest". Prefer the span nearest a typical title length, or merge
         // contiguous short leading spans, if that ever shows up.
         let introIndex = spans.indices
             .filter { i in
+                guard i != lastIndex else { return false }
                 let (start, end) = spans[i]
                 return start < introSearchWindow
                     && (end - start) >= introMin && (end - start) <= introMax
@@ -53,13 +58,10 @@ public struct ChapterMarkers: Equatable, Sendable {
         // ponytail: a post-credits scene would make the final chapter the
         // credits marker instead of the actual credits. Bounded — the window is
         // still real file data, so the card just appears at the wrong span.
-        let lastIndex = spans.count - 1
-        let creditsStart: Double? = {
-            guard lastIndex != introIndex else { return nil }   // degenerate 1–2 chapter file
-            let (start, end) = spans[lastIndex]
-            let length = end - start
-            return length >= 0 && length <= creditsMax ? start : nil
-        }()
+        let (creditsSpanStart, creditsSpanEnd) = spans[lastIndex]
+        let creditsLength = creditsSpanEnd - creditsSpanStart
+        let creditsStart: Double? = creditsLength >= 0 && creditsLength <= creditsMax
+            ? creditsSpanStart : nil
 
         return ChapterMarkers(intro: introIndex.map { spans[$0].0..<spans[$0].1 },
                               creditsStart: creditsStart)

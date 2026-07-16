@@ -66,11 +66,20 @@ final class ChapterMarkersTests: XCTestCase {
                        ChapterMarkers.none)
     }
 
-    func testIntroSpanIsNeverAlsoCredits() {
-        // Degenerate 2-chapter file: the shortest early span is also the last
-        // span. It must not be reported as both the intro and the credits.
+    func testIntroIsNeverTheFinalChapter() {
+        // Short 2-chapter file: the trailing 86s span is shorter than the
+        // opening 114s one, but it is last — the titles must still win, and
+        // the trailing span is the credits.
         let m = ChapterMarkers.detect(chapterStarts: [0, 114], duration: 200)
-        XCTAssertEqual(m.intro, 114..<200)
-        XCTAssertNil(m.creditsStart)
+        XCTAssertEqual(m.intro, 0..<114)
+        XCTAssertEqual(m.creditsStart, 114)
+    }
+
+    func testTiesResolveToEarliestSpan() {
+        // Two equal-length early spans — the realistic source is a rip
+        // chaptered at a fixed interval. Earliest must win, deterministically.
+        let m = ChapterMarkers.detect(chapterStarts: [0, 110, 220, 900],
+                                      duration: 1800)
+        XCTAssertEqual(m.intro, 0..<110)
     }
 }
