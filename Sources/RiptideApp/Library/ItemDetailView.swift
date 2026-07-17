@@ -10,10 +10,28 @@ struct ItemDetailView: View {
     @State private var playError: String?
     @State private var details: TMDBMovieDetails?
     @State private var cast: [TMDBCastMember] = []
+    @State private var streamRequest: StreamRequest?
+    @State private var imdbID: String?
+
+    /// All library copies of this movie, preference-ranked. Unmatched items
+    /// (tmdbID nil) can't be correlated — they stay single-version.
+    // ponytail: inline store fetch per body eval, same idiom as resumePosition
+    // above; the WatchState table is tiny. Cache in @State if it ever shows up
+    // in a profile.
+    private var versions: [LibraryItem] {
+        guard let tmdbID = item.tmdbID else { return [item] }
+        let copies = model.items.filter { $0.tmdbID == tmdbID && $0.mediaKind == "movie" }
+        guard copies.count > 1 else { return [item] }
+        let states = Dictionary(
+            ((try? model.store.allWatchStates()) ?? []).map { ($0.itemKey, $0) },
+            uniquingKeysWith: { first, _ in first })
+        return VersionPreference.ranked(items: copies, states: states)
+    }
+    private var current: LibraryItem { versions.first ?? item }
 
     private var resumePosition: Double? {
         (try? model.store.continueWatching())?
-            .first { $0.itemKey == item.itemKey }?.positionSeconds
+            .first { $0.itemKey == current.itemKey }?.positionSeconds
     }
 
     var body: some View {
@@ -26,6 +44,9 @@ struct ItemDetailView: View {
         }
         .ignoresSafeArea(edges: .top)
         .navigationTitle(item.title)
+        .sheet(item: $streamRequest) { request in
+            StreamPickerSheet(request: request)
+        }
         .task {
             let token = AppSettings.shared.tmdbToken
             guard let tmdbID = item.tmdbID, item.mediaKind == "movie",
@@ -33,6 +54,7 @@ struct ItemDetailView: View {
             let tmdb = TMDBClient(bearerToken: token)
             details = try? await tmdb.movieDetails(id: tmdbID)
             cast = (try? await tmdb.movieCredits(id: tmdbID)) ?? []
+            imdbID = (try? await tmdb.externalIDs(movieID: tmdbID))?.imdbID
         }
     }
 
@@ -60,8 +82,8 @@ struct ItemDetailView: View {
                 HStack(spacing: 12) {
                     if let year = item.year { Text(String(year)) }
                     if let runtime = details?.runtime { Text("\(runtime) min") }
-                    if let quality = item.quality { Text(quality.uppercased()) }
-                    ServiceBadge(service: item.service)
+                    if let quality = current.quality { Text(quality.uppercased()) }
+                    ServiceBadge(service: current.service)
                     if let rating = details?.voteAverage ?? item.rating {
                         Label(String(format: "%.1f", rating), systemImage: "star.fill")
                             .foregroundStyle(.yellow)
@@ -77,7 +99,7 @@ struct ItemDetailView: View {
                         .frame(maxWidth: 640, alignment: .leading)
                 }
 
-                Text("\(item.service.uppercased()) · \(item.filename)")
+                Text("\(current.service.uppercased()) · \(current.filename)")
                     .font(.caption).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle).frame(maxWidth: 640, alignment: .leading)
 
                 HStack(spacing: 12) {
@@ -94,7 +116,34 @@ struct ItemDetailView: View {
                         .padding(.horizontal, 20).padding(.vertical, 8)
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(busy || item.link.isEmpty)
+                    .disabled(busy || current.link.isEmpty)
+
+                    if versions.count > 1 {
+                        Menu {
+                            ForEach(versions, id: \.itemKey) { version in
+                                Button {
+                                    Task { await play(resume: false, version: version) }
+                                } label: {
+                                    Text(versionLabel(version,
+                                                      isPreferred: version.itemKey == current.itemKey))
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "chevron.down")
+                        }
+                        .fixedSize()
+                        .help("\(versions.count) versions in your library")
+                    }
+
+                    Button { findStreams() } label: {
+                        Label("Find Streams", systemImage: "magnifyingglass")
+                            .padding(.horizontal, 12).padding(.vertical, 8)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(imdbID == nil)
+                    .help(imdbID == nil
+                          ? "No IMDb match for this movie yet — addons can't be searched."
+                          : "Search your addons for a different stream")
 
                     if let playError {
                         Text(playError).foregroundStyle(.red).font(.callout)
@@ -105,16 +154,26 @@ struct ItemDetailView: View {
         }
     }
 
-    private func play(resume: Bool) async {
+    private func play(resume: Bool, version: LibraryItem? = nil) async {
         playError = nil
         busy = true
         defer { busy = false }
         do {
-            let playItem = try await model.playItem(for: item, autoResume: resume)
+            let playItem = try await model.playItem(for: version ?? current, autoResume: resume)
             openWindow(value: playItem)
         } catch {
             playError = "Could not start stream: \(error)"
         }
+    }
+
+    private func findStreams() {
+        guard let imdbID, let tmdbID = item.tmdbID else { return }
+        streamRequest = StreamRequest(type: .movie,
+                                      imdbID: imdbID,
+                                      title: item.title,
+                                      season: nil,
+                                      episode: nil,
+                                      tmdbID: tmdbID)
     }
 
     private func format(_ seconds: Double) -> String {
