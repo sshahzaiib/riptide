@@ -23,7 +23,10 @@ final class ShowPageModel {
         let season: Int
         let number: Int
         let meta: TMDBSeasonEpisode?
-        let item: LibraryItem?
+        /// Every owned file of this episode, VersionPreference-ranked;
+        /// `.first` is the preferred version. Empty = we don't own it.
+        let items: [LibraryItem]
+        var item: LibraryItem? { items.first }
         var id: String { item?.itemKey ?? "tmdb-\(season)-\(number)" }
     }
 
@@ -56,37 +59,39 @@ final class ShowPageModel {
         return numbers.sorted()
     }
 
-    /// Row source per season: the TMDB episode list, each slot carrying the
-    /// matching library item if we have the file. Falls back to library-only
+    /// Row source per season: one slot per episode number, duplicate files
+    /// collapsed into that slot's ranked `items`. Falls back to library-only
     /// rows when TMDB metadata is missing (offline, no match).
     var seasonSlots: [(number: Int, slots: [EpisodeSlot])] {
         let libraryBySeason = Dictionary(grouping: show.episodes) { $0.season ?? 0 }
         return visibleSeasonNumbers.map { season in
-            let items = (libraryBySeason[season] ?? [])
-                .sorted { ($0.episode ?? 0) < ($1.episode ?? 0) }
-            guard let meta = seasonMeta[season], !meta.isEmpty else {
-                return (season, items.map {
-                    EpisodeSlot(season: season, number: $0.episode ?? 0,
-                                meta: nil, item: $0)
-                })
-            }
-            let byEpisode = Dictionary(grouping: items) { $0.episode ?? 0 }
-            var slots: [EpisodeSlot] = []
-            for num in meta.keys.sorted() {
-                if let matching = byEpisode[num], !matching.isEmpty {
-                    slots += matching.map { EpisodeSlot(season: season, number: num, meta: meta[num], item: $0) }
-                } else {
-                    slots.append(EpisodeSlot(season: season, number: num, meta: meta[num], item: nil))
-                }
-            }
-            // Library files with episode numbers TMDB doesn't list still render.
-            let known = Set(meta.keys)
-            slots += items.filter { !known.contains($0.episode ?? 0) }.map {
-                EpisodeSlot(season: season, number: $0.episode ?? 0,
-                            meta: nil, item: $0)
-            }
-            return (season, slots)
+            (season, slots(season: season, items: libraryBySeason[season] ?? []))
         }
+    }
+
+    private func slots(season: Int, items: [LibraryItem]) -> [EpisodeSlot] {
+        let meta = seasonMeta[season] ?? [:]
+        let byEpisode = Dictionary(grouping: items.filter { $0.episode != nil },
+                                   by: { $0.episode! })
+        var slots: [EpisodeSlot] = []
+        for num in meta.keys.sorted() {
+            slots.append(EpisodeSlot(season: season, number: num, meta: meta[num],
+                                     items: ranked(byEpisode[num] ?? [])))
+        }
+        // Library files with episode numbers TMDB doesn't list still render.
+        for num in byEpisode.keys.filter({ meta[$0] == nil }).sorted() {
+            slots.append(EpisodeSlot(season: season, number: num, meta: nil,
+                                     items: ranked(byEpisode[num]!)))
+        }
+        // Files with no parsed episode number: one card each, never merged.
+        slots += items.filter { $0.episode == nil }.map {
+            EpisodeSlot(season: season, number: 0, meta: nil, items: [$0])
+        }
+        return slots
+    }
+
+    private func ranked(_ items: [LibraryItem]) -> [LibraryItem] {
+        VersionPreference.ranked(items: items, states: stateByKey)
     }
 
     /// Most recently watched, unfinished episode of this show.
