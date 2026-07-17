@@ -170,10 +170,11 @@ public final class LibraryStore {
         if let packMate = candidates.first(where: { $0.torrentID == current.torrentID }) {
             return packMate
         }
+        guard !candidates.isEmpty else { return nil }
         // ponytail: full watch-state fetch — the table is small and this runs
         // once per episode end; switch to a keyed predicate if it ever shows.
-        let states = Dictionary(uniqueKeysWithValues:
-            try allWatchStates().map { ($0.itemKey, $0) })
+        let states = Dictionary(try allWatchStates().map { ($0.itemKey, $0) },
+                                uniquingKeysWith: { first, _ in first })
         return VersionPreference.preferred(items: candidates, states: states)
     }
 
