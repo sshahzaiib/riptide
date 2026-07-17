@@ -347,6 +347,48 @@ final class LibraryStoreTests: XCTestCase {
         XCTAssertNil(try store.nextEpisode(after: "M1#0"))
         XCTAssertNil(try store.nextEpisode(after: "does-not-exist"))
     }
+
+    private func matchAsShow(_ store: LibraryStore, keys: [String]) throws {
+        for key in keys {
+            try store.applyMatch(itemKey: key, tmdbID: 42, mediaKind: "episode",
+                                 posterPath: nil, overview: nil, rating: nil)
+        }
+    }
+
+    func testNextEpisodePackAffinityBeatsHistoryAndQuality() throws {
+        let store = try LibraryStore.inMemory()
+        _ = try store.upsert(entries: [
+            entry(torrentID: "PACK", fileIndex: 0, filename: "Show.S01E01.720p.mkv"),
+            entry(torrentID: "PACK", fileIndex: 1, filename: "Show.S01E02.720p.mkv"),
+            entry(torrentID: "T4K", filename: "Show.S01E02.2160p.mkv"),
+        ])
+        try matchAsShow(store, keys: ["PACK#0", "PACK#1", "T4K#0"])
+        try store.saveProgress(itemKey: "T4K#0", position: 10, duration: 100)
+        XCTAssertEqual(try store.nextEpisode(after: "PACK#0")?.itemKey, "PACK#1")
+    }
+
+    func testNextEpisodeLastPlayedBeatsQualityAcrossPacks() throws {
+        let store = try LibraryStore.inMemory()
+        _ = try store.upsert(entries: [
+            entry(torrentID: "CUR", filename: "Show.S01E01.720p.mkv"),
+            entry(torrentID: "TSD", filename: "Show.S01E02.720p.mkv"),
+            entry(torrentID: "T4K", filename: "Show.S01E02.2160p.mkv"),
+        ])
+        try matchAsShow(store, keys: ["CUR#0", "TSD#0", "T4K#0"])
+        try store.saveProgress(itemKey: "TSD#0", position: 10, duration: 100)
+        XCTAssertEqual(try store.nextEpisode(after: "CUR#0")?.itemKey, "TSD#0")
+    }
+
+    func testNextEpisodePicksBestQualityWithoutHistory() throws {
+        let store = try LibraryStore.inMemory()
+        _ = try store.upsert(entries: [
+            entry(torrentID: "CUR", filename: "Show.S01E01.720p.mkv"),
+            entry(torrentID: "TSD", filename: "Show.S01E02.720p.mkv"),
+            entry(torrentID: "T4K", filename: "Show.S01E02.2160p.mkv"),
+        ])
+        try matchAsShow(store, keys: ["CUR#0", "TSD#0", "T4K#0"])
+        XCTAssertEqual(try store.nextEpisode(after: "CUR#0")?.itemKey, "T4K#0")
+    }
 }
 
 

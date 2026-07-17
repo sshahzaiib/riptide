@@ -166,7 +166,15 @@ public final class LibraryStore {
             guard isHighestInSeason else { return nil }
             candidates = owned(season + 1, 1)
         }
-        return candidates.first { $0.torrentID == current.torrentID } ?? candidates.first
+        // Pack affinity stays on top; across packs, last played then quality.
+        if let packMate = candidates.first(where: { $0.torrentID == current.torrentID }) {
+            return packMate
+        }
+        // ponytail: full watch-state fetch — the table is small and this runs
+        // once per episode end; switch to a keyed predicate if it ever shows.
+        let states = Dictionary(uniqueKeysWithValues:
+            try allWatchStates().map { ($0.itemKey, $0) })
+        return VersionPreference.preferred(items: candidates, states: states)
     }
 
     /// Mirror of nextEpisode: EXACTLY (S, E-1), or — from E1 only — the
