@@ -516,7 +516,7 @@ struct ShowDetailView: View {
                         }
                     }
                 }
-                if episode.episode != nil {
+                if episode.season != nil && episode.episode != nil {
                     Button("Find Other Streams…") {
                         findStreams(model, season: slot.season, episode: slot.number)
                     }

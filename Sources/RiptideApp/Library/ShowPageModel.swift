@@ -116,7 +116,13 @@ final class ShowPageModel {
         let finishedEpisodes = Set(
             numbered.filter { stateByKey[$0.itemKey]?.finished == true }
                 .map { "\($0.season!)#\($0.episode!)" })
-        return numbered.first { !finishedEpisodes.contains("\($0.season!)#\($0.episode!)") }
+        guard let hit = numbered.first(where: {
+            !finishedEpisodes.contains("\($0.season!)#\($0.episode!)")
+        }) else { return nil }
+        // Prefer the ranked version of that episode so the hero Play button
+        // and the card's ✓ agree on which file plays.
+        let sameEpisode = numbered.filter { $0.season == hit.season && $0.episode == hit.episode }
+        return VersionPreference.preferred(items: sameEpisode, states: stateByKey)
     }
 
     func watchState(for item: LibraryItem) -> (progress: Double, finished: Bool)? {
@@ -206,7 +212,8 @@ final class ShowPageModel {
     /// One store query; every card reads the dictionary.
     func refreshWatchStates() {
         let states = (try? store.allWatchStates()) ?? []
-        stateByKey = Dictionary(uniqueKeysWithValues: states.map { ($0.itemKey, $0) })
+        stateByKey = Dictionary(states.map { ($0.itemKey, $0) },
+                                uniquingKeysWith: { first, _ in first })
         // Follow playback progress unless the user picked an episode manually.
         if !userSelected {
             selected = resumeTarget?.item ?? firstUnwatched ?? selected ?? show.episodes.first
