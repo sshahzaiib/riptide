@@ -454,8 +454,10 @@ struct ShowDetailView: View {
                         }
                     }
                 }
-                Button("Find Other Streams…") {
-                    findStreams(model, season: slot.season, episode: slot.number)
+                if episode.episode != nil {
+                    Button("Find Other Streams…") {
+                        findStreams(model, season: slot.season, episode: slot.number)
+                    }
                 }
             }
             .onTapGesture { model.userDidSelect(episode) }
