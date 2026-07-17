@@ -131,6 +131,7 @@ struct ItemDetailView: View {
                         } label: {
                             Image(systemName: "chevron.down")
                         }
+                        .buttonStyle(.bordered)
                         .fixedSize()
                         .help("\(versions.count) versions in your library")
                     }
@@ -350,7 +351,9 @@ struct ShowDetailView: View {
         .disabled(!searchable)
         .help(searchable
               ? "Search your addons for a different stream of the selected episode"
-              : "No IMDb match for this show yet — addons can't be searched.")
+              : (model.imdbID == nil
+                 ? "No IMDb match for this show yet — addons can't be searched."
+                 : "Select an episode first to find alternate streams."))
     }
 
     // MARK: Season strips
