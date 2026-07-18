@@ -631,6 +631,13 @@ struct ShowDetailView: View {
                         }
                     }
                 }
+                Menu("Download") {
+                    ForEach(slot.items, id: \.itemKey) { version in
+                        downloadMenuRow(version, preferred: version.itemKey == episode.itemKey)
+                    }
+                    Divider()
+                    Button("Copy Link") { Task { await copyLink(episode) } }
+                }
                 if episode.season != nil && episode.episode != nil {
                     Button("Find Other Streams…") {
                         findStreams(model, season: slot.season, episode: slot.number)
