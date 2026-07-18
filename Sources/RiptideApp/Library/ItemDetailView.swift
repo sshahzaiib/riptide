@@ -46,6 +46,9 @@ struct ItemDetailView: View {
         }
         .ignoresSafeArea(edges: .top)
         .navigationTitle(item.title)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) { DownloadsToolbarButton().environment(downloads) }
+        }
         .sheet(item: $streamRequest) { request in
             StreamPickerSheet(request: request)
         }
@@ -266,6 +269,9 @@ struct ShowDetailView: View {
         }
         .ignoresSafeArea(edges: .top)
         .navigationTitle(show.title)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) { DownloadsToolbarButton().environment(downloads) }
+        }
         .sheet(item: $streamRequest) { request in
             StreamPickerSheet(request: request)
         }

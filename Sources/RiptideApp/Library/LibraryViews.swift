@@ -26,7 +26,6 @@ struct LibraryRootView: View {
     @State private var downloads: DownloadsModel
     @State private var localDownloads: LocalDownloadManager
     @State private var showSettings = false
-    @State private var showDownloadsPopover = false
     @State private var showAddTorrent = false
     @State private var addTorrentPrefill: String?
     @State private var path = NavigationPath()
@@ -83,14 +82,7 @@ struct LibraryRootView: View {
                             .disabled(model.refreshing)
                         }
                         ToolbarItem {
-                            Button { showDownloadsPopover.toggle() } label: {
-                                Image(systemName: localDownloads.activeCount > 0
-                                      ? "arrow.down.circle.fill" : "arrow.down.circle")
-                            }
-                            .help("Downloads")
-                            .popover(isPresented: $showDownloadsPopover, arrowEdge: .bottom) {
-                                LocalDownloadsPopover().environment(localDownloads)
-                            }
+                            DownloadsToolbarButton().environment(localDownloads)
                         }
                         ToolbarItem {
                             Button(action: { showSettings = true }) {
