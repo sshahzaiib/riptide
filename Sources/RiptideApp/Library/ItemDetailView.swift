@@ -10,10 +10,28 @@ struct ItemDetailView: View {
     @State private var playError: String?
     @State private var details: TMDBMovieDetails?
     @State private var cast: [TMDBCastMember] = []
+    @State private var streamRequest: StreamRequest?
+    @State private var imdbID: String?
+
+    /// All library copies of this movie, preference-ranked. Unmatched items
+    /// (tmdbID nil) can't be correlated — they stay single-version.
+    // ponytail: inline store fetch per body eval, same idiom as resumePosition
+    // above; the WatchState table is tiny. Cache in @State if it ever shows up
+    // in a profile.
+    private var versions: [LibraryItem] {
+        guard let tmdbID = item.tmdbID else { return [item] }
+        let copies = model.items.filter { $0.tmdbID == tmdbID && $0.mediaKind == "movie" }
+        guard copies.count > 1 else { return [item] }
+        let states = Dictionary(
+            ((try? model.store.allWatchStates()) ?? []).map { ($0.itemKey, $0) },
+            uniquingKeysWith: { first, _ in first })
+        return VersionPreference.ranked(items: copies, states: states)
+    }
+    private var current: LibraryItem { versions.first ?? item }
 
     private var resumePosition: Double? {
         (try? model.store.continueWatching())?
-            .first { $0.itemKey == item.itemKey }?.positionSeconds
+            .first { $0.itemKey == current.itemKey }?.positionSeconds
     }
 
     var body: some View {
@@ -26,6 +44,9 @@ struct ItemDetailView: View {
         }
         .ignoresSafeArea(edges: .top)
         .navigationTitle(item.title)
+        .sheet(item: $streamRequest) { request in
+            StreamPickerSheet(request: request)
+        }
         .task {
             let token = AppSettings.shared.tmdbToken
             guard let tmdbID = item.tmdbID, item.mediaKind == "movie",
@@ -33,6 +54,7 @@ struct ItemDetailView: View {
             let tmdb = TMDBClient(bearerToken: token)
             details = try? await tmdb.movieDetails(id: tmdbID)
             cast = (try? await tmdb.movieCredits(id: tmdbID)) ?? []
+            imdbID = (try? await tmdb.externalIDs(movieID: tmdbID))?.imdbID
         }
     }
 
@@ -60,8 +82,8 @@ struct ItemDetailView: View {
                 HStack(spacing: 12) {
                     if let year = item.year { Text(String(year)) }
                     if let runtime = details?.runtime { Text("\(runtime) min") }
-                    if let quality = item.quality { Text(quality.uppercased()) }
-                    ServiceBadge(service: item.service)
+                    if let quality = current.quality { Text(quality.uppercased()) }
+                    ServiceBadge(service: current.service)
                     if let rating = details?.voteAverage ?? item.rating {
                         Label(String(format: "%.1f", rating), systemImage: "star.fill")
                             .foregroundStyle(.yellow)
@@ -77,7 +99,7 @@ struct ItemDetailView: View {
                         .frame(maxWidth: 640, alignment: .leading)
                 }
 
-                Text("\(item.service.uppercased()) · \(item.filename)")
+                Text("\(current.service.uppercased()) · \(current.filename)")
                     .font(.caption).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle).frame(maxWidth: 640, alignment: .leading)
 
                 HStack(spacing: 12) {
@@ -94,7 +116,35 @@ struct ItemDetailView: View {
                         .padding(.horizontal, 20).padding(.vertical, 8)
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(busy || item.link.isEmpty)
+                    .disabled(busy || current.link.isEmpty)
+
+                    if versions.count > 1 {
+                        Menu {
+                            ForEach(versions, id: \.itemKey) { version in
+                                Button {
+                                    Task { await play(resume: false, version: version) }
+                                } label: {
+                                    Text(versionLabel(version,
+                                                      isPreferred: version.itemKey == current.itemKey))
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "chevron.down")
+                        }
+                        .buttonStyle(.bordered)
+                        .fixedSize()
+                        .help("\(versions.count) versions in your library")
+                    }
+
+                    Button { findStreams() } label: {
+                        Label("Find Streams", systemImage: "magnifyingglass")
+                            .padding(.horizontal, 12).padding(.vertical, 8)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(imdbID == nil)
+                    .help(imdbID == nil
+                          ? "No IMDb match for this movie yet — addons can't be searched."
+                          : "Search your addons for a different stream")
 
                     if let playError {
                         Text(playError).foregroundStyle(.red).font(.callout)
@@ -105,16 +155,26 @@ struct ItemDetailView: View {
         }
     }
 
-    private func play(resume: Bool) async {
+    private func play(resume: Bool, version: LibraryItem? = nil) async {
         playError = nil
         busy = true
         defer { busy = false }
         do {
-            let playItem = try await model.playItem(for: item, autoResume: resume)
+            let playItem = try await model.playItem(for: version ?? current, autoResume: resume)
             openWindow(value: playItem)
         } catch {
             playError = "Could not start stream: \(error)"
         }
+    }
+
+    private func findStreams() {
+        guard let imdbID, let tmdbID = item.tmdbID else { return }
+        streamRequest = StreamRequest(type: .movie,
+                                      imdbID: imdbID,
+                                      title: item.title,
+                                      season: nil,
+                                      episode: nil,
+                                      tmdbID: tmdbID)
     }
 
     private func format(_ seconds: Double) -> String {
@@ -210,6 +270,7 @@ struct ShowDetailView: View {
 
                 HStack(spacing: 12) {
                     playButton(model)
+                    findStreamsButton(model)
                     if let playError {
                         Text(playError).foregroundStyle(.red).font(.callout)
                     }
@@ -272,6 +333,29 @@ struct ShowDetailView: View {
         .disabled(busy || model.selected == nil)
     }
 
+    /// Secondary action: grab an alternate stream for the selected episode
+    /// (wrong language, no subs, bad quality).
+    @ViewBuilder
+    private func findStreamsButton(_ model: ShowPageModel) -> some View {
+        let selected = model.selected
+        let searchable = model.imdbID != nil
+            && selected?.season != nil && selected?.episode != nil
+        Button {
+            guard let season = selected?.season, let episode = selected?.episode else { return }
+            findStreams(model, season: season, episode: episode)
+        } label: {
+            Label("Find Streams", systemImage: "magnifyingglass")
+                .padding(.horizontal, 12).padding(.vertical, 8)
+        }
+        .buttonStyle(.bordered)
+        .disabled(!searchable)
+        .help(searchable
+              ? "Search your addons for a different stream of the selected episode"
+              : (model.imdbID == nil
+                 ? "No IMDb match for this show yet — addons can't be searched."
+                 : "Select an episode first to find alternate streams."))
+    }
+
     // MARK: Season strips
 
     @ViewBuilder
@@ -291,10 +375,10 @@ struct ShowDetailView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .top, spacing: 14) {
                     ForEach(slots) { slot in
-                        if let item = slot.item {
-                            episodeCard(model, episode: item)
-                        } else {
+                        if slot.items.isEmpty {
                             missingEpisodeCard(model, slot: slot)
+                        } else {
+                            episodeCard(model, slot: slot)
                         }
                     }
                 }
@@ -355,70 +439,100 @@ struct ShowDetailView: View {
                 .frame(width: 200, alignment: .leading)
         }
         .contentShape(Rectangle())
-        .onTapGesture { findStreams(model, slot: slot) }
+        .onTapGesture { findStreams(model, season: slot.season, episode: slot.number) }
     }
 
     @ViewBuilder
-    private func episodeCard(_ model: ShowPageModel, episode: LibraryItem) -> some View {
-        let meta = model.episodeMeta(for: episode)
-        let state = model.watchState(for: episode)
-        let isSelected = model.selected?.itemKey == episode.itemKey
+    private func episodeCard(_ model: ShowPageModel, slot: ShowPageModel.EpisodeSlot) -> some View {
+        if let episode = slot.item {   // preferred version
+            let meta = model.episodeMeta(for: episode)
+            let state = model.watchState(for: episode)
+            let isSelected = slot.items.contains { $0.itemKey == model.selected?.itemKey }
 
-        VStack(alignment: .leading, spacing: 6) {
-            ZStack(alignment: .bottomLeading) {
-                AsyncImage(url: meta?.stillPath.map { TMDB.imageURL(path: $0, width: 300) }) { image in
-                    image.resizable().aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    ZStack {
-                        Rectangle().fill(.quaternary)
-                        Text("E\(episode.episode ?? 0)")
-                            .font(.title2.bold()).foregroundStyle(.secondary)
-                    }
-                }
-                .frame(width: 200, height: 112)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                if let state {
-                    if state.finished {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.white, .green)
-                            .padding(6)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                    } else if state.progress > 0 {
-                        GeometryReader { geo in
-                            Rectangle().fill(.orange)
-                                .frame(width: geo.size.width * state.progress, height: 3)
+            VStack(alignment: .leading, spacing: 6) {
+                ZStack(alignment: .bottomLeading) {
+                    AsyncImage(url: meta?.stillPath.map { TMDB.imageURL(path: $0, width: 300) }) { image in
+                        image.resizable().aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        ZStack {
+                            Rectangle().fill(.quaternary)
+                            Text("E\(episode.episode ?? 0)")
+                                .font(.title2.bold()).foregroundStyle(.secondary)
                         }
-                        .frame(height: 3)
+                    }
+                    .frame(width: 200, height: 112)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                    if slot.items.count > 1 {
+                        Text("\(slot.items.count) versions")
+                            .font(.caption2.bold())
+                            .padding(.horizontal, 4).padding(.vertical, 1)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .padding(6)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity,
+                                   alignment: .topLeading)
+                    }
+
+                    if let state {
+                        if state.finished {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.white, .green)
+                                .padding(6)
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                        } else if state.progress > 0 {
+                            GeometryReader { geo in
+                                Rectangle().fill(.orange)
+                                    .frame(width: geo.size.width * state.progress, height: 3)
+                            }
+                            .frame(height: 3)
+                        }
+                    }
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(isSelected ? Color.orange : .clear, lineWidth: 2)
+                }
+
+                Text("\(episode.episode ?? 0). \(meta?.name ?? episode.filename)")
+                    .font(.caption)
+                    .lineLimit(1)
+                    .frame(width: 200, alignment: .leading)
+            }
+            .contentShape(Rectangle())
+            .contextMenu {
+                Button(model.isFinished(episode) ? "Mark Unwatched" : "Mark Watched") {
+                    model.setWatched(!model.isFinished(episode), items: [episode])
+                }
+                if slot.items.count > 1 {
+                    Menu("Versions") {
+                        ForEach(slot.items, id: \.itemKey) { version in
+                            Button {
+                                model.userDidSelect(version)
+                                Task { await play(model, resume: false) }
+                            } label: {
+                                Text(versionLabel(version,
+                                                  isPreferred: version.itemKey == episode.itemKey))
+                            }
+                        }
+                    }
+                }
+                if episode.season != nil && episode.episode != nil {
+                    Button("Find Other Streams…") {
+                        findStreams(model, season: slot.season, episode: slot.number)
                     }
                 }
             }
-            .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(isSelected ? Color.orange : .clear, lineWidth: 2)
-            }
-
-            Text("\(episode.episode ?? 0). \(meta?.name ?? episode.filename)")
-                .font(.caption)
-                .lineLimit(1)
-                .frame(width: 200, alignment: .leading)
+            .onTapGesture { model.userDidSelect(episode) }
+            .simultaneousGesture(TapGesture(count: 2).onEnded {
+                model.userDidSelect(episode)
+                Task { await play(model, resume: false) }
+            })
         }
-        .contentShape(Rectangle())
-        .contextMenu {
-            Button(model.isFinished(episode) ? "Mark Unwatched" : "Mark Watched") {
-                model.setWatched(!model.isFinished(episode), items: [episode])
-            }
-        }
-        .onTapGesture { model.userDidSelect(episode) }
-        .simultaneousGesture(TapGesture(count: 2).onEnded {
-            model.userDidSelect(episode)
-            Task { await play(model, resume: false) }
-        })
     }
 
     // MARK: Actions
 
-    private func findStreams(_ model: ShowPageModel, slot: ShowPageModel.EpisodeSlot) {
+    private func findStreams(_ model: ShowPageModel, season: Int, episode: Int) {
         guard let imdbID = model.imdbID, let showID = model.showID else {
             playError = "This show can't be searched on addons yet."
             return
@@ -427,8 +541,8 @@ struct ShowDetailView: View {
         streamRequest = StreamRequest(type: .series,
                                       imdbID: imdbID,
                                       title: show.title,
-                                      season: slot.season,
-                                      episode: slot.number,
+                                      season: season,
+                                      episode: episode,
                                       tmdbID: showID)
     }
 
@@ -451,4 +565,13 @@ struct ShowDetailView: View {
             ? String(format: "%d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60)
             : String(format: "%d:%02d", s / 60, s % 60)
     }
+}
+
+/// "✓ 2160P · RD · Show.S01E01.2160p.WEB…" — quality · service · trimmed name.
+func versionLabel(_ version: LibraryItem, isPreferred: Bool) -> String {
+    let label = [version.quality?.uppercased() ?? "?",
+                 version.service.uppercased(),
+                 String(version.filename.prefix(40))]
+        .joined(separator: " · ")
+    return isPreferred ? "✓ " + label : label
 }
