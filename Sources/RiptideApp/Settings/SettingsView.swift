@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -28,6 +29,27 @@ struct SettingsView: View {
                 }
                 Text("Aggressive buffers several minutes ahead — helps high-bitrate 4K remuxes. Applies to newly opened players.")
                     .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Downloads") {
+                @Bindable var settings = AppSettings.shared
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text("Riptide media folder").font(.callout)
+                        Text(settings.mediaFolderPath.isEmpty
+                             ? "Not set — pick where downloads are saved"
+                             : settings.mediaFolderPath)
+                            .font(.caption).foregroundStyle(.secondary)
+                            .lineLimit(1).truncationMode(.middle)
+                    }
+                    Spacer()
+                    Button("Choose…") { chooseMediaFolder() }
+                    if !settings.mediaFolderPath.isEmpty {
+                        Button("Reveal") {
+                            NSWorkspace.shared.activateFileViewerSelecting(
+                                [URL(fileURLWithPath: settings.mediaFolderPath)])
+                        }
+                    }
+                }
             }
             Section("Subtitles") {
                 SubtitleStyleControls()
@@ -104,6 +126,17 @@ struct SettingsView: View {
         .frame(minWidth: 600, maxWidth: .infinity,
                minHeight: 480, idealHeight: 660, maxHeight: .infinity)
         .padding(.bottom, 12)
+    }
+
+    private func chooseMediaFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Choose"
+        if panel.runModal() == .OK, let url = panel.url {
+            AppSettings.shared.setMediaFolder(url)
+        }
     }
 
     private var connectButton: some View {
