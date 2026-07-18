@@ -242,6 +242,7 @@ private let posterColumns = [GridItem(.adaptive(minimum: 150, maximum: 190), spa
 
 struct MovieGrid: View {
     @Environment(LibraryModel.self) private var model
+    @Environment(LocalDownloadManager.self) private var downloads
 
     var body: some View {
         ScrollView {
@@ -249,7 +250,8 @@ struct MovieGrid: View {
                 ForEach(model.movies, id: \.itemKey) { item in
                     NavigationLink(destination: ItemDetailView(item: item)) {
                         PosterCard(title: item.title, subtitle: item.year.map(String.init),
-                                   posterPath: item.posterPath)
+                                   posterPath: item.posterPath,
+                                   downloaded: downloads.isDownloaded(item.itemKey))
                     }
                     .buttonStyle(.plain)
                 }
@@ -343,6 +345,7 @@ struct PosterCard: View {
     let title: String
     let subtitle: String?
     let posterPath: String?
+    var downloaded: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -356,6 +359,13 @@ struct PosterCard: View {
             }
             .frame(height: 240)
             .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(alignment: .topTrailing) {
+                if downloaded {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .foregroundStyle(.white, .blue)
+                        .padding(6)
+                }
+            }
 
             Text(title).font(.callout.weight(.medium)).lineLimit(1)
             if let subtitle {
