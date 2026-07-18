@@ -8,7 +8,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
     case movies = "Movies"
     case shows = "TV Shows"
     case files = "Other Files"
-    case downloads = "Downloads"
+    case downloads = "Transfers"
     var id: String { rawValue }
     var icon: String {
         switch self {
@@ -16,7 +16,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
         case .movies: "film"
         case .shows: "tv"
         case .files: "doc"
-        case .downloads: "arrow.down.circle"
+        case .downloads: "arrow.left.arrow.right.circle"
         }
     }
 }

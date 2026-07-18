@@ -12,8 +12,8 @@ struct DownloadsView: View {
         }
         .overlay {
             if downloads.rows.isEmpty {
-                ContentUnavailableView("No active downloads",
-                                       systemImage: "arrow.down.circle",
+                ContentUnavailableView("No active transfers",
+                                       systemImage: "arrow.left.arrow.right.circle",
                                        description: Text("Torrents downloading on your debrid services appear here."))
             }
         }
