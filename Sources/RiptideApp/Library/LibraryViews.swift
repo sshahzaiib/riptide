@@ -24,6 +24,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
 struct LibraryRootView: View {
     @State private var model: LibraryModel
     @State private var downloads: DownloadsModel
+    @State private var localDownloads: LocalDownloadManager
     @State private var showSettings = false
     @State private var showAddTorrent = false
     @State private var addTorrentPrefill: String?
@@ -37,6 +38,7 @@ struct LibraryRootView: View {
         let model = LibraryModel(store: store)
         _model = State(initialValue: model)
         _downloads = State(initialValue: DownloadsModel(library: model))
+        _localDownloads = State(initialValue: LocalDownloadManager(store: store))
     }
 
     var body: some View {
@@ -109,6 +111,7 @@ struct LibraryRootView: View {
             // state should still flow in from Trakt.
             else { await TraktService.shared.pullSync(store: model.store) }
         }
+        .task { localDownloads.start() }
         .alert("Real-Debrid authorization failed", isPresented: $model.needsAuth) {
             Button("Open Settings") { showSettings = true }
             Button("Cancel", role: .cancel) {}
@@ -129,6 +132,7 @@ struct LibraryRootView: View {
         }
         .environment(model)
         .environment(downloads)
+        .environment(localDownloads)
         .onChange(of: downloads.toastMessage) {
             guard let message = downloads.toastMessage else { return }
             showToast(message)
