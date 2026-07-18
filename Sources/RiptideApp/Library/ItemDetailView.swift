@@ -5,6 +5,7 @@ import class StreamCore.LibraryItem
 struct ItemDetailView: View {
     @Environment(LibraryModel.self) private var model
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openURL) private var openURL
     let item: LibraryItem
     @State private var busy = false
     @State private var playError: String?
@@ -146,6 +147,34 @@ struct ItemDetailView: View {
                           ? "No IMDb match for this movie yet — addons can't be searched."
                           : "Search your addons for a different stream")
 
+                    if versions.count > 1 {
+                        Menu {
+                            ForEach(versions, id: \.itemKey) { version in
+                                Button {
+                                    Task { await download(version) }
+                                } label: {
+                                    Text(versionLabel(version,
+                                                      isPreferred: version.itemKey == current.itemKey))
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "arrow.down.circle")
+                                .padding(.vertical, 8)
+                        }
+                        .buttonStyle(.bordered)
+                        .fixedSize()
+                        .disabled(busy || current.link.isEmpty)
+                        .help("Download a version in your browser")
+                    } else {
+                        Button { Task { await download() } } label: {
+                            Image(systemName: "arrow.down.circle")
+                                .padding(.vertical, 8)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(busy || current.link.isEmpty)
+                        .help("Open the direct download link in your browser")
+                    }
+
                     if let playError {
                         Text(playError).foregroundStyle(.red).font(.callout)
                     }
@@ -164,6 +193,19 @@ struct ItemDetailView: View {
             openWindow(value: playItem)
         } catch {
             playError = "Could not start stream: \(error)"
+        }
+    }
+
+    /// Resolve the file's direct debrid URL and hand it to the browser to download.
+    private func download(_ version: LibraryItem? = nil) async {
+        playError = nil
+        busy = true
+        defer { busy = false }
+        do {
+            let playItem = try await model.playItem(for: version ?? current)
+            openURL(playItem.url)
+        } catch {
+            playError = "Could not get download link: \(error)"
         }
     }
 
@@ -188,6 +230,7 @@ struct ItemDetailView: View {
 struct ShowDetailView: View {
     @Environment(LibraryModel.self) private var library
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openURL) private var openURL
     let show: ShowGroup
 
     @State private var model: ShowPageModel?
@@ -271,6 +314,7 @@ struct ShowDetailView: View {
                 HStack(spacing: 12) {
                     playButton(model)
                     findStreamsButton(model)
+                    downloadButton(model)
                     if let playError {
                         Text(playError).foregroundStyle(.red).font(.callout)
                     }
@@ -354,6 +398,40 @@ struct ShowDetailView: View {
               : (model.imdbID == nil
                  ? "No IMDb match for this show yet — addons can't be searched."
                  : "Select an episode first to find alternate streams."))
+    }
+
+    /// Open the selected episode's direct debrid URL in the browser to download.
+    /// When the episode has multiple owned files, offer a version picker.
+    @ViewBuilder
+    private func downloadButton(_ model: ShowPageModel) -> some View {
+        let versions = model.selected.map { model.versions(of: $0) } ?? []
+        if versions.count > 1 {
+            Menu {
+                ForEach(versions, id: \.itemKey) { version in
+                    Button {
+                        Task { await download(model, version: version) }
+                    } label: {
+                        Text(versionLabel(version,
+                                          isPreferred: version.itemKey == versions.first?.itemKey))
+                    }
+                }
+            } label: {
+                Image(systemName: "arrow.down.circle")
+                    .padding(.vertical, 8)
+            }
+            .buttonStyle(.bordered)
+            .fixedSize()
+            .disabled(busy)
+            .help("Download a version of the selected episode in your browser")
+        } else {
+            Button { Task { await download(model) } } label: {
+                Image(systemName: "arrow.down.circle")
+                    .padding(.vertical, 8)
+            }
+            .buttonStyle(.bordered)
+            .disabled(busy || model.selected == nil)
+            .help("Open the direct download link for the selected episode in your browser")
+        }
     }
 
     // MARK: Season strips
@@ -544,6 +622,19 @@ struct ShowDetailView: View {
                                       season: season,
                                       episode: episode,
                                       tmdbID: showID)
+    }
+
+    private func download(_ model: ShowPageModel, version: LibraryItem? = nil) async {
+        guard let item = version ?? model.selected else { return }
+        playError = nil
+        busy = true
+        defer { busy = false }
+        do {
+            let playItem = try await library.playItem(for: item)
+            openURL(playItem.url)
+        } catch {
+            playError = "Could not get download link: \(error)"
+        }
     }
 
     private func play(_ model: ShowPageModel, resume: Bool) async {

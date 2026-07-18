@@ -136,6 +136,13 @@ final class ShowPageModel {
         stateByKey[item.itemKey]?.finished == true
     }
 
+    /// All owned files of this item's episode, preference-ranked (`.first`
+    /// preferred). Items with no parsed episode number stay single-version.
+    func versions(of item: LibraryItem) -> [LibraryItem] {
+        guard let s = item.season, let e = item.episode else { return [item] }
+        return ranked(show.episodes.filter { $0.season == s && $0.episode == e })
+    }
+
     /// Context-menu mark: local write first (survives Trakt pulls), then a
     /// best-effort batched push to Trakt history.
     func setWatched(_ watched: Bool, items: [LibraryItem]) {
