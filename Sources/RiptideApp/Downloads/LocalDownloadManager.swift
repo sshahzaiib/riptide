@@ -38,7 +38,43 @@ final class LocalDownloadManager {
         Task { [weak self] in
             for await update in events { self?.handle(update) }
         }
-        Task { await reconcile() }
+        Task {
+            await reconcile()
+            importExternalFiles()
+        }
+    }
+
+    /// Adopt files placed in the media folder by something other than the
+    /// internal downloader (e.g. downloaded from the AllDebrid website).
+    /// Matches a file to a library item by exact filename — the internal
+    /// downloader saves each file as `item.filename`, and an external
+    /// download of the same link carries that same release name — and writes
+    /// a `.completed` record so play-from-local, the badge, and the popover
+    /// all recognise it. Only fills gaps: never touches an item already
+    /// downloading or already recorded complete.
+    // ponytail: full recursive walk of the media folder on each launch — fine
+    // for a personal library. If it ever points at a huge tree, switch to a
+    // direct DownloadPaths.destination path-check per item.
+    func importExternalFiles() {
+        guard let root = AppSettings.shared.mediaFolderURL else { return }
+        var index: [String: URL] = [:]   // filename -> path (first match wins)
+        if let walker = FileManager.default.enumerator(
+            at: root, includingPropertiesForKeys: [.isRegularFileKey]) {
+            for case let url as URL in walker where index[url.lastPathComponent] == nil {
+                index[url.lastPathComponent] = url
+            }
+        }
+        guard !index.isEmpty, let items = try? store.items() else { return }
+        for item in items where !item.filename.isEmpty {
+            guard let url = index[item.filename] else { continue }
+            let existing = try? store.downloadRecord(itemKey: item.itemKey)
+            if existing?.state == .downloading || existing?.state == .completed { continue }
+            let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+            let size = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
+            try? store.upsertDownload(itemKey: item.itemKey, localPath: url.path,
+                state: .completed, totalBytes: size, downloadedBytes: size,
+                title: item.title, filename: item.filename)
+        }
     }
 
     func download(_ item: LibraryItem) async {
