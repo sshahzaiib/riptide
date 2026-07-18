@@ -2,6 +2,11 @@ import SwiftUI
 import AppKit
 
 struct SettingsView: View {
+    /// Adopt externally-downloaded files in the media folder; returns the
+    /// number newly adopted. Injected so Settings needn't reach the manager
+    /// through the sheet's environment.
+    var onScanFolder: (() -> Int)? = nil
+    @State private var scanResult: String?
     @Environment(\.dismiss) private var dismiss
     @State private var rdToken = AppSettings.shared.rdToken
     @State private var adToken = AppSettings.shared.adToken
@@ -49,6 +54,22 @@ struct SettingsView: View {
                                 [URL(fileURLWithPath: settings.mediaFolderPath)])
                         }
                     }
+                }
+                if !settings.mediaFolderPath.isEmpty, let onScanFolder {
+                    HStack {
+                        Button("Scan Folder Now") {
+                            let n = onScanFolder()
+                            scanResult = n == 0
+                                ? "No new files found."
+                                : "Adopted \(n) existing file\(n == 1 ? "" : "s")."
+                        }
+                        if let scanResult {
+                            Text(scanResult).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                    Text("Finds files already in the folder (e.g. downloaded from a debrid website) and marks them available offline.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
             Section("Subtitles") {

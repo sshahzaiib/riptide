@@ -52,11 +52,13 @@ final class LocalDownloadManager {
     /// a `.completed` record so play-from-local, the badge, and the popover
     /// all recognise it. Only fills gaps: never touches an item already
     /// downloading or already recorded complete.
-    // ponytail: full recursive walk of the media folder on each launch — fine
-    // for a personal library. If it ever points at a huge tree, switch to a
-    // direct DownloadPaths.destination path-check per item.
-    func importExternalFiles() {
-        guard let root = AppSettings.shared.mediaFolderURL else { return }
+    /// Returns the number of files newly adopted this pass.
+    // ponytail: full recursive walk of the media folder — fine for a personal
+    // library. If it ever points at a huge tree, switch to a direct
+    // DownloadPaths.destination path-check per item.
+    @discardableResult
+    func importExternalFiles() -> Int {
+        guard let root = AppSettings.shared.mediaFolderURL else { return 0 }
         var index: [String: URL] = [:]   // filename -> path (first match wins)
         if let walker = FileManager.default.enumerator(
             at: root, includingPropertiesForKeys: [.isRegularFileKey]) {
@@ -64,7 +66,8 @@ final class LocalDownloadManager {
                 index[url.lastPathComponent] = url
             }
         }
-        guard !index.isEmpty, let items = try? store.items() else { return }
+        guard !index.isEmpty, let items = try? store.items() else { return 0 }
+        var adopted = 0
         for item in items where !item.filename.isEmpty {
             guard let url = index[item.filename] else { continue }
             let existing = try? store.downloadRecord(itemKey: item.itemKey)
@@ -74,7 +77,9 @@ final class LocalDownloadManager {
             try? store.upsertDownload(itemKey: item.itemKey, localPath: url.path,
                 state: .completed, totalBytes: size, downloadedBytes: size,
                 title: item.title, filename: item.filename)
+            adopted += 1
         }
+        return adopted
     }
 
     func download(_ item: LibraryItem) async {

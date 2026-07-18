@@ -94,7 +94,7 @@ struct LibraryRootView: View {
             .id(model.sidebarSelection)
         }
         .sheet(isPresented: $showSettings, onDismiss: { Task { await model.refresh() } }) {
-            SettingsView()
+            SettingsView(onScanFolder: { localDownloads.importExternalFiles() })
         }
         .sheet(isPresented: $showAddTorrent, onDismiss: { droppedTorrentFile = nil }) {
             AddTorrentSheet(prefill: addTorrentPrefill, torrentFile: droppedTorrentFile) { added in
