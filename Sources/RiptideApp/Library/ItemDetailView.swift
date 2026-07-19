@@ -477,6 +477,16 @@ struct ShowDetailView: View {
         }
     }
 
+    /// Queue every not-yet-downloaded episode in a season. The download queue
+    /// caps concurrency; download() skips anything already local/in-flight.
+    private func downloadSeason(_ items: [LibraryItem]) {
+        guard AppSettings.shared.mediaFolderURL != nil else {
+            playError = "Set a Riptide media folder in Settings first."
+            return
+        }
+        Task { for item in items { await downloads.download(item) } }
+    }
+
     // MARK: Season strips
 
     @ViewBuilder
@@ -491,6 +501,15 @@ struct ShowDetailView: View {
                     if !owned.isEmpty {
                         Button("Mark Season Watched") { model.setWatched(true, items: owned) }
                         Button("Mark Season Unwatched") { model.setWatched(false, items: owned) }
+                        let toDownload = owned.filter {
+                            !downloads.isDownloaded($0.itemKey) && !downloads.isDownloading($0.itemKey)
+                        }
+                        if !toDownload.isEmpty {
+                            Divider()
+                            Button("Download Season (\(toDownload.count))") {
+                                downloadSeason(toDownload)
+                            }
+                        }
                     }
                 }
             ScrollView(.horizontal, showsIndicators: false) {
