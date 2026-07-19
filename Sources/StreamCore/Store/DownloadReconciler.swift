@@ -24,6 +24,7 @@ public enum DownloadReconciler {
             case .downloading: requeue.append(r.itemKey)
             case .completed: if !fileExists(r.localPath) { missing.append(r.itemKey) }
             case .failed: break
+            case .paused: break   // user paused deliberately — leave it, resume is manual
             }
         }
         return DownloadReconcilePlan(requeue: requeue, markMissing: missing)

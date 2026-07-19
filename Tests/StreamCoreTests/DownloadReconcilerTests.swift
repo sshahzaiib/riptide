@@ -8,11 +8,23 @@ final class DownloadReconcilerTests: XCTestCase {
             ("gone", .completed, "/missing.mkv"),      // → markMissing
             ("here", .completed, "/present.mkv"),      // → untouched
             ("bad", .failed, "/x"),                    // → untouched
+            ("held", .paused, "/partial2"),            // → untouched (resume is manual)
         ]
         let plan = DownloadReconciler.plan(records: records) { path in
             path == "/present.mkv"
         }
         XCTAssertEqual(plan.requeue, ["dl"])
         XCTAssertEqual(plan.markMissing, ["gone"])
+    }
+
+    func testPausedIsNeverRequeuedOrMarkedMissing() {
+        // A paused record whose partial file is gone must still stay untouched:
+        // the reconciler must not resurrect a deliberate pause.
+        let records: [(itemKey: String, state: DownloadState, localPath: String)] = [
+            ("held", .paused, "/partial"),
+        ]
+        let plan = DownloadReconciler.plan(records: records) { _ in false }
+        XCTAssertTrue(plan.requeue.isEmpty)
+        XCTAssertTrue(plan.markMissing.isEmpty)
     }
 }

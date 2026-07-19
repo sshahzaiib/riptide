@@ -11,8 +11,9 @@ struct LocalDownloadsPopover: View {
             Text("Downloads").font(.headline).padding(12)
             Divider()
             let active = downloads.active.keys.sorted()
+            let paused = downloads.pausedRecords()
             let completed = downloads.completedRecords()
-            if active.isEmpty && completed.isEmpty {
+            if active.isEmpty && paused.isEmpty && completed.isEmpty {
                 Text("No downloads")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity).padding(24)
@@ -22,6 +23,7 @@ struct LocalDownloadsPopover: View {
                         ForEach(active, id: \.self) { key in
                             if let p = downloads.progress(key) { activeRow(key: key, progress: p) }
                         }
+                        ForEach(paused, id: \.itemKey) { rec in pausedRow(rec) }
                         ForEach(completed, id: \.itemKey) { rec in completedRow(rec) }
                     }
                     .padding(12)
@@ -63,13 +65,38 @@ struct LocalDownloadsPopover: View {
             HStack {
                 Text(downloads.displayTitle(key)).font(.callout).lineLimit(1)
                 Spacer()
+                Button { downloads.pause(itemKey: key) } label: {
+                    Image(systemName: "pause.circle.fill").foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain).help("Pause")
                 Button { downloads.cancel(itemKey: key) } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.plain).help("Cancel")
             }
             ProgressView(value: fraction ?? 0)
             Text(speedLine(p)).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func pausedRow(_ rec: DownloadRecord) -> some View {
+        let fraction = rec.totalBytes > 0 ? Double(rec.downloadedBytes) / Double(rec.totalBytes) : 0
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(downloads.displayTitle(rec.itemKey)).font(.callout).lineLimit(1)
+                Spacer()
+                Button { downloads.resume(itemKey: rec.itemKey) } label: {
+                    Image(systemName: "play.circle.fill").foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain).help("Resume")
+                Button { downloads.cancel(itemKey: rec.itemKey) } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain).help("Cancel")
+            }
+            ProgressView(value: fraction)
+            Text("Paused").font(.caption).foregroundStyle(.secondary)
         }
     }
 

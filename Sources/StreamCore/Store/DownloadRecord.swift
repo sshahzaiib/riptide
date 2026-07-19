@@ -2,7 +2,7 @@ import Foundation
 import SwiftData
 
 public enum DownloadState: String, Sendable {
-    case downloading, completed, failed
+    case downloading, completed, failed, paused
 }
 
 /// One local download / on-disk copy of a LibraryItem's file. A record with
