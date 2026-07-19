@@ -608,6 +608,15 @@ struct ShowDetailView: View {
                             .frame(height: 3)
                         }
                     }
+
+                    if downloads.isDownloaded(episode.itemKey) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .foregroundStyle(.white, .blue)
+                            .shadow(radius: 2)
+                            .padding(6)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity,
+                                   alignment: .bottomTrailing)
+                    }
                 }
                 .overlay {
                     RoundedRectangle(cornerRadius: 8)
