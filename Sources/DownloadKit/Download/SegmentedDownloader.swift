@@ -65,13 +65,12 @@ public actor SegmentedDownloader {
                 for segment in snapshot() where !segment.isComplete {
                     let seg = segment, url = self.url, dest = self.destination
                     let session = self.session, limiters = self.limiters, total = self.totalBytes
-                    let validator = self.validator
                     group.addTask {
                         let handle = try FileHandle(forWritingTo: dest)
                         defer { try? handle.close() }
                         _ = try await SegmentRunner.run(
                             url: url, segment: seg, fileHandle: handle, session: session,
-                            limiters: limiters, totalBytes: total, validator: validator
+                            limiters: limiters, totalBytes: total
                         ) { delta in
                             await self.bump(index: seg.index, delta: delta)   // sole writer, awaited in order
                             await onProgress(delta)
