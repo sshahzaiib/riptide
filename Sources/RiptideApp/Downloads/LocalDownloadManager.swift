@@ -57,15 +57,27 @@ final class LocalDownloadManager {
             await reconcile()
             importExternalFiles()
         }
+        // Auto-adopt files dropped in while the app was elsewhere: rescan each
+        // time Riptide comes to the foreground (the AllDebrid-website workflow
+        // is download-in-browser, switch-back-to-Riptide).
+        // ponytail: foreground rescan, not a live FSEvents watcher — covers the
+        // switch-back case with no C-API teardown. Add FSEvents if live
+        // adoption while Riptide stays frontmost ever matters.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil,
+            queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { _ = self?.importExternalFiles() }
+        }
     }
 
     /// Adopt files placed in the media folder by something other than the
     /// internal downloader (e.g. downloaded from the AllDebrid website).
-    /// Matches a file to a library item by exact filename — the internal
-    /// downloader saves each file as `item.filename`, and an external
-    /// download of the same link carries that same release name — and writes
-    /// a `.completed` record so play-from-local, the badge, and the popover
-    /// all recognise it. Only fills gaps: never touches an item already
+    /// Two passes, most-confident first: exact filename match (an external
+    /// download of the same link carries the same release name), then a
+    /// parsed-identity fallback (a *different* release of the same episode or
+    /// movie — matched on normalized title + season/episode, or title + year).
+    /// Writes a `.completed` record so play-from-local, the badge, and the
+    /// popover all recognise it. Only fills gaps: never touches an item already
     /// downloading or already recorded complete.
     /// Returns the number of files newly adopted this pass.
     // ponytail: full recursive walk of the media folder — fine for a personal
@@ -74,19 +86,36 @@ final class LocalDownloadManager {
     @discardableResult
     func importExternalFiles() -> Int {
         guard let root = AppSettings.shared.mediaFolderURL else { return 0 }
-        var index: [String: URL] = [:]   // filename -> path (first match wins)
+        var byName: [String: URL] = [:]       // filename -> path (first wins)
+        var byIdentity: [String: URL] = [:]   // parsed identity -> path (first wins)
         if let walker = FileManager.default.enumerator(
             at: root, includingPropertiesForKeys: [.isRegularFileKey]) {
-            for case let url as URL in walker where index[url.lastPathComponent] == nil {
-                index[url.lastPathComponent] = url
+            for case let url as URL in walker {
+                let name = url.lastPathComponent
+                if byName[name] == nil { byName[name] = url }
+                // Only real video files feed the fuzzy index, and never samples
+                // or extras — a false identity match adopts the wrong file.
+                let ext = url.pathExtension.lowercased()
+                guard ReleaseNameParser.videoExtensions.contains(ext),
+                      !ReleaseNameParser.isExtra(filename: name) else { continue }
+                let p = ReleaseNameParser.parse(name)
+                if let key = identityKey(title: p.title, year: p.year,
+                                         season: p.season, episode: p.episode),
+                   byIdentity[key] == nil {
+                    byIdentity[key] = url
+                }
             }
         }
-        guard !index.isEmpty, let items = try? store.items() else { return 0 }
+        guard !byName.isEmpty, let items = try? store.items() else { return 0 }
         var adopted = 0
         for item in items where !item.filename.isEmpty {
-            guard let url = index[item.filename] else { continue }
             let existing = try? store.downloadRecord(itemKey: item.itemKey)
             if existing?.state == .downloading || existing?.state == .completed { continue }
+            let url = byName[item.filename]
+                ?? identityKey(title: item.title, year: item.year,
+                               season: item.season, episode: item.episode)
+                    .flatMap { byIdentity[$0] }
+            guard let url else { continue }
             let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
             let size = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
             try? store.upsertDownload(itemKey: item.itemKey, localPath: url.path,
@@ -95,6 +124,18 @@ final class LocalDownloadManager {
             adopted += 1
         }
         return adopted
+    }
+
+    /// Normalized identity for fuzzy adoption: TV needs title+season+episode,
+    /// movies title+year. Returns nil when there isn't enough to match safely,
+    /// so a bare title can never adopt an arbitrary file.
+    private func identityKey(title: String, year: Int?, season: Int?, episode: Int?) -> String? {
+        let t = title.lowercased().replacingOccurrences(
+            of: "[^a-z0-9]", with: "", options: .regularExpression)
+        guard !t.isEmpty else { return nil }
+        if let s = season, let e = episode { return "\(t)|s\(s)e\(e)" }
+        if let y = year { return "\(t)|y\(y)" }
+        return nil
     }
 
     func download(_ item: LibraryItem) async {

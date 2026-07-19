@@ -4,6 +4,7 @@ import DownloadKit
 
 struct LocalDownloadsPopover: View {
     @Environment(LocalDownloadManager.self) private var downloads
+    @State private var pendingDelete: DownloadRecord?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -26,9 +27,33 @@ struct LocalDownloadsPopover: View {
                     .padding(12)
                 }
                 .frame(maxHeight: 360)
+                if !completed.isEmpty {
+                    Divider()
+                    Text(storageLine(completed))
+                        .font(.caption).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                }
             }
         }
         .frame(width: 340)
+        .confirmationDialog("Delete this download from disk?",
+                            isPresented: Binding(get: { pendingDelete != nil },
+                                                 set: { if !$0 { pendingDelete = nil } }),
+                            presenting: pendingDelete) { rec in
+            Button("Delete from Disk", role: .destructive) {
+                downloads.deleteLocal(itemKey: rec.itemKey)
+            }
+        } message: { rec in
+            Text(downloads.displayTitle(rec.itemKey))
+        }
+    }
+
+    private func storageLine(_ completed: [DownloadRecord]) -> String {
+        let total = completed.reduce(Int64(0)) { $0 + $1.totalBytes }
+        let size = ByteCountFormatter.string(fromByteCount: total, countStyle: .file)
+        let n = completed.count
+        return "\(n) download\(n == 1 ? "" : "s") · \(size) on disk"
     }
 
     @ViewBuilder
@@ -56,6 +81,10 @@ struct LocalDownloadsPopover: View {
             Spacer()
             Button("Reveal") { downloads.reveal(itemKey: rec.itemKey) }
                 .buttonStyle(.link).font(.caption)
+            Button { pendingDelete = rec } label: {
+                Image(systemName: "trash").foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain).help("Delete from disk")
         }
     }
 
