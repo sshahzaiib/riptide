@@ -158,7 +158,7 @@ struct ItemDetailView: View {
                         Divider()
                         Button("Copy Link") { Task { await copyLink(current) } }
                     } label: {
-                        if downloads.progress(current.itemKey) != nil {
+                        if downloads.isDownloading(current.itemKey) {
                             ProgressView().controlSize(.small)
                         } else {
                             Image(systemName: downloads.isDownloaded(current.itemKey)
@@ -199,7 +199,7 @@ struct ItemDetailView: View {
             Button("Delete Download · \(label)", role: .destructive) {
                 downloads.deleteLocal(itemKey: version.itemKey)
             }
-        } else if downloads.progress(version.itemKey) != nil {
+        } else if downloads.isDownloading(version.itemKey) {
             Button("Cancel · \(label)") { downloads.cancel(itemKey: version.itemKey) }
         } else {
             Button("Download · \(label)") { startDownload(version) }
@@ -430,7 +430,7 @@ struct ShowDetailView: View {
                 Button("Copy Link") { Task { await copyLink(selected) } }
             }
         } label: {
-            if let key = model.selected?.itemKey, downloads.progress(key) != nil {
+            if let key = model.selected?.itemKey, downloads.isDownloading(key) {
                 ProgressView().controlSize(.small)
             } else {
                 Image(systemName: (model.selected.map { downloads.isDownloaded($0.itemKey) } ?? false)
@@ -452,7 +452,7 @@ struct ShowDetailView: View {
             Button("Delete Download · \(label)", role: .destructive) {
                 downloads.deleteLocal(itemKey: version.itemKey)
             }
-        } else if downloads.progress(version.itemKey) != nil {
+        } else if downloads.isDownloading(version.itemKey) {
             Button("Cancel · \(label)") { downloads.cancel(itemKey: version.itemKey) }
         } else {
             Button("Download · \(label)") { startDownload(version) }

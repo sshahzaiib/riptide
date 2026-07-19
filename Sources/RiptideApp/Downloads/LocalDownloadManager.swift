@@ -23,9 +23,17 @@ final class LocalDownloadManager {
     /// `.downloading` forever).
     private var orphanUpdates: [UUID: QueueUpdate] = [:]
 
-    /// Live progress for in-flight downloads, keyed by itemKey.
+    /// Live progress for in-flight downloads, keyed by itemKey. Updates many
+    /// times per download — only the popover (which shows live bytes) should
+    /// observe this.
     private(set) var active: [String: DownloadProgress] = [:]
-    var activeCount: Int { active.count }
+    /// Which itemKeys are downloading. Changes only on start/finish — views
+    /// that just need "is it downloading" (detail buttons, context menus)
+    /// observe this instead of `active`, so a progress tick can't rebuild an
+    /// open menu (which SwiftUI does by dismiss + re-present → flicker).
+    private(set) var downloadingKeys: Set<String> = []
+    var activeCount: Int { downloadingKeys.count }
+    func isDownloading(_ itemKey: String) -> Bool { downloadingKeys.contains(itemKey) }
 
     /// The engine emits a progress event per network chunk (hundreds/sec).
     /// Publishing each one to `active` re-renders every SwiftUI view that
@@ -102,6 +110,7 @@ final class LocalDownloadManager {
             keyToId[item.itemKey] = id
             pending[item.itemKey] = Pending(path: dest.path, title: title(for: item),
                                             filename: item.filename)
+            downloadingKeys.insert(item.itemKey)
             active[item.itemKey] = DownloadProgress(bytesDownloaded: 0, totalBytes: nil,
                                                     bytesPerSecond: 0, phase: .queued)
             try? store.upsertDownload(itemKey: item.itemKey, localPath: dest.path,
@@ -200,6 +209,7 @@ final class LocalDownloadManager {
     private func clear(_ key: String) {
         if let id = keyToId[key] { idToKey[id] = nil }
         active[key] = nil
+        downloadingKeys.remove(key)
         keyToId[key] = nil
         pending[key] = nil
         lastUIPublish[key] = nil
