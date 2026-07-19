@@ -172,15 +172,43 @@ final class LocalDownloadManager {
         let path = pending[itemKey]?.path
             ?? (try? store.downloadRecord(itemKey: itemKey))?.localPath
         clear(itemKey)
-        if let path { try? FileManager.default.removeItem(atPath: path) }
+        if let path {
+            try? FileManager.default.removeItem(atPath: path)
+            ResumeStore.delete(ResumeStore.sidecarURL(for: URL(fileURLWithPath: path)))
+        }
         try? store.deleteDownload(itemKey: itemKey)
+    }
+
+    /// Stop an in-flight download but keep the partial file + resume sidecar so
+    /// `resume` (or a later relaunch) picks up where it left off. Records
+    /// `.paused` so the reconciler leaves it alone across restarts.
+    func pause(itemKey: String) {
+        guard let rec = try? store.downloadRecord(itemKey: itemKey) else { return }
+        if let id = keyToId[itemKey] { Task { await queue.cancel(id) } }
+        clear(itemKey)
+        try? store.upsertDownload(itemKey: itemKey, localPath: rec.localPath, state: .paused,
+            totalBytes: rec.totalBytes, downloadedBytes: rec.downloadedBytes,
+            title: rec.title, filename: rec.filename)
+    }
+
+    /// Restart a paused (or stalled) download; the engine resumes from the
+    /// sidecar's saved offsets against a freshly resolved debrid URL.
+    func resume(itemKey: String) {
+        guard let item = try? store.item(itemKey: itemKey) else { return }
+        Task { await download(item) }
     }
 
     func deleteLocal(itemKey: String) {
         if let rec = try? store.downloadRecord(itemKey: itemKey) {
             try? FileManager.default.removeItem(atPath: rec.localPath)
+            ResumeStore.delete(ResumeStore.sidecarURL(for: URL(fileURLWithPath: rec.localPath)))
         }
         try? store.deleteDownload(itemKey: itemKey)
+    }
+
+    func pausedRecords() -> [DownloadRecord] {
+        ((try? store.allDownloads()) ?? []).filter { $0.state == .paused }
+            .sorted { $0.createdAt > $1.createdAt }
     }
 
     func reveal(itemKey: String) {
@@ -248,7 +276,7 @@ final class LocalDownloadManager {
     }
 
     private func clear(_ key: String) {
-        if let id = keyToId[key] { idToKey[id] = nil }
+        if let id = keyToId[key] { idToKey[id] = nil; orphanUpdates[id] = nil }
         active[key] = nil
         downloadingKeys.remove(key)
         keyToId[key] = nil
