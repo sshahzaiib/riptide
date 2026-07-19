@@ -1,6 +1,12 @@
 import SwiftUI
+import AppKit
 
 struct SettingsView: View {
+    /// Adopt externally-downloaded files in the media folder; returns the
+    /// number newly adopted. Injected so Settings needn't reach the manager
+    /// through the sheet's environment.
+    var onScanFolder: (() -> Int)? = nil
+    @State private var scanResult: String?
     @Environment(\.dismiss) private var dismiss
     @State private var rdToken = AppSettings.shared.rdToken
     @State private var adToken = AppSettings.shared.adToken
@@ -28,6 +34,43 @@ struct SettingsView: View {
                 }
                 Text("Aggressive buffers several minutes ahead — helps high-bitrate 4K remuxes. Applies to newly opened players.")
                     .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Downloads") {
+                @Bindable var settings = AppSettings.shared
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text("Riptide media folder").font(.callout)
+                        Text(settings.mediaFolderPath.isEmpty
+                             ? "Not set — pick where downloads are saved"
+                             : settings.mediaFolderPath)
+                            .font(.caption).foregroundStyle(.secondary)
+                            .lineLimit(1).truncationMode(.middle)
+                    }
+                    Spacer()
+                    Button("Choose…") { chooseMediaFolder() }
+                    if !settings.mediaFolderPath.isEmpty {
+                        Button("Reveal") {
+                            NSWorkspace.shared.activateFileViewerSelecting(
+                                [URL(fileURLWithPath: settings.mediaFolderPath)])
+                        }
+                    }
+                }
+                if !settings.mediaFolderPath.isEmpty, let onScanFolder {
+                    HStack {
+                        Button("Scan Folder Now") {
+                            let n = onScanFolder()
+                            scanResult = n == 0
+                                ? "No new files found."
+                                : "Adopted \(n) existing file\(n == 1 ? "" : "s")."
+                        }
+                        if let scanResult {
+                            Text(scanResult).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                    Text("Finds files already in the folder (e.g. downloaded from a debrid website) and marks them available offline.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             Section("Subtitles") {
                 SubtitleStyleControls()
@@ -104,6 +147,17 @@ struct SettingsView: View {
         .frame(minWidth: 600, maxWidth: .infinity,
                minHeight: 480, idealHeight: 660, maxHeight: .infinity)
         .padding(.bottom, 12)
+    }
+
+    private func chooseMediaFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Choose"
+        if panel.runModal() == .OK, let url = panel.url {
+            AppSettings.shared.setMediaFolder(url)
+        }
     }
 
     private var connectButton: some View {

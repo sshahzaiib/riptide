@@ -8,7 +8,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
     case movies = "Movies"
     case shows = "TV Shows"
     case files = "Other Files"
-    case downloads = "Downloads"
+    case downloads = "Transfers"
     var id: String { rawValue }
     var icon: String {
         switch self {
@@ -16,7 +16,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
         case .movies: "film"
         case .shows: "tv"
         case .files: "doc"
-        case .downloads: "arrow.down.circle"
+        case .downloads: "arrow.left.arrow.right.circle"
         }
     }
 }
@@ -24,6 +24,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
 struct LibraryRootView: View {
     @State private var model: LibraryModel
     @State private var downloads: DownloadsModel
+    @State private var localDownloads: LocalDownloadManager
     @State private var showSettings = false
     @State private var showAddTorrent = false
     @State private var addTorrentPrefill: String?
@@ -37,6 +38,7 @@ struct LibraryRootView: View {
         let model = LibraryModel(store: store)
         _model = State(initialValue: model)
         _downloads = State(initialValue: DownloadsModel(library: model))
+        _localDownloads = State(initialValue: LocalDownloadManager(store: store))
     }
 
     var body: some View {
@@ -80,6 +82,9 @@ struct LibraryRootView: View {
                             .disabled(model.refreshing)
                         }
                         ToolbarItem {
+                            DownloadsToolbarButton().environment(localDownloads)
+                        }
+                        ToolbarItem {
                             Button(action: { showSettings = true }) {
                                 Image(systemName: "gearshape")
                             }
@@ -89,7 +94,7 @@ struct LibraryRootView: View {
             .id(model.sidebarSelection)
         }
         .sheet(isPresented: $showSettings, onDismiss: { Task { await model.refresh() } }) {
-            SettingsView()
+            SettingsView(onScanFolder: { localDownloads.importExternalFiles() })
         }
         .sheet(isPresented: $showAddTorrent, onDismiss: { droppedTorrentFile = nil }) {
             AddTorrentSheet(prefill: addTorrentPrefill, torrentFile: droppedTorrentFile) { added in
@@ -109,6 +114,7 @@ struct LibraryRootView: View {
             // state should still flow in from Trakt.
             else { await TraktService.shared.pullSync(store: model.store) }
         }
+        .task { localDownloads.start() }
         .alert("Real-Debrid authorization failed", isPresented: $model.needsAuth) {
             Button("Open Settings") { showSettings = true }
             Button("Cancel", role: .cancel) {}
@@ -129,6 +135,7 @@ struct LibraryRootView: View {
         }
         .environment(model)
         .environment(downloads)
+        .environment(localDownloads)
         .onChange(of: downloads.toastMessage) {
             guard let message = downloads.toastMessage else { return }
             showToast(message)
@@ -227,6 +234,7 @@ private let posterColumns = [GridItem(.adaptive(minimum: 150, maximum: 190), spa
 
 struct MovieGrid: View {
     @Environment(LibraryModel.self) private var model
+    @Environment(LocalDownloadManager.self) private var downloads
 
     var body: some View {
         ScrollView {
@@ -234,7 +242,8 @@ struct MovieGrid: View {
                 ForEach(model.movies, id: \.itemKey) { item in
                     NavigationLink(destination: ItemDetailView(item: item)) {
                         PosterCard(title: item.title, subtitle: item.year.map(String.init),
-                                   posterPath: item.posterPath)
+                                   posterPath: item.posterPath,
+                                   downloaded: downloads.isDownloaded(item.itemKey))
                     }
                     .buttonStyle(.plain)
                 }
@@ -328,6 +337,7 @@ struct PosterCard: View {
     let title: String
     let subtitle: String?
     let posterPath: String?
+    var downloaded: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -341,6 +351,13 @@ struct PosterCard: View {
             }
             .frame(height: 240)
             .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(alignment: .topTrailing) {
+                if downloaded {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .foregroundStyle(.white, .blue)
+                        .padding(6)
+                }
+            }
 
             Text(title).font(.callout.weight(.medium)).lineLimit(1)
             if let subtitle {

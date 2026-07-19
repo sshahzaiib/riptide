@@ -8,18 +8,13 @@ enum PlayItemBuilder {
     @MainActor
     static func make(for item: LibraryItem, store: LibraryStore,
                      autoResume: Bool = false) async throws -> PlayItem {
-        guard !item.link.isEmpty else { throw RealDebridError.noDownloadableLinks }
-        let settings = AppSettings.shared
         let url: URL
-        if item.service == "ad" {
-            // Fail fast on a cleared key instead of a doomed network call.
-            guard !settings.adToken.isEmpty else { throw AllDebridError.authFailed }
-            url = try await AllDebridClient(token: settings.adToken).unlock(link: item.link)
+        if let rec = try? store.downloadRecord(itemKey: item.itemKey),
+           rec.state == .completed,
+           FileManager.default.fileExists(atPath: rec.localPath) {
+            url = URL(fileURLWithPath: rec.localPath)   // play from disk, offline
         } else {
-            let unrestricted = try await RealDebridClient(token: settings.rdToken)
-                .unrestrictLink(item.link)
-            guard let direct = unrestricted.directURL else { throw RealDebridError.badResponse }
-            url = direct
+            url = try await DebridResolver.directURL(for: item)
         }
         let resume = (try? store.continueWatching())?
             .first { $0.itemKey == item.itemKey }?.positionSeconds

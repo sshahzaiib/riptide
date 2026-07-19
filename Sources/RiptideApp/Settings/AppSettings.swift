@@ -18,6 +18,7 @@ final class AppSettings {
 
     private let keychain = KeychainStore()
     private(set) var rdToken: String
+    private(set) var mediaFolderPath: String
     private(set) var adToken: String
     private(set) var tmdbToken: String
     private(set) var openSubsKey: String
@@ -25,6 +26,7 @@ final class AppSettings {
 
     init() {
         rdToken = keychain.get("rd-token") ?? ""
+        mediaFolderPath = keychain.get("media-folder") ?? ""
         adToken = keychain.get("ad-token") ?? ""
         tmdbToken = keychain.get("tmdb-token") ?? ""
         openSubsKey = keychain.get("opensubtitles-key") ?? ""
@@ -51,6 +53,15 @@ final class AppSettings {
            let json = String(data: data, encoding: .utf8) {
             keychain.set(json, account: "stremio-addons")
         }
+    }
+
+    var mediaFolderURL: URL? {
+        mediaFolderPath.isEmpty ? nil : URL(fileURLWithPath: mediaFolderPath)
+    }
+
+    func setMediaFolder(_ url: URL) {
+        mediaFolderPath = url.path
+        keychain.set(mediaFolderPath, account: "media-folder")
     }
 
     private static func decodeAddons(_ json: String?) -> [ConfiguredAddon] {

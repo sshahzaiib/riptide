@@ -26,7 +26,7 @@ public final class LibraryStore {
     public static func inMemory() throws -> LibraryStore {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: LibraryItem.self, WatchState.self,
-                                           configurations: config)
+                                           DownloadRecord.self, configurations: config)
         return LibraryStore(container: container)
     }
 
@@ -45,10 +45,11 @@ public final class LibraryStore {
         func open() throws -> LibraryStore {
             let config = ModelConfiguration(url: storeURL)
             let container = try ModelContainer(for: LibraryItem.self, WatchState.self,
-                                               configurations: config)
+                                               DownloadRecord.self, configurations: config)
             let store = LibraryStore(container: container)
             _ = try store.context.fetchCount(FetchDescriptor<LibraryItem>())
             _ = try store.context.fetchCount(FetchDescriptor<WatchState>())
+            _ = try store.context.fetchCount(FetchDescriptor<DownloadRecord>())
             return store
         }
         do { return try open() } catch {

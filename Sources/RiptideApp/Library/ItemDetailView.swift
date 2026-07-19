@@ -1,11 +1,12 @@
 import SwiftUI
+import AppKit
 import StreamCore
 import class StreamCore.LibraryItem
 
 struct ItemDetailView: View {
     @Environment(LibraryModel.self) private var model
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.openURL) private var openURL
+    @Environment(LocalDownloadManager.self) private var downloads
     let item: LibraryItem
     @State private var busy = false
     @State private var playError: String?
@@ -45,6 +46,9 @@ struct ItemDetailView: View {
         }
         .ignoresSafeArea(edges: .top)
         .navigationTitle(item.title)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) { DownloadsToolbarButton().environment(downloads) }
+        }
         .sheet(item: $streamRequest) { request in
             StreamPickerSheet(request: request)
         }
@@ -147,33 +151,24 @@ struct ItemDetailView: View {
                           ? "No IMDb match for this movie yet — addons can't be searched."
                           : "Search your addons for a different stream")
 
-                    if versions.count > 1 {
-                        Menu {
-                            ForEach(versions, id: \.itemKey) { version in
-                                Button {
-                                    Task { await download(version) }
-                                } label: {
-                                    Text(versionLabel(version,
-                                                      isPreferred: version.itemKey == current.itemKey))
-                                }
-                            }
-                        } label: {
-                            Image(systemName: "arrow.down.circle")
+                    Menu {
+                        ForEach(versions, id: \.itemKey) { version in
+                            downloadMenuRow(version, preferred: version.itemKey == current.itemKey)
+                        }
+                        Divider()
+                        Button("Copy Link") { Task { await copyLink(current) } }
+                    } label: {
+                        if downloads.progress(current.itemKey) != nil {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: downloads.isDownloaded(current.itemKey)
+                                  ? "arrow.down.circle.fill" : "arrow.down.circle")
                                 .padding(.vertical, 8)
                         }
-                        .buttonStyle(.bordered)
-                        .fixedSize()
-                        .disabled(busy || current.link.isEmpty)
-                        .help("Download a version in your browser")
-                    } else {
-                        Button { Task { await download() } } label: {
-                            Image(systemName: "arrow.down.circle")
-                                .padding(.vertical, 8)
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(busy || current.link.isEmpty)
-                        .help("Open the direct download link in your browser")
                     }
+                    .buttonStyle(.bordered)
+                    .fixedSize()
+                    .help("Download or copy the direct link")
 
                     if let playError {
                         Text(playError).foregroundStyle(.red).font(.callout)
@@ -196,16 +191,36 @@ struct ItemDetailView: View {
         }
     }
 
-    /// Resolve the file's direct debrid URL and hand it to the browser to download.
-    private func download(_ version: LibraryItem? = nil) async {
-        playError = nil
-        busy = true
-        defer { busy = false }
+    @ViewBuilder
+    private func downloadMenuRow(_ version: LibraryItem, preferred: Bool) -> some View {
+        let label = versionLabel(version, isPreferred: preferred)
+        if downloads.isDownloaded(version.itemKey) {
+            Button("Reveal · \(label)") { downloads.reveal(itemKey: version.itemKey) }
+            Button("Delete Download · \(label)", role: .destructive) {
+                downloads.deleteLocal(itemKey: version.itemKey)
+            }
+        } else if downloads.progress(version.itemKey) != nil {
+            Button("Cancel · \(label)") { downloads.cancel(itemKey: version.itemKey) }
+        } else {
+            Button("Download · \(label)") { startDownload(version) }
+        }
+    }
+
+    private func startDownload(_ version: LibraryItem) {
+        guard AppSettings.shared.mediaFolderURL != nil else {
+            playError = "Set a Riptide media folder in Settings first."
+            return
+        }
+        Task { await downloads.download(version) }
+    }
+
+    private func copyLink(_ item: LibraryItem) async {
         do {
-            let playItem = try await model.playItem(for: version ?? current)
-            openURL(playItem.url)
+            let url = try await DebridResolver.directURL(for: item)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(url.absoluteString, forType: .string)
         } catch {
-            playError = "Could not get download link: \(error)"
+            playError = "Could not resolve link: \(error)"
         }
     }
 
@@ -230,7 +245,7 @@ struct ItemDetailView: View {
 struct ShowDetailView: View {
     @Environment(LibraryModel.self) private var library
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.openURL) private var openURL
+    @Environment(LocalDownloadManager.self) private var downloads
     let show: ShowGroup
 
     @State private var model: ShowPageModel?
@@ -254,6 +269,9 @@ struct ShowDetailView: View {
         }
         .ignoresSafeArea(edges: .top)
         .navigationTitle(show.title)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) { DownloadsToolbarButton().environment(downloads) }
+        }
         .sheet(item: $streamRequest) { request in
             StreamPickerSheet(request: request)
         }
@@ -400,37 +418,62 @@ struct ShowDetailView: View {
                  : "Select an episode first to find alternate streams."))
     }
 
-    /// Open the selected episode's direct debrid URL in the browser to download.
-    /// When the episode has multiple owned files, offer a version picker.
     @ViewBuilder
     private func downloadButton(_ model: ShowPageModel) -> some View {
         let versions = model.selected.map { model.versions(of: $0) } ?? []
-        if versions.count > 1 {
-            Menu {
-                ForEach(versions, id: \.itemKey) { version in
-                    Button {
-                        Task { await download(model, version: version) }
-                    } label: {
-                        Text(versionLabel(version,
-                                          isPreferred: version.itemKey == versions.first?.itemKey))
-                    }
-                }
-            } label: {
-                Image(systemName: "arrow.down.circle")
+        Menu {
+            ForEach(versions, id: \.itemKey) { version in
+                downloadMenuRow(version, preferred: version.itemKey == versions.first?.itemKey)
+            }
+            if let selected = model.selected {
+                Divider()
+                Button("Copy Link") { Task { await copyLink(selected) } }
+            }
+        } label: {
+            if let key = model.selected?.itemKey, downloads.progress(key) != nil {
+                ProgressView().controlSize(.small)
+            } else {
+                Image(systemName: (model.selected.map { downloads.isDownloaded($0.itemKey) } ?? false)
+                      ? "arrow.down.circle.fill" : "arrow.down.circle")
                     .padding(.vertical, 8)
             }
-            .buttonStyle(.bordered)
-            .fixedSize()
-            .disabled(busy)
-            .help("Download a version of the selected episode in your browser")
+        }
+        .buttonStyle(.bordered)
+        .fixedSize()
+        .disabled(model.selected == nil)
+        .help("Download or copy the direct link for the selected episode")
+    }
+
+    @ViewBuilder
+    private func downloadMenuRow(_ version: LibraryItem, preferred: Bool) -> some View {
+        let label = versionLabel(version, isPreferred: preferred)
+        if downloads.isDownloaded(version.itemKey) {
+            Button("Reveal · \(label)") { downloads.reveal(itemKey: version.itemKey) }
+            Button("Delete Download · \(label)", role: .destructive) {
+                downloads.deleteLocal(itemKey: version.itemKey)
+            }
+        } else if downloads.progress(version.itemKey) != nil {
+            Button("Cancel · \(label)") { downloads.cancel(itemKey: version.itemKey) }
         } else {
-            Button { Task { await download(model) } } label: {
-                Image(systemName: "arrow.down.circle")
-                    .padding(.vertical, 8)
-            }
-            .buttonStyle(.bordered)
-            .disabled(busy || model.selected == nil)
-            .help("Open the direct download link for the selected episode in your browser")
+            Button("Download · \(label)") { startDownload(version) }
+        }
+    }
+
+    private func startDownload(_ version: LibraryItem) {
+        guard AppSettings.shared.mediaFolderURL != nil else {
+            playError = "Set a Riptide media folder in Settings first."
+            return
+        }
+        Task { await downloads.download(version) }
+    }
+
+    private func copyLink(_ item: LibraryItem) async {
+        do {
+            let url = try await DebridResolver.directURL(for: item)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(url.absoluteString, forType: .string)
+        } catch {
+            playError = "Could not resolve link: \(error)"
         }
     }
 
@@ -594,6 +637,13 @@ struct ShowDetailView: View {
                         }
                     }
                 }
+                Menu("Download") {
+                    ForEach(slot.items, id: \.itemKey) { version in
+                        downloadMenuRow(version, preferred: version.itemKey == episode.itemKey)
+                    }
+                    Divider()
+                    Button("Copy Link") { Task { await copyLink(episode) } }
+                }
                 if episode.season != nil && episode.episode != nil {
                     Button("Find Other Streams…") {
                         findStreams(model, season: slot.season, episode: slot.number)
@@ -622,19 +672,6 @@ struct ShowDetailView: View {
                                       season: season,
                                       episode: episode,
                                       tmdbID: showID)
-    }
-
-    private func download(_ model: ShowPageModel, version: LibraryItem? = nil) async {
-        guard let item = version ?? model.selected else { return }
-        playError = nil
-        busy = true
-        defer { busy = false }
-        do {
-            let playItem = try await library.playItem(for: item)
-            openURL(playItem.url)
-        } catch {
-            playError = "Could not get download link: \(error)"
-        }
     }
 
     private func play(_ model: ShowPageModel, resume: Bool) async {

@@ -10,11 +10,13 @@ let package = Package(
     ],
     targets: [
         .target(name: "StreamCore"),
+        .target(name: "DownloadKit", exclude: ["VENDORED.md"]),
         .testTarget(name: "StreamCoreTests", dependencies: ["StreamCore"]),
         .executableTarget(
             name: "RiptideApp",
             dependencies: [
                 "StreamCore",
+                "DownloadKit",
                 .product(name: "MPVKit", package: "MPVKit"),
             ],
             // mpv's C callback interop is not strict-concurrency-clean; the
