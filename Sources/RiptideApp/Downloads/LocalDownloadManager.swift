@@ -27,6 +27,13 @@ final class LocalDownloadManager {
     private(set) var active: [String: DownloadProgress] = [:]
     var activeCount: Int { active.count }
 
+    /// The engine emits a progress event per network chunk (hundreds/sec).
+    /// Publishing each one to `active` re-renders every SwiftUI view that
+    /// observes it — including whole detail pages — so coalesce non-terminal
+    /// updates to a few per second per download. Terminal states bypass this.
+    private var lastUIPublish: [String: TimeInterval] = [:]
+    private let uiPublishInterval: TimeInterval = 0.25
+
     init(store: LibraryStore, maxConcurrent: Int = 3) {
         self.store = store
         self.queue = DownloadQueue(maxConcurrent: maxConcurrent)
@@ -183,6 +190,9 @@ final class LocalDownloadManager {
                 downloadedBytes: update.progress.bytesDownloaded,
                 title: info?.title ?? key, filename: info?.filename ?? "", errorMessage: msg)
         default:
+            let now = ProcessInfo.processInfo.systemUptime
+            if let last = lastUIPublish[key], now - last < uiPublishInterval { return }
+            lastUIPublish[key] = now
             active[key] = update.progress
         }
     }
@@ -192,6 +202,7 @@ final class LocalDownloadManager {
         active[key] = nil
         keyToId[key] = nil
         pending[key] = nil
+        lastUIPublish[key] = nil
     }
 
     private func reconcile() async {
