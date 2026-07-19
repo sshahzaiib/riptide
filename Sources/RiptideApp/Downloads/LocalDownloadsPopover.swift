@@ -52,7 +52,7 @@ struct LocalDownloadsPopover: View {
     private func completedRow(_ rec: DownloadRecord) -> some View {
         HStack {
             Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-            Text(rec.title).font(.callout).lineLimit(1)
+            Text(downloads.displayTitle(rec.itemKey)).font(.callout).lineLimit(1)
             Spacer()
             Button("Reveal") { downloads.reveal(itemKey: rec.itemKey) }
                 .buttonStyle(.link).font(.caption)

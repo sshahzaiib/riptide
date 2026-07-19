@@ -76,7 +76,7 @@ final class LocalDownloadManager {
             let size = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
             try? store.upsertDownload(itemKey: item.itemKey, localPath: url.path,
                 state: .completed, totalBytes: size, downloadedBytes: size,
-                title: item.title, filename: item.filename)
+                title: title(for: item), filename: item.filename)
             adopted += 1
         }
         return adopted
@@ -93,20 +93,20 @@ final class LocalDownloadManager {
             let id = await queue.add(DownloadRequest(url: url, destination: dest, connections: 8))
             idToKey[id] = item.itemKey
             keyToId[item.itemKey] = id
-            pending[item.itemKey] = Pending(path: dest.path, title: item.title,
+            pending[item.itemKey] = Pending(path: dest.path, title: title(for: item),
                                             filename: item.filename)
             active[item.itemKey] = DownloadProgress(bytesDownloaded: 0, totalBytes: nil,
                                                     bytesPerSecond: 0, phase: .queued)
             try? store.upsertDownload(itemKey: item.itemKey, localPath: dest.path,
                 state: .downloading, totalBytes: 0, downloadedBytes: 0,
-                title: item.title, filename: item.filename)
+                title: title(for: item), filename: item.filename)
             // Replay any event that landed during the `await queue.add` above,
             // now that the id→key mapping and pending info exist.
             if let buffered = orphanUpdates.removeValue(forKey: id) { handle(buffered) }
         } catch {
             try? store.upsertDownload(itemKey: item.itemKey, localPath: dest.path,
                 state: .failed, totalBytes: 0, downloadedBytes: 0,
-                title: item.title, filename: item.filename, errorMessage: "\(error)")
+                title: title(for: item), filename: item.filename, errorMessage: "\(error)")
         }
     }
 
@@ -139,9 +139,20 @@ final class LocalDownloadManager {
     func progress(_ itemKey: String) -> DownloadProgress? { active[itemKey] }
 
     func displayTitle(_ itemKey: String) -> String {
-        pending[itemKey]?.title
+        // Prefer a live library lookup so episodes read "Show SxxEyy" (the
+        // record's own title is the show name for episodes). Fall back to the
+        // stored title when the library item is gone.
+        if let item = try? store.item(itemKey: itemKey) { return title(for: item) }
+        return pending[itemKey]?.title
             ?? (try? store.downloadRecord(itemKey: itemKey))?.title
             ?? itemKey
+    }
+
+    /// Display title for a download: "Show SxxEyy" for episodes, else the
+    /// plain title. Persisted on the record so it survives library deletion.
+    private func title(for item: LibraryItem) -> String {
+        guard let s = item.season, let e = item.episode else { return item.title }
+        return String(format: "%@ S%02dE%02d", item.title, s, e)
     }
 
     func completedRecords() -> [DownloadRecord] {
