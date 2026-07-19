@@ -99,7 +99,7 @@ final class LocalDownloadManager {
 
     func download(_ item: LibraryItem) async {
         guard let root = AppSettings.shared.mediaFolderURL else { return }
-        if isDownloaded(item.itemKey) { return }
+        if isDownloaded(item.itemKey) || isDownloading(item.itemKey) { return }
         let dest = DownloadPaths.destination(root: root, for: item)
         do {
             let url = try await DebridResolver.directURL(for: item)
