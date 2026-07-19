@@ -23,9 +23,24 @@ final class LocalDownloadManager {
     /// `.downloading` forever).
     private var orphanUpdates: [UUID: QueueUpdate] = [:]
 
-    /// Live progress for in-flight downloads, keyed by itemKey.
+    /// Live progress for in-flight downloads, keyed by itemKey. Updates many
+    /// times per download — only the popover (which shows live bytes) should
+    /// observe this.
     private(set) var active: [String: DownloadProgress] = [:]
-    var activeCount: Int { active.count }
+    /// Which itemKeys are downloading. Changes only on start/finish — views
+    /// that just need "is it downloading" (detail buttons, context menus)
+    /// observe this instead of `active`, so a progress tick can't rebuild an
+    /// open menu (which SwiftUI does by dismiss + re-present → flicker).
+    private(set) var downloadingKeys: Set<String> = []
+    var activeCount: Int { downloadingKeys.count }
+    func isDownloading(_ itemKey: String) -> Bool { downloadingKeys.contains(itemKey) }
+
+    /// The engine emits a progress event per network chunk (hundreds/sec).
+    /// Publishing each one to `active` re-renders every SwiftUI view that
+    /// observes it — including whole detail pages — so coalesce non-terminal
+    /// updates to a few per second per download. Terminal states bypass this.
+    private var lastUIPublish: [String: TimeInterval] = [:]
+    private let uiPublishInterval: TimeInterval = 0.25
 
     init(store: LibraryStore, maxConcurrent: Int = 3) {
         self.store = store
@@ -76,7 +91,7 @@ final class LocalDownloadManager {
             let size = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
             try? store.upsertDownload(itemKey: item.itemKey, localPath: url.path,
                 state: .completed, totalBytes: size, downloadedBytes: size,
-                title: item.title, filename: item.filename)
+                title: title(for: item), filename: item.filename)
             adopted += 1
         }
         return adopted
@@ -93,20 +108,21 @@ final class LocalDownloadManager {
             let id = await queue.add(DownloadRequest(url: url, destination: dest, connections: 8))
             idToKey[id] = item.itemKey
             keyToId[item.itemKey] = id
-            pending[item.itemKey] = Pending(path: dest.path, title: item.title,
+            pending[item.itemKey] = Pending(path: dest.path, title: title(for: item),
                                             filename: item.filename)
+            downloadingKeys.insert(item.itemKey)
             active[item.itemKey] = DownloadProgress(bytesDownloaded: 0, totalBytes: nil,
                                                     bytesPerSecond: 0, phase: .queued)
             try? store.upsertDownload(itemKey: item.itemKey, localPath: dest.path,
                 state: .downloading, totalBytes: 0, downloadedBytes: 0,
-                title: item.title, filename: item.filename)
+                title: title(for: item), filename: item.filename)
             // Replay any event that landed during the `await queue.add` above,
             // now that the id→key mapping and pending info exist.
             if let buffered = orphanUpdates.removeValue(forKey: id) { handle(buffered) }
         } catch {
             try? store.upsertDownload(itemKey: item.itemKey, localPath: dest.path,
                 state: .failed, totalBytes: 0, downloadedBytes: 0,
-                title: item.title, filename: item.filename, errorMessage: "\(error)")
+                title: title(for: item), filename: item.filename, errorMessage: "\(error)")
         }
     }
 
@@ -139,9 +155,20 @@ final class LocalDownloadManager {
     func progress(_ itemKey: String) -> DownloadProgress? { active[itemKey] }
 
     func displayTitle(_ itemKey: String) -> String {
-        pending[itemKey]?.title
+        // Prefer a live library lookup so episodes read "Show SxxEyy" (the
+        // record's own title is the show name for episodes). Fall back to the
+        // stored title when the library item is gone.
+        if let item = try? store.item(itemKey: itemKey) { return title(for: item) }
+        return pending[itemKey]?.title
             ?? (try? store.downloadRecord(itemKey: itemKey))?.title
             ?? itemKey
+    }
+
+    /// Display title for a download: "Show SxxEyy" for episodes, else the
+    /// plain title. Persisted on the record so it survives library deletion.
+    private func title(for item: LibraryItem) -> String {
+        guard let s = item.season, let e = item.episode else { return item.title }
+        return String(format: "%@ S%02dE%02d", item.title, s, e)
     }
 
     func completedRecords() -> [DownloadRecord] {
@@ -172,6 +199,9 @@ final class LocalDownloadManager {
                 downloadedBytes: update.progress.bytesDownloaded,
                 title: info?.title ?? key, filename: info?.filename ?? "", errorMessage: msg)
         default:
+            let now = ProcessInfo.processInfo.systemUptime
+            if let last = lastUIPublish[key], now - last < uiPublishInterval { return }
+            lastUIPublish[key] = now
             active[key] = update.progress
         }
     }
@@ -179,8 +209,10 @@ final class LocalDownloadManager {
     private func clear(_ key: String) {
         if let id = keyToId[key] { idToKey[id] = nil }
         active[key] = nil
+        downloadingKeys.remove(key)
         keyToId[key] = nil
         pending[key] = nil
+        lastUIPublish[key] = nil
     }
 
     private func reconcile() async {
