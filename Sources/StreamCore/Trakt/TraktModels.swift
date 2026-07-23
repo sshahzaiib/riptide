@@ -140,3 +140,23 @@ public enum TraktError: Error, Equatable {
     case badResponse
     case http(Int)
 }
+
+public struct TraktListMedia: Decodable, Equatable, Sendable {
+    public let title: String
+    public let year: Int?
+    public let ids: TraktIDs
+}
+
+/// Entry from /sync/watchlist — exactly one of movie/show is set.
+public struct TraktWatchlistEntry: Decodable, Equatable, Sendable {
+    public let type: String          // "movie" | "show"
+    public let movie: TraktListMedia?
+    public let show: TraktListMedia?
+}
+
+/// Entry from /movies/trending or /shows/trending.
+public struct TraktTrendingEntry: Decodable, Equatable, Sendable {
+    public let watchers: Int
+    public let movie: TraktListMedia?
+    public let show: TraktListMedia?
+}

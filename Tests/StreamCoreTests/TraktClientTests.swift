@@ -314,5 +314,78 @@ final class TraktClientTests: XCTestCase {
         XCTAssertEqual(body.shows?[0].ids.tmdb, 1396)
         XCTAssertNil(body.shows?[0].seasons)
     }
+
+    func testWatchlistDecodes() async throws {
+        MockURLProtocol.setHandler { _ in
+            .json("""
+            [{"rank":1,"type":"movie",
+              "movie":{"title":"Dune","year":2021,
+                       "ids":{"trakt":1,"slug":"dune-2021","tmdb":438631}}},
+             {"rank":2,"type":"show",
+              "show":{"title":"Severance","year":2022,
+                       "ids":{"trakt":2,"slug":"severance","tmdb":95396}}}]
+            """)
+        }
+        let client = makeClient(tokens: tok())
+        let entries = try await client.watchlist()
+        XCTAssertEqual(entries.count, 2)
+        XCTAssertEqual(entries[0].movie?.ids.tmdb, 438631)
+        XCTAssertEqual(entries[1].show?.title, "Severance")
+    }
+
+    func testTrendingMoviesIsUnauthenticated() async throws {
+        nonisolated(unsafe) var seen: URLRequest?
+        MockURLProtocol.setHandler { request in
+            seen = request
+            return .json("""
+            [{"watchers":42,"movie":{"title":"Dune","year":2021,
+              "ids":{"trakt":1,"slug":"dune-2021","tmdb":438631}}}]
+            """)
+        }
+        let client = makeClient(tokens: nil)     // no OAuth tokens at all
+        let entries = try await client.trendingMovies()
+        XCTAssertEqual(entries.first?.watchers, 42)
+        XCTAssertEqual(seen?.url?.path, "/movies/trending")
+        XCTAssertNil(seen?.value(forHTTPHeaderField: "Authorization"))
+        XCTAssertEqual(seen?.value(forHTTPHeaderField: "trakt-api-key"), "cid")
+    }
+
+    func testTrendingShowsPath() async throws {
+        nonisolated(unsafe) var seen: URLRequest?
+        MockURLProtocol.setHandler { request in
+            seen = request
+            return .json("[]")
+        }
+        _ = try await makeClient(tokens: nil).trendingShows()
+        XCTAssertEqual(seen?.url?.path, "/shows/trending")
+    }
+
+    func testTrendingMoviesCaches() async throws {
+        let cache = MetadataCache(directory: nil)
+        await cache.clear()
+        
+        let client = makeClient(tokens: nil)
+        client.cache = cache
+        
+        nonisolated(unsafe) var requestCount = 0
+        MockURLProtocol.setHandler { _ in
+            requestCount += 1
+            return .json("""
+            [{"watchers":42,"movie":{"title":"Dune","year":2021,
+              "ids":{"trakt":1,"slug":"dune-2021","tmdb":438631}}}]
+            """)
+        }
+        
+        let entries1 = try await client.trendingMovies()
+        XCTAssertEqual(entries1.first?.watchers, 42)
+        XCTAssertEqual(requestCount, 1)
+        
+        // Next request should hit cache and not trigger a URL protocol request
+        let entries2 = try await client.trendingMovies()
+        XCTAssertEqual(entries2.first?.watchers, 42)
+        XCTAssertEqual(requestCount, 1)
+    }
 }
+
+
 
