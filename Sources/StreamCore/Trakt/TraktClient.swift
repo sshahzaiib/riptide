@@ -270,15 +270,11 @@ public final class TraktClient {
     // MARK: - Watchlist writes
 
     private struct WatchlistBody: Encodable {
-        struct Ref: Encodable {
-            struct IDs: Encodable { let tmdb: Int }
-            let ids: IDs
-        }
-        var movies: [Ref]?
-        var shows: [Ref]?
+        var movies: [TraktRefPayload]?
+        var shows: [TraktRefPayload]?
 
         init(tmdbID: Int, isShow: Bool) {
-            let ref = Ref(ids: .init(tmdb: tmdbID))
+            let ref = TraktRefPayload(ids: .init(tmdb: tmdbID))
             if isShow { shows = [ref] } else { movies = [ref] }
         }
     }

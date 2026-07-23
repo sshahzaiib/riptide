@@ -446,14 +446,20 @@ final class TraktClientTests: XCTestCase {
 
     func testRemoveFromWatchlistShowBody() async throws {
         nonisolated(unsafe) var capturedPath: String?
+        nonisolated(unsafe) var capturedMethod: String?
+        nonisolated(unsafe) var capturedAuth: String?
         nonisolated(unsafe) var capturedBody: Data?
         MockURLProtocol.setHandler { req in
             capturedPath = req.url?.path
+            capturedMethod = req.httpMethod
+            capturedAuth = req.value(forHTTPHeaderField: "Authorization")
             capturedBody = req.bodyData
             return .json("{}", status: 200)
         }
         try await makeClient(tokens: tok()).removeFromWatchlist(tmdbID: 1396, isShow: true)
         XCTAssertEqual(capturedPath, "/sync/watchlist/remove")
+        XCTAssertEqual(capturedMethod, "POST")
+        XCTAssertEqual(capturedAuth, "Bearer at")
         let json = try JSONSerialization.jsonObject(
             with: XCTUnwrap(capturedBody)) as! [String: Any]
         let shows = json["shows"] as! [[String: Any]]
