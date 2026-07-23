@@ -22,8 +22,12 @@ public actor MetadataCache {
     }
 
     public func data(for key: String, ttl: TimeInterval) -> Data? {
-        if let hit = memory[key], now().timeIntervalSince(hit.stamp) < ttl {
-            return hit.data
+        if let hit = memory[key] {
+            if now().timeIntervalSince(hit.stamp) < ttl {
+                return hit.data
+            } else {
+                memory.removeValue(forKey: key)
+            }
         }
         let url = fileURL(for: key)
         guard
@@ -38,8 +42,11 @@ public actor MetadataCache {
     }
 
     public func store(_ data: Data, for key: String) {
-        memory[key] = (now(), data)
-        try? data.write(to: fileURL(for: key), options: .atomic)
+        let currentDate = now()
+        memory[key] = (currentDate, data)
+        let url = fileURL(for: key)
+        try? data.write(to: url, options: .atomic)
+        try? FileManager.default.setAttributes([.modificationDate: currentDate], ofItemAtPath: url.path)
     }
 
     public func clear() {
@@ -65,6 +72,7 @@ public actor MetadataCache {
     public func sweep(olderThan age: TimeInterval) {
         let fm = FileManager.default
         let cutoff = now().addingTimeInterval(-age)
+        memory = memory.filter { $0.value.stamp >= cutoff }
         let urls = (try? fm.contentsOfDirectory(
             at: directory,
             includingPropertiesForKeys: [.contentModificationDateKey])) ?? []

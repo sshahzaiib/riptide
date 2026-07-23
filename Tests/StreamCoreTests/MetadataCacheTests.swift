@@ -27,14 +27,27 @@ final class MetadataCacheTests: XCTestCase {
     }
 
     func testTTLExpiry() async {
-        await MetadataCache(directory: dir).store(Data("x".utf8), for: "k")
+        let clock = MockClock()
+        let cache = MetadataCache(directory: dir, now: { clock.now })
+        await cache.store(Data("x".utf8), for: "k")
+        
+        let hit = await cache.data(for: "k", ttl: 60)
+        XCTAssertEqual(hit, Data("x".utf8))
+        
         // Reader whose clock is 1 hour ahead: a 60s TTL entry is expired.
-        let future = MetadataCache(directory: dir,
-                                   now: { Date(timeIntervalSinceNow: 3600) })
-        let expired = await future.data(for: "k", ttl: 60)
+        clock.now = clock.now.addingTimeInterval(3600)
+        let expired = await cache.data(for: "k", ttl: 60)
         XCTAssertNil(expired)
-        let alive = await future.data(for: "k", ttl: 7200)
+        let alive = await cache.data(for: "k", ttl: 7200)
         XCTAssertEqual(alive, Data("x".utf8))
+        
+        // Additional cross-instance check
+        let future = MetadataCache(directory: dir,
+                                   now: { clock.now })
+        let expiredCross = await future.data(for: "k", ttl: 60)
+        XCTAssertNil(expiredCross)
+        let aliveCross = await future.data(for: "k", ttl: 7200)
+        XCTAssertEqual(aliveCross, Data("x".utf8))
     }
 
     func testClearAndDiskUsage() async {
@@ -50,13 +63,24 @@ final class MetadataCacheTests: XCTestCase {
     }
 
     func testSweepRemovesOldFiles() async {
-        let cache = MetadataCache(directory: dir)
+        let clock = MockClock()
+        let cache = MetadataCache(directory: dir, now: { clock.now })
         await cache.store(Data("old".utf8), for: "k")
+        
         // Sweeper 1 hour in the future removes anything older than 60s.
-        let future = MetadataCache(directory: dir,
-                                   now: { Date(timeIntervalSinceNow: 3600) })
-        await future.sweep(olderThan: 60)
-        let gone = await MetadataCache(directory: dir).data(for: "k", ttl: .infinity)
+        clock.now = clock.now.addingTimeInterval(3600)
+        await cache.sweep(olderThan: 60)
+        
+        // Assert on the same instance
+        let gone = await cache.data(for: "k", ttl: .infinity)
         XCTAssertNil(gone)
+        
+        // Additional cross-instance check
+        let goneCross = await MetadataCache(directory: dir).data(for: "k", ttl: .infinity)
+        XCTAssertNil(goneCross)
     }
+}
+
+private final class MockClock: @unchecked Sendable {
+    var now = Date()
 }
