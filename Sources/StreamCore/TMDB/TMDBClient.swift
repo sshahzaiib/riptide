@@ -1,17 +1,26 @@
 import Foundation
 
+enum CacheTTL {
+    static let details: TimeInterval = 7 * 24 * 3600
+    static let season: TimeInterval = 24 * 3600
+    static let listing: TimeInterval = 30 * 60
+}
+
 /// Minimal TMDB v3 client authenticated with a v4 "API Read Access Token".
 public struct TMDBClient: Sendable {
     let bearerToken: String
     let session: URLSession
     let baseURL: URL
+    let cache: MetadataCache?
 
     public init(bearerToken: String,
                 session: URLSession = .shared,
-                baseURL: URL = URL(string: "https://api.themoviedb.org/3")!) {
+                baseURL: URL = URL(string: "https://api.themoviedb.org/3")!,
+                cache: MetadataCache? = nil) {
         self.bearerToken = bearerToken
         self.session = session
         self.baseURL = baseURL
+        self.cache = cache
     }
 
     func get(_ path: String, query: [String: String]) async throws -> Data {
@@ -39,6 +48,27 @@ public struct TMDBClient: Sendable {
         catch { throw TMDBError.badResponse }
     }
 
+    /// Cache-through fetch: cached bytes that decode win; anything else
+    /// (miss, expired, corrupt) falls through to the network and re-stores.
+    func cached<T: Decodable>(_ type: T.Type, path: String,
+                               query: [String: String],
+                               ttl: TimeInterval) async throws -> T {
+        let key = cacheKey(path: path, query: query)
+        if let cache, let hit = await cache.data(for: key, ttl: ttl),
+           let decoded = try? JSONDecoder().decode(T.self, from: hit) {
+            return decoded
+        }
+        let fresh = try await get(path, query: query)
+        let decoded = try decode(T.self, from: fresh)
+        if let cache { await cache.store(fresh, for: key) }
+        return decoded
+    }
+
+    private func cacheKey(path: String, query: [String: String]) -> String {
+        "tmdb:" + path + "?" + query.sorted { $0.key < $1.key }
+            .map { "\($0.key)=\($0.value)" }.joined(separator: "&")
+    }
+
     public func searchMovie(title: String, year: Int?) async throws -> [TMDBMovie] {
         var query = ["query": title]
         if let year { query["primary_release_year"] = String(year) }
@@ -54,39 +84,38 @@ public struct TMDBClient: Sendable {
     }
 
     public func episode(showID: Int, season: Int, episode: Int) async throws -> TMDBEpisode {
-        let data = try await get("tv/\(showID)/season/\(season)/episode/\(episode)", query: [:])
-        return try decode(TMDBEpisode.self, from: data)
+        try await cached(TMDBEpisode.self, path: "tv/\(showID)/season/\(season)/episode/\(episode)", query: [:], ttl: CacheTTL.season)
     }
 
     public func showDetails(id: Int) async throws -> TMDBShowDetails {
-        try decode(TMDBShowDetails.self, from: try await get("tv/\(id)", query: [:]))
+        try await cached(TMDBShowDetails.self, path: "tv/\(id)", query: [:], ttl: CacheTTL.details)
     }
 
     public func seasonEpisodes(showID: Int, season: Int) async throws -> [TMDBSeasonEpisode] {
-        let data = try await get("tv/\(showID)/season/\(season)", query: [:])
-        return try decode(TMDBSeasonEnvelope.self, from: data).episodes
+        let envelope = try await cached(TMDBSeasonEnvelope.self, path: "tv/\(showID)/season/\(season)", query: [:], ttl: CacheTTL.season)
+        return envelope.episodes
     }
 
     public func showCredits(id: Int) async throws -> [TMDBCastMember] {
-        let data = try await get("tv/\(id)/credits", query: [:])
-        return Array(try decode(TMDBCreditsEnvelope.self, from: data).cast.prefix(12))
+        let envelope = try await cached(TMDBCreditsEnvelope.self, path: "tv/\(id)/credits", query: [:], ttl: CacheTTL.details)
+        return Array(envelope.cast.prefix(12))
     }
 
     public func movieCredits(id: Int) async throws -> [TMDBCastMember] {
-        let data = try await get("movie/\(id)/credits", query: [:])
-        return Array(try decode(TMDBCreditsEnvelope.self, from: data).cast.prefix(12))
+        let envelope = try await cached(TMDBCreditsEnvelope.self, path: "movie/\(id)/credits", query: [:], ttl: CacheTTL.details)
+        return Array(envelope.cast.prefix(12))
     }
 
     public func movieDetails(id: Int) async throws -> TMDBMovieDetails {
-        try decode(TMDBMovieDetails.self, from: try await get("movie/\(id)", query: [:]))
+        try await cached(TMDBMovieDetails.self, path: "movie/\(id)", query: [:], ttl: CacheTTL.details)
     }
 
     public func externalIDs(movieID: Int) async throws -> TMDBExternalIDs {
-        try decode(TMDBExternalIDs.self, from: try await get("movie/\(movieID)/external_ids", query: [:]))
+        try await cached(TMDBExternalIDs.self, path: "movie/\(movieID)/external_ids", query: [:], ttl: CacheTTL.details)
     }
 
     public func externalIDs(showID: Int) async throws -> TMDBExternalIDs {
-        try decode(TMDBExternalIDs.self, from: try await get("tv/\(showID)/external_ids", query: [:]))
+        try await cached(TMDBExternalIDs.self, path: "tv/\(showID)/external_ids", query: [:], ttl: CacheTTL.details)
     }
 
     /// Clean title-treatment logo (transparent PNG, Stremio-style loading
@@ -100,10 +129,12 @@ public struct TMDBClient: Sendable {
     }
 
     private func logoPath(kind: String, id: Int) async throws -> String? {
-        let data = try await get("\(kind)/\(id)/images",
-                                 query: ["include_image_language": "en,null"])
-        let logos = try decode(TMDBImagesEnvelope.self, from: data).logos
-            .sorted { $0.voteAverage > $1.voteAverage }
+        let envelope = try await cached(TMDBImagesEnvelope.self,
+                                        path: "\(kind)/\(id)/images",
+                                        query: ["include_image_language": "en,null"],
+                                        ttl: CacheTTL.details)
+        let logos = envelope.logos.sorted { $0.voteAverage > $1.voteAverage }
         return (logos.first { $0.language == "en" } ?? logos.first)?.filePath
     }
 }
+
