@@ -34,6 +34,8 @@ struct SettingsView: View {
     private func clearCache() async {
         URLCache.shared.removeAllCachedResponses()
         await MetadataCache.shared.clear()
+        // Wait for URLCache disk cleanup to settle so we don't display a stale size.
+        try? await Task.sleep(nanoseconds: 500_000_000)
         await refreshCacheSize()
     }
 
@@ -90,7 +92,7 @@ struct SettingsView: View {
             }
             Section("Cache") {
                 LabeledContent("Storage used", value: cacheSize)
-                Button("Clear Cache") { Task { await clearCache() } }
+                Button("Clear cache") { Task { await clearCache() } }
             }
             Section("Subtitles") {
                 SubtitleStyleControls()
