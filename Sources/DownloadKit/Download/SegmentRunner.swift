@@ -9,8 +9,7 @@ public enum SegmentRunner {
     @discardableResult
     public static func run(
         url: URL, segment: SegmentState, fileHandle: FileHandle, session: URLSession,
-        limiters: [RateLimiter] = [], totalBytes: Int64, validator: String? = nil,
-        bufferSize: Int = 256 * 1024,
+        limiters: [RateLimiter] = [], totalBytes: Int64, bufferSize: Int = 256 * 1024,
         onProgress: @escaping @Sendable (Int64) async -> Void
     ) async throws -> Int64 {
         if segment.isComplete { return segment.downloaded }
@@ -20,10 +19,16 @@ public enum SegmentRunner {
 
         var request = URLRequest(url: url)
         request.setValue("bytes=\(from)-\(segment.end)", forHTTPHeaderField: "Range")
-        // If-Range makes the server fall back to a full 200 (not a partial 206)
-        // when the entity has changed since we started — so a debrid re-resolve
-        // to a different file can never be stitched onto our partial bytes.
-        if let validator { request.setValue(validator, forHTTPHeaderField: "If-Range") }
+        // Deliberately NOT sending If-Range: debrid re-resolves the same file to
+        // different CDN nodes whose ETags vary, so If-Range would spuriously get
+        // a 200 and collapse a valid resume into a single stream from 0. The
+        // resume identity guard is instead the total-size match in
+        // DownloadEngine; the 206 Content-Range check below still rejects a
+        // server that hands back the wrong offset.
+        // ponytail: size-match identity is enough for a personal debrid library
+        // (a specific release is byte-deterministic). If a same-size-but-
+        // different file ever corrupts a resume, reinstate If-Range on
+        // Last-Modified only (stable across nodes), not ETag.
         let (bytes, response) = try await session.bytes(for: request)
         guard let http = response as? HTTPURLResponse else { throw DownloadError.badResponse }
 

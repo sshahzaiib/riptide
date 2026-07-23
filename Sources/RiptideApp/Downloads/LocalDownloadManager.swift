@@ -41,6 +41,10 @@ final class LocalDownloadManager {
     /// updates to a few per second per download. Terminal states bypass this.
     private var lastUIPublish: [String: TimeInterval] = [:]
     private let uiPublishInterval: TimeInterval = 0.25
+    /// Slower throttle for writing live progress onto the DownloadRecord (used
+    /// by the paused row and cross-restart resume), separate from UI publishing.
+    private var lastStorePublish: [String: TimeInterval] = [:]
+    private let storePublishInterval: TimeInterval = 2
 
     init(store: LibraryStore, maxConcurrent: Int = 3) {
         self.store = store
@@ -142,6 +146,12 @@ final class LocalDownloadManager {
         guard let root = AppSettings.shared.mediaFolderURL else { return }
         if isDownloaded(item.itemKey) || isDownloading(item.itemKey) { return }
         let dest = DownloadPaths.destination(root: root, for: item)
+        // Resuming a paused/interrupted record: carry its known progress so the
+        // UI shows it immediately instead of flashing back to 0 while the engine
+        // re-resolves and re-probes.
+        let prior = try? store.downloadRecord(itemKey: item.itemKey)
+        let seedDone = prior?.downloadedBytes ?? 0
+        let seedTotal = prior?.totalBytes ?? 0
         do {
             let url = try await DebridResolver.directURL(for: item)
             try FileManager.default.createDirectory(
@@ -152,10 +162,10 @@ final class LocalDownloadManager {
             pending[item.itemKey] = Pending(path: dest.path, title: title(for: item),
                                             filename: item.filename)
             downloadingKeys.insert(item.itemKey)
-            active[item.itemKey] = DownloadProgress(bytesDownloaded: 0, totalBytes: nil,
-                                                    bytesPerSecond: 0, phase: .queued)
+            active[item.itemKey] = DownloadProgress(bytesDownloaded: seedDone,
+                totalBytes: seedTotal > 0 ? seedTotal : nil, bytesPerSecond: 0, phase: .queued)
             try? store.upsertDownload(itemKey: item.itemKey, localPath: dest.path,
-                state: .downloading, totalBytes: 0, downloadedBytes: 0,
+                state: .downloading, totalBytes: seedTotal, downloadedBytes: seedDone,
                 title: title(for: item), filename: item.filename)
             // Replay any event that landed during the `await queue.add` above,
             // now that the id→key mapping and pending info exist.
@@ -184,10 +194,14 @@ final class LocalDownloadManager {
     /// `.paused` so the reconciler leaves it alone across restarts.
     func pause(itemKey: String) {
         guard let rec = try? store.downloadRecord(itemKey: itemKey) else { return }
+        // Prefer the live in-flight bytes over the record's throttled snapshot.
+        let live = active[itemKey]
+        let total = live?.totalBytes ?? rec.totalBytes
+        let done = max(rec.downloadedBytes, live?.bytesDownloaded ?? 0)
         if let id = keyToId[itemKey] { Task { await queue.cancel(id) } }
         clear(itemKey)
         try? store.upsertDownload(itemKey: itemKey, localPath: rec.localPath, state: .paused,
-            totalBytes: rec.totalBytes, downloadedBytes: rec.downloadedBytes,
+            totalBytes: total, downloadedBytes: done,
             title: rec.title, filename: rec.filename)
     }
 
@@ -269,10 +283,23 @@ final class LocalDownloadManager {
                 title: info?.title ?? key, filename: info?.filename ?? "", errorMessage: msg)
         default:
             let now = ProcessInfo.processInfo.systemUptime
+            persistProgress(key, update.progress, now: now)
             if let last = lastUIPublish[key], now - last < uiPublishInterval { return }
             lastUIPublish[key] = now
             active[key] = update.progress
         }
+    }
+
+    /// Coarsely persist live bytes onto the record (throttled) so a pause or a
+    /// relaunch shows real progress — the record otherwise only gained
+    /// downloaded/total bytes on completion.
+    private func persistProgress(_ key: String, _ p: DownloadProgress, now: TimeInterval) {
+        guard let info = pending[key] else { return }
+        if let last = lastStorePublish[key], now - last < storePublishInterval { return }
+        lastStorePublish[key] = now
+        try? store.upsertDownload(itemKey: key, localPath: info.path, state: .downloading,
+            totalBytes: p.totalBytes ?? 0, downloadedBytes: p.bytesDownloaded,
+            title: info.title, filename: info.filename)
     }
 
     private func clear(_ key: String) {
@@ -282,6 +309,7 @@ final class LocalDownloadManager {
         keyToId[key] = nil
         pending[key] = nil
         lastUIPublish[key] = nil
+        lastStorePublish[key] = nil
     }
 
     private func reconcile() async {
