@@ -41,7 +41,10 @@ final class DiscoverModel {
         }
     }
 
-    func retry(_ shelf: ShelfID) { fetch(shelf, bypassCache: false) }
+    func retry(_ shelf: ShelfID) {
+        guard shelves[shelf]?.state != .loading else { return }
+        fetch(shelf, bypassCache: false)
+    }
 
     private func fetch(_ shelf: ShelfID, bypassCache: Bool) {
         shelves[shelf]?.state = .loading
