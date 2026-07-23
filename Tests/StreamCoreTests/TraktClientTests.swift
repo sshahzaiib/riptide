@@ -385,6 +385,40 @@ final class TraktClientTests: XCTestCase {
         XCTAssertEqual(entries2.first?.watchers, 42)
         XCTAssertEqual(requestCount, 1)
     }
+
+    func testTrendingMoviesBypassCache() async throws {
+        let cache = MetadataCache(directory: nil)
+        await cache.clear()
+        
+        let client = makeClient(tokens: nil)
+        client.cache = cache
+        
+        let key = "trakt:/movies/trending"
+        let oldPayload = """
+        [{"watchers":10,"movie":{"title":"Old Movie","year":2020,"ids":{"trakt":2,"slug":"old-movie","tmdb":12345}}}]
+        """
+        await cache.store(oldPayload.data(using: .utf8)!, for: key)
+        
+        nonisolated(unsafe) var requestCount = 0
+        MockURLProtocol.setHandler { _ in
+            requestCount += 1
+            return .json("""
+            [{"watchers":99,"movie":{"title":"New Movie","year":2026,"ids":{"trakt":3,"slug":"new-movie","tmdb":67890}}}]
+            """)
+        }
+        
+        let entries = try await client.trendingMovies(bypassCache: true)
+        XCTAssertEqual(entries.first?.watchers, 99)
+        XCTAssertEqual(requestCount, 1)
+        
+        if let cachedData = await cache.data(for: key, ttl: 30 * 60) {
+            let decoded = try TraktClient.decoder.decode([TraktTrendingEntry].self, from: cachedData)
+            XCTAssertEqual(decoded.first?.watchers, 99)
+            XCTAssertEqual(decoded.first?.movie?.title, "New Movie")
+        } else {
+            XCTFail("Cache should hold the fresh payload")
+        }
+    }
 }
 
 

@@ -35,7 +35,10 @@ final class DiscoverModel {
     func load(force: Bool = false) {
         guard force || !hasLoaded else { return }
         hasLoaded = true
-        for shelf in orderedShelves { fetch(shelf, bypassCache: force) }
+        for shelf in orderedShelves {
+            guard shelves[shelf]?.state != .loading else { continue }
+            fetch(shelf, bypassCache: force)
+        }
     }
 
     func retry(_ shelf: ShelfID) { fetch(shelf, bypassCache: false) }
@@ -77,17 +80,11 @@ final class DiscoverModel {
             })
         case .traktTrendingMovies:
             guard let trakt = TraktService.shared.client else { return [] }
-            let saved = trakt.cache
-            if bypassCache { trakt.cache = nil }
-            defer { trakt.cache = saved }
-            let entries = try await trakt.trendingMovies()
+            let entries = try await trakt.trendingMovies(bypassCache: bypassCache)
             return await resolve(entries.map { (isShow: false, media: $0.movie) })
         case .traktTrendingShows:
             guard let trakt = TraktService.shared.client else { return [] }
-            let saved = trakt.cache
-            if bypassCache { trakt.cache = nil }
-            defer { trakt.cache = saved }
-            let entries = try await trakt.trendingShows()
+            let entries = try await trakt.trendingShows(bypassCache: bypassCache)
             return await resolve(entries.map { (isShow: true, media: $0.show) })
         }
     }
@@ -100,42 +97,54 @@ final class DiscoverModel {
     ) async -> [SearchMedia] {
         let tmdb = TMDBClient(bearerToken: AppSettings.shared.tmdbToken,
                               cache: .shared)
-        let wanted: [(Int, Bool, Int)] = rows.prefix(20).enumerated()
-            .compactMap { index, row in
-                guard let id = row.media?.ids.tmdb else { return nil }
-                return (index, row.isShow, id)
+        let wanted = rows.prefix(20).enumerated()
+            .compactMap { index, row -> (index: Int, isShow: Bool, id: Int, title: String, year: Int?)? in
+                guard let media = row.media, let id = media.ids.tmdb else { return nil }
+                return (index, row.isShow, id, media.title, media.year)
             }
         var resolved: [(Int, SearchMedia)] = []
-        await withTaskGroup(of: (Int, SearchMedia)?.self) { group in
+        await withTaskGroup(of: (Int, SearchMedia).self) { group in
             var iterator = wanted.makeIterator()
-            var inFlight = 0
             func addNext() {
-                guard let (index, isShow, id) = iterator.next() else { return }
-                inFlight += 1
+                guard let item = iterator.next() else { return }
                 group.addTask {
-                    if isShow {
-                        guard let d = try? await tmdb.showDetails(id: id)
-                        else { return nil }
-                        return (index, .show(TMDBShow(
-                            id: id, name: d.name, overview: d.overview,
-                            posterPath: d.posterPath,
-                            firstAirDate: d.firstAirDate,
-                            voteAverage: d.voteAverage)))
+                    let dateStr = item.year.map { String($0) }
+                    if item.isShow {
+                        do {
+                            let d = try await tmdb.showDetails(id: item.id)
+                            return (item.index, .show(TMDBShow(
+                                id: item.id, name: d.name, overview: d.overview,
+                                posterPath: d.posterPath,
+                                firstAirDate: d.firstAirDate,
+                                voteAverage: d.voteAverage)))
+                        } catch {
+                            return (item.index, .show(TMDBShow(
+                                id: item.id, name: item.title, overview: "",
+                                posterPath: nil,
+                                firstAirDate: dateStr,
+                                voteAverage: 0.0)))
+                        }
                     } else {
-                        guard let d = try? await tmdb.movieDetails(id: id)
-                        else { return nil }
-                        return (index, .movie(TMDBMovie(
-                            id: id, title: d.title, overview: d.overview,
-                            posterPath: d.posterPath,
-                            releaseDate: d.releaseDate,
-                            voteAverage: d.voteAverage)))
+                        do {
+                            let d = try await tmdb.movieDetails(id: item.id)
+                            return (item.index, .movie(TMDBMovie(
+                                id: item.id, title: d.title, overview: d.overview,
+                                posterPath: d.posterPath,
+                                releaseDate: d.releaseDate,
+                                voteAverage: d.voteAverage)))
+                        } catch {
+                            return (item.index, .movie(TMDBMovie(
+                                id: item.id, title: item.title, overview: "",
+                                posterPath: nil,
+                                releaseDate: dateStr,
+                                voteAverage: 0.0)))
+                        }
                     }
                 }
             }
             for _ in 0..<6 { addNext() }
             for await result in group {
-                inFlight -= 1
-                if let result { resolved.append(result) }
+                resolved.append(result)
                 addNext()
             }
         }

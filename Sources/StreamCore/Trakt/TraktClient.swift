@@ -181,18 +181,18 @@ public final class TraktClient {
                                 from: try await send(path: "/sync/watchlist"))
     }
 
-    public func trendingMovies() async throws -> [TraktTrendingEntry] {
-        try await trending(path: "/movies/trending")
+    public func trendingMovies(bypassCache: Bool = false) async throws -> [TraktTrendingEntry] {
+        try await trending(path: "/movies/trending", bypassCache: bypassCache)
     }
 
-    public func trendingShows() async throws -> [TraktTrendingEntry] {
-        try await trending(path: "/shows/trending")
+    public func trendingShows(bypassCache: Bool = false) async throws -> [TraktTrendingEntry] {
+        try await trending(path: "/shows/trending", bypassCache: bypassCache)
     }
 
     /// Public (client-id only) GET with a 30-minute cache.
-    private func trending(path: String) async throws -> [TraktTrendingEntry] {
+    private func trending(path: String, bypassCache: Bool) async throws -> [TraktTrendingEntry] {
         let key = "trakt:\(path)"
-        if let cache, let hit = await cache.data(for: key, ttl: 30 * 60),
+        if !bypassCache, let cache, let hit = await cache.data(for: key, ttl: 30 * 60),
            let decoded = try? Self.decoder.decode([TraktTrendingEntry].self,
                                                   from: hit) {
             return decoded
