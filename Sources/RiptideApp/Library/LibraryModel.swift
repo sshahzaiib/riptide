@@ -7,6 +7,8 @@ struct ShowGroup: Identifiable {
     let title: String
     let posterPath: String?
     let episodes: [LibraryItem]
+
+    var tmdbID: Int? { episodes.compactMap(\.tmdbID).first }
 }
 
 struct ContinueEntry: Identifiable {
