@@ -36,6 +36,7 @@ final class TraktService {
     private func rebuildClient() {
         guard isConfigured else { client = nil; return }
         let built = TraktClient(clientID: clientID, clientSecret: clientSecret, tokens: tokens)
+        built.cache = .shared
         built.onTokensRefreshed = { [weak self] fresh in self?.persist(tokens: fresh) }
         client = built
     }

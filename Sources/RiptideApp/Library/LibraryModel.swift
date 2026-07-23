@@ -95,7 +95,7 @@ final class LibraryModel {
                 services.append(AllDebridService(client: AllDebridClient(token: adTokenUsed)))
             }
             let refresher = LibraryRefresher(services: services,
-                                             tmdb: TMDBClient(bearerToken: settings.tmdbToken),
+                                             tmdb: TMDBClient(bearerToken: settings.tmdbToken, cache: .shared),
                                              store: store)
             let summary = try await refresher.refresh()
             await TraktService.shared.pullSync(store: store)

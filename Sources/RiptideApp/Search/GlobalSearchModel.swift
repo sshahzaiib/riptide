@@ -65,7 +65,7 @@ final class GlobalSearchModel {
             return
         }
         searching = true
-        let tmdb = TMDBClient(bearerToken: AppSettings.shared.tmdbToken)
+        let tmdb = TMDBClient(bearerToken: AppSettings.shared.tmdbToken, cache: .shared)
         async let movieHits = tmdb.searchMovie(title: q, year: nil)
         async let showHits = tmdb.searchTV(title: q, year: nil)
         let m = (try? await movieHits) ?? []

@@ -207,7 +207,7 @@ struct PlayerWindowView: View {
             guard let id = current.tmdbID else { logoURL = nil; return }
             let token = AppSettings.shared.tmdbToken
             guard !token.isEmpty else { return }
-            let client = TMDBClient(bearerToken: token)
+            let client = TMDBClient(bearerToken: token, cache: .shared)
             // Loading-screen art (best-effort, cached per title — prev/next
             // within a show reuse it instantly).
             if logoFetchedFor != id {
