@@ -28,15 +28,21 @@ final class DiscoverModel {
 
     /// Watchlist shelf only exists when Trakt is connected.
     var orderedShelves: [ShelfID] {
-        ShelfID.allCases.filter {
-            $0 != .watchlist || TraktService.shared.client != nil
+        ShelfID.allCases.filter { shelf in
+            switch shelf {
+            case .watchlist:
+                return TraktService.shared.client != nil && TraktService.shared.isConnected
+            case .traktTrendingMovies, .traktTrendingShows:
+                return TraktService.shared.client != nil
+            default:
+                return true
+            }
         }
     }
 
     func load(force: Bool = false) {
         for shelf in orderedShelves {
             guard shelves[shelf]?.state != .loading else { continue }
-            if !force && shelf != .watchlist && shelves[shelf]?.state == .loaded { continue }
             fetch(shelf, bypassCache: force)
         }
     }
@@ -47,13 +53,18 @@ final class DiscoverModel {
     }
 
     private func fetch(_ shelf: ShelfID, bypassCache: Bool) {
-        shelves[shelf]?.state = .loading
+        let wasLoaded = shelves[shelf]?.state == .loaded
+        if !wasLoaded {
+            shelves[shelf]?.state = .loading
+        }
         Task {
             do {
                 let items = try await items(for: shelf, bypassCache: bypassCache)
                 shelves[shelf] = Shelf(items: items, state: .loaded)
             } catch {
-                shelves[shelf]?.state = .failed
+                if !wasLoaded {
+                    shelves[shelf]?.state = .failed
+                }
             }
         }
     }
