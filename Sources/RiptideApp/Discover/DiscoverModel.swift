@@ -36,7 +36,7 @@ final class DiscoverModel {
     func load(force: Bool = false) {
         for shelf in orderedShelves {
             guard shelves[shelf]?.state != .loading else { continue }
-            if !force && shelves[shelf]?.state == .loaded { continue }
+            if !force && shelf != .watchlist && shelves[shelf]?.state == .loaded { continue }
             fetch(shelf, bypassCache: force)
         }
     }
