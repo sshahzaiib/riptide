@@ -267,6 +267,34 @@ public final class TraktClient {
                            body: try JSONEncoder().encode(Self.historyBody(media)))
     }
 
+    // MARK: - Watchlist writes
+
+    private struct WatchlistBody: Encodable {
+        struct Ref: Encodable {
+            struct IDs: Encodable { let tmdb: Int }
+            let ids: IDs
+        }
+        var movies: [Ref]?
+        var shows: [Ref]?
+
+        init(tmdbID: Int, isShow: Bool) {
+            let ref = Ref(ids: .init(tmdb: tmdbID))
+            if isShow { shows = [ref] } else { movies = [ref] }
+        }
+    }
+
+    /// Adds one movie/show to the user's watchlist. OAuth required.
+    public func addToWatchlist(tmdbID: Int, isShow: Bool) async throws {
+        _ = try await send(path: "/sync/watchlist", method: "POST",
+                           body: try JSONEncoder().encode(WatchlistBody(tmdbID: tmdbID, isShow: isShow)))
+    }
+
+    /// Removes one movie/show from the user's watchlist. OAuth required.
+    public func removeFromWatchlist(tmdbID: Int, isShow: Bool) async throws {
+        _ = try await send(path: "/sync/watchlist/remove", method: "POST",
+                           body: try JSONEncoder().encode(WatchlistBody(tmdbID: tmdbID, isShow: isShow)))
+    }
+
     static func historyBody(_ media: [TraktMedia]) -> HistoryBody {
         var movieIDs: Set<Int> = []
         var episodesByShow: [Int: [Int: Set<Int>]] = [:]   // show tmdb → season → episodes

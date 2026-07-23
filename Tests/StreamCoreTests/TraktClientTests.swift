@@ -419,6 +419,56 @@ final class TraktClientTests: XCTestCase {
             XCTFail("Cache should hold the fresh payload")
         }
     }
+
+    func testAddToWatchlistMovieBody() async throws {
+        nonisolated(unsafe) var capturedPath: String?
+        nonisolated(unsafe) var capturedMethod: String?
+        nonisolated(unsafe) var capturedAuth: String?
+        nonisolated(unsafe) var capturedBody: Data?
+        MockURLProtocol.setHandler { req in
+            capturedPath = req.url?.path
+            capturedMethod = req.httpMethod
+            capturedAuth = req.value(forHTTPHeaderField: "Authorization")
+            capturedBody = req.bodyData
+            return .json("{}", status: 201)
+        }
+        try await makeClient(tokens: tok()).addToWatchlist(tmdbID: 603, isShow: false)
+        XCTAssertEqual(capturedPath, "/sync/watchlist")
+        XCTAssertEqual(capturedMethod, "POST")
+        XCTAssertEqual(capturedAuth, "Bearer at")
+        let json = try JSONSerialization.jsonObject(
+            with: XCTUnwrap(capturedBody)) as! [String: Any]
+        let movies = json["movies"] as! [[String: Any]]
+        XCTAssertEqual(movies.count, 1)
+        XCTAssertEqual(movies[0]["ids"] as! [String: Int], ["tmdb": 603])
+        XCTAssertNil(json["shows"])
+    }
+
+    func testRemoveFromWatchlistShowBody() async throws {
+        nonisolated(unsafe) var capturedPath: String?
+        nonisolated(unsafe) var capturedBody: Data?
+        MockURLProtocol.setHandler { req in
+            capturedPath = req.url?.path
+            capturedBody = req.bodyData
+            return .json("{}", status: 200)
+        }
+        try await makeClient(tokens: tok()).removeFromWatchlist(tmdbID: 1396, isShow: true)
+        XCTAssertEqual(capturedPath, "/sync/watchlist/remove")
+        let json = try JSONSerialization.jsonObject(
+            with: XCTUnwrap(capturedBody)) as! [String: Any]
+        let shows = json["shows"] as! [[String: Any]]
+        XCTAssertEqual(shows[0]["ids"] as! [String: Int], ["tmdb": 1396])
+        XCTAssertNil(json["movies"])
+    }
+
+    func testWatchlistWriteWithoutTokensThrowsUnauthorized() async {
+        do {
+            try await makeClient(tokens: nil).addToWatchlist(tmdbID: 1, isShow: false)
+            XCTFail("expected unauthorized")
+        } catch let e as TraktError {
+            guard case .unauthorized = e else { return XCTFail("wrong error: \(e)") }
+        } catch { XCTFail("wrong error: \(error)") }
+    }
 }
 
 
