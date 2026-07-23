@@ -83,6 +83,30 @@ public struct TMDBClient: Sendable {
         return try decode(TMDBSearchEnvelope<TMDBShow>.self, from: data).results
     }
 
+    public func trendingMovies() async throws -> [TMDBMovie] {
+        try await cached(TMDBSearchEnvelope<TMDBMovie>.self,
+                         path: "trending/movie/day", query: [:],
+                         ttl: CacheTTL.listing).results
+    }
+
+    public func trendingTV() async throws -> [TMDBShow] {
+        try await cached(TMDBSearchEnvelope<TMDBShow>.self,
+                         path: "trending/tv/day", query: [:],
+                         ttl: CacheTTL.listing).results
+    }
+
+    public func popularMovies() async throws -> [TMDBMovie] {
+        try await cached(TMDBSearchEnvelope<TMDBMovie>.self,
+                         path: "movie/popular", query: [:],
+                         ttl: CacheTTL.listing).results
+    }
+
+    public func popularTV() async throws -> [TMDBShow] {
+        try await cached(TMDBSearchEnvelope<TMDBShow>.self,
+                         path: "tv/popular", query: [:],
+                         ttl: CacheTTL.listing).results
+    }
+
     public func episode(showID: Int, season: Int, episode: Int) async throws -> TMDBEpisode {
         try await cached(TMDBEpisode.self, path: "tv/\(showID)/season/\(season)/episode/\(episode)", query: [:], ttl: CacheTTL.season)
     }
