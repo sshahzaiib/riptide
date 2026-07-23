@@ -45,8 +45,10 @@ public actor MetadataCache {
         let currentDate = now()
         memory[key] = (currentDate, data)
         let url = fileURL(for: key)
-        try? data.write(to: url, options: .atomic)
-        try? FileManager.default.setAttributes([.modificationDate: currentDate], ofItemAtPath: url.path)
+        do {
+            try data.write(to: url, options: .atomic)
+            try? FileManager.default.setAttributes([.modificationDate: currentDate], ofItemAtPath: url.path)
+        } catch {}
     }
 
     public func clear() {

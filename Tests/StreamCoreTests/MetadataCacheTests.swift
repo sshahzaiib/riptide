@@ -76,7 +76,7 @@ final class MetadataCacheTests: XCTestCase {
         XCTAssertNil(gone)
         
         // Additional cross-instance check
-        let goneCross = await MetadataCache(directory: dir).data(for: "k", ttl: .infinity)
+        let goneCross = await MetadataCache(directory: dir, now: { clock.now }).data(for: "k", ttl: .infinity)
         XCTAssertNil(goneCross)
     }
 }
