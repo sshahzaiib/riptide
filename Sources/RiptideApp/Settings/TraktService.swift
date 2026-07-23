@@ -14,7 +14,7 @@ final class TraktService {
     private(set) var clientSecret: String
     private(set) var tokens: TraktTokens?
     private(set) var needsReauth = false
-    private var client: TraktClient?
+    private(set) var client: TraktClient?
     /// Session cache: "movie-603"/"show-1399" -> user rating.
     private var ratingsCache: [String: Int]?
     /// Dedupes the initial ratings fetch when several menus appear at once.
