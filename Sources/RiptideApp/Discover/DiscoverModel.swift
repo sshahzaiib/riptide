@@ -4,6 +4,8 @@ import StreamCore
 
 @Observable @MainActor
 final class DiscoverModel {
+    static let shared = DiscoverModel()
+
     enum ShelfID: String, CaseIterable, Identifiable {
         case watchlist = "Watchlist"
         case trendingMovies = "Trending Movies"
@@ -23,7 +25,6 @@ final class DiscoverModel {
 
     private(set) var shelves: [ShelfID: Shelf] = Dictionary(
         uniqueKeysWithValues: ShelfID.allCases.map { ($0, Shelf()) })
-    private var hasLoaded = false
 
     /// Watchlist shelf only exists when Trakt is connected.
     var orderedShelves: [ShelfID] {
@@ -33,10 +34,9 @@ final class DiscoverModel {
     }
 
     func load(force: Bool = false) {
-        guard force || !hasLoaded else { return }
-        hasLoaded = true
         for shelf in orderedShelves {
             guard shelves[shelf]?.state != .loading else { continue }
+            if !force && shelves[shelf]?.state == .loaded { continue }
             fetch(shelf, bypassCache: force)
         }
     }

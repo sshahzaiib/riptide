@@ -4,7 +4,7 @@ import StreamCore
 
 struct DiscoverView: View {
     @Environment(LibraryModel.self) private var library
-    @State private var model = DiscoverModel()
+    private let model = DiscoverModel.shared
 
     var body: some View {
         ScrollView {
@@ -45,7 +45,7 @@ struct DiscoverView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: 12) {
                         ForEach(shelf.items) { media in
-                            NavigationLink(destination: destination(for: media)) {
+                            NavigationLink(destination: DiscoverDestination(media: media, library: library)) {
                                 card(for: media)
                             }
                             .buttonStyle(.plain)
@@ -62,7 +62,7 @@ struct DiscoverView: View {
                    posterPath: media.posterPath)
             .frame(width: 160)
             .overlay(alignment: .topTrailing) {
-                if library.hasLibraryEntry(tmdbID: media.tmdbID) {
+                if library.hasLibraryEntry(tmdbID: media.tmdbID, isShow: media.isShow) {
                     Image(systemName: "checkmark.circle.fill")
                         .symbolRenderingMode(.palette)
                         .foregroundStyle(.white, .green)
@@ -71,28 +71,35 @@ struct DiscoverView: View {
             }
     }
 
-    /// In-library titles open their library page; everything else opens
-    /// the TMDB search detail (Find Streams) page.
-    @ViewBuilder
-    private func destination(for media: SearchMedia) -> some View {
-        if media.isShow,
-           let group = library.shows.first(where: { $0.tmdbID == media.tmdbID }) {
-            ShowDetailView(show: group)
-        } else if !media.isShow,
-                  let item = library.libraryItem(tmdbID: media.tmdbID,
-                                                 season: nil, episode: nil) {
-            ItemDetailView(item: item)
-        } else {
-            SearchDetailView(media: media)
-        }
-    }
-
     private var skeletonRow: some View {
         HStack(spacing: 12) {
             ForEach(0..<6, id: \.self) { _ in
                 RoundedRectangle(cornerRadius: 8)
                     .fill(.quaternary)
                     .frame(width: 160, height: 240)
+            }
+        }
+    }
+}
+
+struct DiscoverDestination: View {
+    let media: SearchMedia
+    let library: LibraryModel
+
+    var body: some View {
+        if media.isShow {
+            if library.hasLibraryEntry(tmdbID: media.tmdbID, isShow: true),
+               let group = library.shows.first(where: { $0.tmdbID == media.tmdbID }) {
+                ShowDetailView(show: group)
+            } else {
+                SearchDetailView(media: media)
+            }
+        } else {
+            if library.hasLibraryEntry(tmdbID: media.tmdbID, isShow: false),
+               let item = library.libraryItem(tmdbID: media.tmdbID, season: nil, episode: nil) {
+                ItemDetailView(item: item)
+            } else {
+                SearchDetailView(media: media)
             }
         }
     }

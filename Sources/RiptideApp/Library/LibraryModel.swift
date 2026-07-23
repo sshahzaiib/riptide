@@ -141,4 +141,11 @@ final class LibraryModel {
     func hasLibraryEntry(tmdbID: Int) -> Bool {
         items.contains { $0.tmdbID == tmdbID }
     }
+
+    func hasLibraryEntry(tmdbID: Int, isShow: Bool) -> Bool {
+        items.contains { item in
+            item.tmdbID == tmdbID && (isShow ? item.mediaKind == "episode" : item.mediaKind == "movie")
+        }
+    }
 }
+
