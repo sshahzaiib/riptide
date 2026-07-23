@@ -163,7 +163,7 @@ struct SearchDetailView: View {
 
     private func resolveIMDBID() async throws -> String {
         if let imdbID { return imdbID }
-        let tmdb = TMDBClient(bearerToken: AppSettings.shared.tmdbToken)
+        let tmdb = TMDBClient(bearerToken: AppSettings.shared.tmdbToken, cache: .shared)
         let ids: TMDBExternalIDs = media.isShow
             ? try await tmdb.externalIDs(showID: media.tmdbID)
             : try await tmdb.externalIDs(movieID: media.tmdbID)
@@ -176,7 +176,7 @@ struct SearchDetailView: View {
 
     private func loadShowIfNeeded() async {
         guard media.isShow else { return }
-        let tmdb = TMDBClient(bearerToken: AppSettings.shared.tmdbToken)
+        let tmdb = TMDBClient(bearerToken: AppSettings.shared.tmdbToken, cache: .shared)
         if let details = try? await tmdb.showDetails(id: media.tmdbID) {
             seasonNumbers = details.seasonNumbers
             if !seasonNumbers.contains(season) {
@@ -188,7 +188,7 @@ struct SearchDetailView: View {
     private func loadEpisodes() async {
         guard media.isShow else { return }
         episodes = []   // don't render stale prior-season rows under the new season
-        let tmdb = TMDBClient(bearerToken: AppSettings.shared.tmdbToken)
+        let tmdb = TMDBClient(bearerToken: AppSettings.shared.tmdbToken, cache: .shared)
         episodes = (try? await tmdb.seasonEpisodes(showID: media.tmdbID, season: season)) ?? []
     }
 }

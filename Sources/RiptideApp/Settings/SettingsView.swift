@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import StreamCore
 
 struct SettingsView: View {
     /// Adopt externally-downloaded files in the media folder; returns the
@@ -20,6 +21,23 @@ struct SettingsView: View {
     private var streamingCache: StreamingCachePreset = .default
 
     private var trakt: TraktService { TraktService.shared }
+
+    @State private var cacheSize: String = "Calculating…"
+
+    private func refreshCacheSize() async {
+        let metadata = await MetadataCache.shared.diskBytesUsed()
+        let total = Int64(URLCache.shared.currentDiskUsage) + metadata
+        cacheSize = ByteCountFormatter.string(fromByteCount: total,
+                                              countStyle: .file)
+    }
+
+    private func clearCache() async {
+        URLCache.shared.removeAllCachedResponses()
+        await MetadataCache.shared.clear()
+        // Wait for URLCache disk cleanup to settle so we don't display a stale size.
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        await refreshCacheSize()
+    }
 
     var body: some View {
         Form {
@@ -71,6 +89,10 @@ struct SettingsView: View {
                     Text("Finds files already in the folder (e.g. downloaded from a debrid website) and marks them available offline.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+            }
+            Section("Cache") {
+                LabeledContent("Storage used", value: cacheSize)
+                Button("Clear cache") { Task { await clearCache() } }
             }
             Section("Subtitles") {
                 SubtitleStyleControls()
@@ -139,6 +161,7 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .sheet(isPresented: $showTraktConnect) { TraktConnectSheet() }
+        .task { await refreshCacheSize() }
         // The grouped form's internal scroll view lays out at ~580pt minimum
         // for this content and overflows (clips both edges) below that —
         // measured via offscreen NSHostingView renders. Min 600 clears it;

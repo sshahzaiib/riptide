@@ -7,6 +7,8 @@ struct ShowGroup: Identifiable {
     let title: String
     let posterPath: String?
     let episodes: [LibraryItem]
+
+    var tmdbID: Int? { episodes.compactMap(\.tmdbID).first }
 }
 
 struct ContinueEntry: Identifiable {
@@ -95,7 +97,7 @@ final class LibraryModel {
                 services.append(AllDebridService(client: AllDebridClient(token: adTokenUsed)))
             }
             let refresher = LibraryRefresher(services: services,
-                                             tmdb: TMDBClient(bearerToken: settings.tmdbToken),
+                                             tmdb: TMDBClient(bearerToken: settings.tmdbToken, cache: .shared),
                                              store: store)
             let summary = try await refresher.refresh()
             await TraktService.shared.pullSync(store: store)
@@ -139,4 +141,11 @@ final class LibraryModel {
     func hasLibraryEntry(tmdbID: Int) -> Bool {
         items.contains { $0.tmdbID == tmdbID }
     }
+
+    func hasLibraryEntry(tmdbID: Int, isShow: Bool) -> Bool {
+        items.contains { item in
+            item.tmdbID == tmdbID && (isShow ? item.mediaKind == "episode" : item.mediaKind == "movie")
+        }
+    }
 }
+

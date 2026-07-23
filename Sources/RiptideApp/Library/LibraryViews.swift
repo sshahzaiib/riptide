@@ -4,6 +4,7 @@ import StreamCore
 import class StreamCore.LibraryItem
 
 enum SidebarSection: String, CaseIterable, Identifiable {
+    case discover = "Discover"
     case continueWatching = "Continue Watching"
     case movies = "Movies"
     case shows = "TV Shows"
@@ -12,6 +13,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var icon: String {
         switch self {
+        case .discover: "safari"
         case .continueWatching: "play.circle"
         case .movies: "film"
         case .shows: "tv"
@@ -189,6 +191,7 @@ struct LibraryRootView: View {
     @ViewBuilder
     private var detailView: some View {
         switch model.sidebarSelection {
+        case .discover: DiscoverView()
         case .continueWatching: ContinueWatchingGrid()
         case .movies: MovieGrid()
         case .shows: ShowsList()

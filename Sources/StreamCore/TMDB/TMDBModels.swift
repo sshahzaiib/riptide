@@ -37,6 +37,13 @@ public struct TMDBShow: Sendable, Equatable, Decodable {
         case firstAirDate = "first_air_date"
         case voteAverage = "vote_average"
     }
+
+    public init(id: Int, name: String, overview: String, posterPath: String?,
+                firstAirDate: String?, voteAverage: Double) {
+        self.id = id; self.name = name; self.overview = overview
+        self.posterPath = posterPath; self.firstAirDate = firstAirDate
+        self.voteAverage = voteAverage
+    }
 }
 
 public struct TMDBEpisode: Sendable, Equatable, Decodable {
@@ -79,6 +86,7 @@ public struct TMDBShowDetails: Sendable, Equatable, Decodable {
     public let firstAirDate: String?
     public let numberOfSeasons: Int?
     public let seasons: [SeasonRef]?
+    public let posterPath: String?
 
     public struct SeasonRef: Sendable, Equatable, Decodable {
         public let seasonNumber: Int
@@ -99,6 +107,7 @@ public struct TMDBShowDetails: Sendable, Equatable, Decodable {
         case voteAverage = "vote_average"
         case firstAirDate = "first_air_date"
         case numberOfSeasons = "number_of_seasons"
+        case posterPath = "poster_path"
     }
 }
 
@@ -138,12 +147,14 @@ public struct TMDBMovieDetails: Sendable, Equatable, Decodable {
     public let voteAverage: Double
     public let releaseDate: String?
     public let runtime: Int?
+    public let posterPath: String?
 
     enum CodingKeys: String, CodingKey {
         case id, title, overview, runtime
         case backdropPath = "backdrop_path"
         case voteAverage = "vote_average"
         case releaseDate = "release_date"
+        case posterPath = "poster_path"
     }
 }
 

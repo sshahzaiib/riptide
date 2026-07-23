@@ -56,7 +56,7 @@ struct ItemDetailView: View {
             let token = AppSettings.shared.tmdbToken
             guard let tmdbID = item.tmdbID, item.mediaKind == "movie",
                   !token.isEmpty else { return }
-            let tmdb = TMDBClient(bearerToken: token)
+            let tmdb = TMDBClient(bearerToken: token, cache: .shared)
             details = try? await tmdb.movieDetails(id: tmdbID)
             cast = (try? await tmdb.movieCredits(id: tmdbID)) ?? []
             imdbID = (try? await tmdb.externalIDs(movieID: tmdbID))?.imdbID
@@ -280,7 +280,7 @@ struct ShowDetailView: View {
             model = pageModel
             let token = AppSettings.shared.tmdbToken
             guard !token.isEmpty else { return }
-            await pageModel.load(tmdb: TMDBClient(bearerToken: token))
+            await pageModel.load(tmdb: TMDBClient(bearerToken: token, cache: .shared))
         }
         .onReceive(NotificationCenter.default.publisher(
             for: NSWindow.didBecomeKeyNotification)) { _ in

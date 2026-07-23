@@ -34,6 +34,7 @@ public final class TraktClient {
     public var tokens: TraktTokens?
     /// Fired whenever a 401-triggered refresh succeeds; the app persists them.
     public var onTokensRefreshed: ((TraktTokens) -> Void)?
+    public var cache: MetadataCache?
 
     let clientID: String
     private let clientSecret: String
@@ -174,6 +175,42 @@ public final class TraktClient {
     }
 
     // MARK: Sync pulls
+
+    public func watchlist() async throws -> [TraktWatchlistEntry] {
+        try Self.decoder.decode([TraktWatchlistEntry].self,
+                                from: try await send(path: "/sync/watchlist"))
+    }
+
+    public func trendingMovies(bypassCache: Bool = false) async throws -> [TraktTrendingEntry] {
+        try await trending(path: "/movies/trending", bypassCache: bypassCache)
+    }
+
+    public func trendingShows(bypassCache: Bool = false) async throws -> [TraktTrendingEntry] {
+        try await trending(path: "/shows/trending", bypassCache: bypassCache)
+    }
+
+    /// Public (client-id only) GET with a 30-minute cache.
+    private func trending(path: String, bypassCache: Bool) async throws -> [TraktTrendingEntry] {
+        let key = "trakt:\(path)"
+        if !bypassCache, let cache, let hit = await cache.data(for: key, ttl: 30 * 60),
+           let decoded = try? Self.decoder.decode([TraktTrendingEntry].self,
+                                                  from: hit) {
+            return decoded
+        }
+        let (data, response) = try await session.data(
+            for: request(path: path, method: "GET", body: nil,
+                         authorized: false))
+        guard let http = response as? HTTPURLResponse else {
+            throw TraktError.badResponse
+        }
+        guard (200...299).contains(http.statusCode) else {
+            throw TraktError.http(http.statusCode)
+        }
+        let decoded = try Self.decoder.decode([TraktTrendingEntry].self,
+                                              from: data)
+        if let cache { await cache.store(data, for: key) }
+        return decoded
+    }
 
     public func playback() async throws -> [TraktPlaybackEntry] {
         // extended=full inlines runtimes — the percent→seconds base when the

@@ -21,6 +21,12 @@ struct Riptide: App {
     private let store: LibraryStore
 
     init() {
+        // AsyncImage uses URLSession.shared → URLCache.shared; a bigger disk
+        // cache makes TMDB posters/stills persist across launches.
+        URLCache.shared = URLCache(memoryCapacity: 64 << 20,
+                                   diskCapacity: 1 << 30)
+        Task { await MetadataCache.shared.sweep(olderThan: 30 * 24 * 3600) }
+
         do { store = try LibraryStore.onDisk() }
         catch { fatalError("Failed to open library store: \(error)") }
         // Unbundled executable (swift run): without .regular activation the

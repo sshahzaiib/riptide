@@ -104,4 +104,64 @@ final class TMDBClientTests: XCTestCase {
         let path = try await client().logoPath(movieID: 603)
         XCTAssertNil(path)
     }
+
+    func testTrendingMovies() async throws {
+        nonisolated(unsafe) var seen: URLRequest?
+        MockURLProtocol.setHandler { request in
+            seen = request
+            return .json("""
+            {"page":1,"results":[{"id":603,"title":"The Matrix",
+              "overview":"A hacker...","poster_path":"/p.jpg",
+              "release_date":"1999-03-30","vote_average":8.2}]}
+            """)
+        }
+        let results = try await client().trendingMovies()
+        XCTAssertEqual(results.map(\.id), [603])
+        XCTAssertEqual(seen?.url?.path, "/3/trending/movie/day")
+    }
+
+    func testPopularTV() async throws {
+        nonisolated(unsafe) var seen: URLRequest?
+        MockURLProtocol.setHandler { request in
+            seen = request
+            return .json("""
+            {"page":1,"results":[{"id":1396,"name":"Breaking Bad",
+              "overview":"...","poster_path":"/bb.jpg",
+              "first_air_date":"2008-01-20","vote_average":8.9}]}
+            """)
+        }
+        let results = try await client().popularTV()
+        XCTAssertEqual(results.map(\.name), ["Breaking Bad"])
+        XCTAssertEqual(seen?.url?.path, "/3/tv/popular")
+    }
+
+    func testTrendingTV() async throws {
+        nonisolated(unsafe) var seen: URLRequest?
+        MockURLProtocol.setHandler { request in
+            seen = request
+            return .json("""
+            {"page":1,"results":[{"id":1396,"name":"Breaking Bad",
+              "overview":"...","poster_path":"/bb.jpg",
+              "first_air_date":"2008-01-20","vote_average":8.9}]}
+            """)
+        }
+        let results = try await client().trendingTV()
+        XCTAssertEqual(results.map(\.name), ["Breaking Bad"])
+        XCTAssertEqual(seen?.url?.path, "/3/trending/tv/day")
+    }
+
+    func testPopularMovies() async throws {
+        nonisolated(unsafe) var seen: URLRequest?
+        MockURLProtocol.setHandler { request in
+            seen = request
+            return .json("""
+            {"page":1,"results":[{"id":603,"title":"The Matrix",
+              "overview":"A hacker...","poster_path":"/p.jpg",
+              "release_date":"1999-03-30","vote_average":8.2}]}
+            """)
+        }
+        let results = try await client().popularMovies()
+        XCTAssertEqual(results.map(\.id), [603])
+        XCTAssertEqual(seen?.url?.path, "/3/movie/popular")
+    }
 }

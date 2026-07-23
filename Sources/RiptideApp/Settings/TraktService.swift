@@ -14,7 +14,7 @@ final class TraktService {
     private(set) var clientSecret: String
     private(set) var tokens: TraktTokens?
     private(set) var needsReauth = false
-    private var client: TraktClient?
+    private(set) var client: TraktClient?
     /// Session cache: "movie-603"/"show-1399" -> user rating.
     private var ratingsCache: [String: Int]?
     /// Dedupes the initial ratings fetch when several menus appear at once.
@@ -36,6 +36,7 @@ final class TraktService {
     private func rebuildClient() {
         guard isConfigured else { client = nil; return }
         let built = TraktClient(clientID: clientID, clientSecret: clientSecret, tokens: tokens)
+        built.cache = .shared
         built.onTokensRefreshed = { [weak self] fresh in self?.persist(tokens: fresh) }
         client = built
     }
