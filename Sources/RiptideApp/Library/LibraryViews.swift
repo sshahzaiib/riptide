@@ -5,6 +5,7 @@ import class StreamCore.LibraryItem
 
 enum SidebarSection: String, CaseIterable, Identifiable {
     case discover = "Discover"
+    case watchlist = "Watchlist"
     case continueWatching = "Continue Watching"
     case movies = "Movies"
     case shows = "TV Shows"
@@ -14,6 +15,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .discover: "safari"
+        case .watchlist: "bookmark"
         case .continueWatching: "play.circle"
         case .movies: "film"
         case .shows: "tv"
@@ -43,9 +45,15 @@ struct LibraryRootView: View {
         _localDownloads = State(initialValue: LocalDownloadManager(store: store))
     }
 
+    private var visibleSections: [SidebarSection] {
+        SidebarSection.allCases.filter {
+            $0 != .watchlist || TraktService.shared.isConnected
+        }
+    }
+
     var body: some View {
         NavigationSplitView {
-            List(SidebarSection.allCases, selection: $model.sidebarSelection) { section in
+            List(visibleSections, selection: $model.sidebarSelection) { section in
                 Label(section.rawValue, systemImage: section.icon)
                     .badge(section == .downloads ? downloads.activeCount : 0)
                     .tag(section)
@@ -192,6 +200,7 @@ struct LibraryRootView: View {
     private var detailView: some View {
         switch model.sidebarSelection {
         case .discover: DiscoverView()
+        case .watchlist: WatchlistView()
         case .continueWatching: ContinueWatchingGrid()
         case .movies: MovieGrid()
         case .shows: ShowsList()
