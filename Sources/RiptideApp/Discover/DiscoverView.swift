@@ -49,6 +49,14 @@ struct DiscoverView: View {
                                 card(for: media)
                             }
                             .buttonStyle(.plain)
+                            .contextMenu {
+                                if TraktService.shared.isConnected {
+                                    let on = WatchlistModel.shared.isOnWatchlist(media)
+                                    Button(on ? "Remove from Watchlist" : "Add to Watchlist") {
+                                        Task { await WatchlistModel.shared.toggle(media) }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

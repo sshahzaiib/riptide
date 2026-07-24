@@ -44,6 +44,7 @@ struct SearchDetailView: View {
         }
         .navigationTitle(media.title)
         .task { await loadShowIfNeeded() }
+        .task { if WatchlistModel.shared.state == .idle { await WatchlistModel.shared.load() } }
         .sheet(item: $streamRequest) { request in
             StreamPickerSheet(request: request)
         }
@@ -69,9 +70,32 @@ struct SearchDetailView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(6)
                 if !media.isShow {
-                    movieAction
+                    HStack(spacing: 12) {
+                        movieAction
+                        watchlistButton
+                    }
+                } else {
+                    watchlistButton
+                }
+                if let err = WatchlistModel.shared.lastError {
+                    Text(err).font(.caption).foregroundStyle(.red)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var watchlistButton: some View {
+        if TraktService.shared.isConnected {
+            let on = WatchlistModel.shared.isOnWatchlist(media)
+            Button {
+                Task { await WatchlistModel.shared.toggle(media) }
+            } label: {
+                Label(on ? "On Watchlist" : "Add to Watchlist",
+                      systemImage: on ? "bookmark.fill" : "bookmark")
+            }
+            .buttonStyle(.bordered)
+            .help(on ? "Remove from your Trakt watchlist" : "Add to your Trakt watchlist")
         }
     }
 
