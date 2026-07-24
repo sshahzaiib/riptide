@@ -19,13 +19,7 @@ struct WatchlistView: View {
             case .loading where model.items.isEmpty:
                 skeletonGrid
             default:
-                if model.items.isEmpty {
-                    Text("Search for a title and add it to your watchlist.")
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    grid
-                }
+                grid
             }
         }
         .navigationTitle("Watchlist")
@@ -58,6 +52,13 @@ struct WatchlistView: View {
                 }
             }
             .padding()
+        }
+        .overlay {
+            if model.items.isEmpty && model.state == .loaded {
+                ContentUnavailableView("Watchlist is empty",
+                                       systemImage: "bookmark",
+                                       description: Text("Search for a title and add it to your watchlist."))
+            }
         }
     }
 
