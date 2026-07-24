@@ -77,8 +77,8 @@ struct SearchDetailView: View {
                 } else {
                     watchlistButton
                 }
-                if let err = WatchlistModel.shared.lastError {
-                    Text(err).font(.caption).foregroundStyle(.red)
+                if let err = WatchlistModel.shared.lastError, err.id == media.id {
+                    Text(err.message).font(.caption).foregroundStyle(.red)
                 }
             }
         }
@@ -96,6 +96,7 @@ struct SearchDetailView: View {
             }
             .buttonStyle(.bordered)
             .help(on ? "Remove from your Trakt watchlist" : "Add to your Trakt watchlist")
+            .disabled(WatchlistModel.shared.isToggling(media))
         }
     }
 

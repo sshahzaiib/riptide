@@ -87,15 +87,18 @@ final class DiscoverModel {
             return try await tmdb.popularTV().prefix(20).map { .show($0) }
         case .watchlist:
             await WatchlistModel.shared.load()
-            return WatchlistModel.shared.items
+            if WatchlistModel.shared.state == .failed {
+                throw URLError(.cannotLoadFromNetwork)
+            }
+            return Array(WatchlistModel.shared.items.prefix(20))
         case .traktTrendingMovies:
             guard let trakt = TraktService.shared.client else { return [] }
             let entries = try await trakt.trendingMovies(bypassCache: bypassCache)
-            return await resolveTraktRows(entries.map { (isShow: false, media: $0.movie) })
+            return await resolveTraktRows(entries.prefix(20).map { (isShow: false, media: $0.movie) })
         case .traktTrendingShows:
             guard let trakt = TraktService.shared.client else { return [] }
             let entries = try await trakt.trendingShows(bypassCache: bypassCache)
-            return await resolveTraktRows(entries.map { (isShow: true, media: $0.show) })
+            return await resolveTraktRows(entries.prefix(20).map { (isShow: true, media: $0.show) })
         }
     }
 }

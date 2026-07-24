@@ -15,7 +15,7 @@ final class WatchlistModel {
     /// Membership keyed by SearchMedia.id ("movie-603" / "show-1396").
     private(set) var membership: Set<String> = []
     /// Transient message from the last failed toggle; cleared on next toggle.
-    private(set) var lastError: String?
+    private(set) var lastError: (id: String, message: String)?
 
     private var inFlight: Task<Void, Never>?
     private var mutationCount = 0
@@ -23,6 +23,10 @@ final class WatchlistModel {
 
     func isOnWatchlist(_ media: SearchMedia) -> Bool {
         membership.contains(media.id)
+    }
+
+    func isToggling(_ media: SearchMedia) -> Bool {
+        toggling.contains(media.id)
     }
 
     /// Fetches the watchlist fresh (never cached) and resolves posters.
@@ -49,7 +53,10 @@ final class WatchlistModel {
             let resolved = await resolveTraktRows(entries.map {
                 (isShow: $0.type == "show", media: $0.show ?? $0.movie)
             })
-            guard epoch == mutationCount else { return }
+            guard epoch == mutationCount else {
+                if !wasLoaded { state = .idle }
+                return
+            }
             items = resolved
             membership = Set(resolved.map(\.id))
             state = .loaded
@@ -93,8 +100,8 @@ final class WatchlistModel {
                 membership.remove(media.id)
                 items.removeAll { $0.id == media.id }
             }
-            lastError = wasOn ? "Couldn't remove from watchlist"
-                              : "Couldn't add to watchlist"
+            lastError = (media.id, wasOn ? "Couldn't remove from watchlist"
+                                         : "Couldn't add to watchlist")
         }
     }
 }
