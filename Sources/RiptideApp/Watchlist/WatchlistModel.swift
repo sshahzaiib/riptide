@@ -54,8 +54,10 @@ final class WatchlistModel {
                 (isShow: $0.type == "show", media: $0.show ?? $0.movie)
             })
             guard epoch == mutationCount else {
-                if !wasLoaded { state = .idle }
-                return
+                // A toggle landed mid-fetch; this snapshot is stale. Refetch
+                // so the initial load isn't discarded. Bounded: each retry
+                // needs another user toggle to trip the guard again.
+                return await doLoad()
             }
             items = resolved
             membership = Set(resolved.map(\.id))
