@@ -18,6 +18,8 @@ final class WatchlistModel {
     private(set) var lastError: String?
 
     private var inFlight: Task<Void, Never>?
+    private var mutationCount = 0
+    private var toggling: Set<String> = []
 
     func isOnWatchlist(_ media: SearchMedia) -> Bool {
         membership.contains(media.id)
@@ -42,10 +44,12 @@ final class WatchlistModel {
         let wasLoaded = state == .loaded
         if !wasLoaded { state = .loading }
         do {
+            let epoch = mutationCount
             let entries = try await trakt.watchlist()
             let resolved = await resolveTraktRows(entries.map {
                 (isShow: $0.type == "show", media: $0.show ?? $0.movie)
             })
+            guard epoch == mutationCount else { return }
             items = resolved
             membership = Set(resolved.map(\.id))
             state = .loaded
@@ -58,6 +62,11 @@ final class WatchlistModel {
     /// Optimistic add/remove; reverts and sets lastError on API failure.
     func toggle(_ media: SearchMedia) async {
         guard let trakt = TraktService.shared.client else { return }
+        guard !toggling.contains(media.id) else { return }
+        toggling.insert(media.id)
+        defer { toggling.remove(media.id) }
+
+        mutationCount += 1
         lastError = nil
         let wasOn = membership.contains(media.id)
         if wasOn {
@@ -77,7 +86,9 @@ final class WatchlistModel {
             // Revert the flip.
             if wasOn {
                 membership.insert(media.id)
-                items.insert(media, at: 0)
+                if !items.contains(where: { $0.id == media.id }) {
+                    items.insert(media, at: 0)
+                }
             } else {
                 membership.remove(media.id)
                 items.removeAll { $0.id == media.id }
