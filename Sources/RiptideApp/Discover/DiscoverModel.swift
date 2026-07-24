@@ -86,12 +86,8 @@ final class DiscoverModel {
         case .popularShows:
             return try await tmdb.popularTV().prefix(20).map { .show($0) }
         case .watchlist:
-            guard let trakt = TraktService.shared.client else { return [] }
-            let entries = try await trakt.watchlist()
-            return await resolveTraktRows(entries.map { entry in
-                (isShow: entry.type == "show",
-                 media: entry.show ?? entry.movie)
-            })
+            await WatchlistModel.shared.load()
+            return WatchlistModel.shared.items
         case .traktTrendingMovies:
             guard let trakt = TraktService.shared.client else { return [] }
             let entries = try await trakt.trendingMovies(bypassCache: bypassCache)
