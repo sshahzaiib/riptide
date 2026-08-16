@@ -57,11 +57,12 @@ struct DiscoverView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: 12) {
                         ForEach(shelf.items) { media in
+                            let entry = id == .upNext ? UpNextModel.shared.entry(for: media) : nil
                             Group {
-                                if id == .upNext, let entry = UpNextModel.shared.entry(for: media),
-                                   let libItem = library.libraryItem(tmdbID: entry.item.tmdbID,
-                                                                     season: entry.item.season,
-                                                                     episode: entry.item.number) {
+                                if id == .upNext, let entry,
+                                   let libItem = library.observedLibraryItem(tmdbID: entry.item.tmdbID,
+                                                                             season: entry.item.season,
+                                                                             episode: entry.item.number) {
                                     // In the RD library: play directly, resuming from local WatchState.
                                     Button {
                                         Task { await playUpNext(libItem) }
@@ -70,7 +71,7 @@ struct DiscoverView: View {
                                     }
                                 } else if id == .upNext {
                                     NavigationLink(destination: DiscoverDestination(media: media, library: library)) {
-                                        card(for: media, subtitle: UpNextModel.shared.entry(for: media)?.subtitle)
+                                        card(for: media, subtitle: entry?.subtitle)
                                     }
                                 } else {
                                     NavigationLink(destination: DiscoverDestination(media: media, library: library)) {

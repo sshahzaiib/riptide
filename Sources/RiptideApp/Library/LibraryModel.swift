@@ -132,6 +132,12 @@ final class LibraryModel {
         items.first { $0.torrentID == torrentID }
     }
 
+    /// Observed in-memory lookup for view bodies: registers a SwiftUI
+    /// dependency on `items` and avoids a store fetch per card.
+    func observedLibraryItem(tmdbID: Int, season: Int?, episode: Int?) -> LibraryItem? {
+        items.first { $0.tmdbID == tmdbID && $0.season == season && $0.episode == episode }
+    }
+
     /// Library-priority check for addon search (movies: season/episode nil).
     func libraryItem(tmdbID: Int, season: Int?, episode: Int?) -> LibraryItem? {
         (try? store.item(tmdbID: tmdbID, season: season, episode: episode)) ?? nil
