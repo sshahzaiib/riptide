@@ -318,6 +318,24 @@ public final class TraktClient {
                            method: "DELETE")
     }
 
+    // MARK: - Favorites
+
+    /// Favorites feed Trakt's rec engine; the app only toggles membership.
+    public func favorites() async throws -> [TraktWatchlistEntry] {
+        try Self.decoder.decode([TraktWatchlistEntry].self,
+                                from: try await send(path: "/sync/favorites"))
+    }
+
+    public func addToFavorites(tmdbID: Int, isShow: Bool) async throws {
+        _ = try await send(path: "/sync/favorites", method: "POST",
+                           body: try JSONEncoder().encode(WatchlistBody(tmdbID: tmdbID, isShow: isShow)))
+    }
+
+    public func removeFromFavorites(tmdbID: Int, isShow: Bool) async throws {
+        _ = try await send(path: "/sync/favorites/remove", method: "POST",
+                           body: try JSONEncoder().encode(WatchlistBody(tmdbID: tmdbID, isShow: isShow)))
+    }
+
     static func historyBody(_ media: [TraktMedia]) -> HistoryBody {
         var movieIDs: Set<Int> = []
         var episodesByShow: [Int: [Int: Set<Int>]] = [:]   // show tmdb → season → episodes

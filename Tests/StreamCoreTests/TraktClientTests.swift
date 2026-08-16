@@ -532,6 +532,59 @@ final class TraktClientTests: XCTestCase {
             guard case .unauthorized = e else { return XCTFail("wrong error: \(e)") }
         } catch { XCTFail("wrong error: \(error)") }
     }
+
+    func testFavoritesDecodes() async throws {
+        nonisolated(unsafe) var capturedPath: String?
+        MockURLProtocol.setHandler { req in
+            capturedPath = req.url?.path
+            return .json(#"""
+            [{"rank":1,"id":101,"listed_at":"2026-08-01T00:00:00.000Z","type":"movie",
+              "movie":{"title":"Heat","year":1995,"ids":{"trakt":818,"tmdb":949}}},
+             {"rank":2,"id":102,"listed_at":"2026-08-02T00:00:00.000Z","type":"show",
+              "show":{"title":"The Wire","year":2002,"ids":{"trakt":1438,"tmdb":1438}}}]
+            """#)
+        }
+        let favs = try await makeClient(tokens: tok()).favorites()
+        XCTAssertEqual(capturedPath, "/sync/favorites")
+        XCTAssertEqual(favs.count, 2)
+        XCTAssertEqual(favs[0].type, "movie")
+        XCTAssertEqual(favs[0].movie?.ids.tmdb, 949)
+        XCTAssertEqual(favs[1].show?.ids.tmdb, 1438)
+    }
+
+    func testAddToFavoritesMovieBody() async throws {
+        nonisolated(unsafe) var capturedPath: String?
+        nonisolated(unsafe) var capturedBody: Data?
+        MockURLProtocol.setHandler { req in
+            capturedPath = req.url?.path
+            capturedBody = req.bodyData
+            return .json("{}", status: 201)
+        }
+        try await makeClient(tokens: tok()).addToFavorites(tmdbID: 603, isShow: false)
+        XCTAssertEqual(capturedPath, "/sync/favorites")
+        let json = try JSONSerialization.jsonObject(
+            with: XCTUnwrap(capturedBody)) as! [String: Any]
+        let movies = json["movies"] as! [[String: Any]]
+        XCTAssertEqual(movies[0]["ids"] as! [String: Int], ["tmdb": 603])
+        XCTAssertNil(json["shows"])
+    }
+
+    func testRemoveFromFavoritesShowBody() async throws {
+        nonisolated(unsafe) var capturedPath: String?
+        nonisolated(unsafe) var capturedBody: Data?
+        MockURLProtocol.setHandler { req in
+            capturedPath = req.url?.path
+            capturedBody = req.bodyData
+            return .json("{}")
+        }
+        try await makeClient(tokens: tok()).removeFromFavorites(tmdbID: 1396, isShow: true)
+        XCTAssertEqual(capturedPath, "/sync/favorites/remove")
+        let json = try JSONSerialization.jsonObject(
+            with: XCTUnwrap(capturedBody)) as! [String: Any]
+        let shows = json["shows"] as! [[String: Any]]
+        XCTAssertEqual(shows[0]["ids"] as! [String: Int], ["tmdb": 1396])
+        XCTAssertNil(json["movies"])
+    }
 }
 
 
