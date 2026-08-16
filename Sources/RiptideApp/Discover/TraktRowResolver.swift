@@ -8,13 +8,23 @@ import StreamCore
 func resolveTraktRows(
     _ rows: [(isShow: Bool, media: TraktListMedia?)]
 ) async -> [SearchMedia] {
+    await resolveTMDBCards(rows.compactMap { row in
+        guard let media = row.media, let id = media.ids.tmdb else { return nil }
+        return (isShow: row.isShow, id: id, title: media.title, year: media.year)
+    })
+}
+
+/// Core resolver: one SearchMedia per input row, order preserved; TMDB
+/// failures produce a fallback card from the given title/year.
+@MainActor
+func resolveTMDBCards(
+    _ rows: [(isShow: Bool, id: Int, title: String, year: Int?)]
+) async -> [SearchMedia] {
     let tmdb = TMDBClient(bearerToken: AppSettings.shared.tmdbToken,
                           cache: .shared)
     let wanted = rows.enumerated()
-        .compactMap { index, row -> (index: Int, isShow: Bool, id: Int, title: String, year: Int?)? in
-            guard let media = row.media, let id = media.ids.tmdb else { return nil }
-            return (index, row.isShow, id, media.title, media.year)
-        }
+        .map { index, row in (index: index, isShow: row.isShow, id: row.id,
+                              title: row.title, year: row.year) }
     var resolved: [(Int, SearchMedia)] = []
     await withTaskGroup(of: (Int, SearchMedia).self) { group in
         var iterator = wanted.makeIterator()
