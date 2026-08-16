@@ -45,6 +45,7 @@ struct SearchDetailView: View {
         .navigationTitle(media.title)
         .task { await loadShowIfNeeded() }
         .task { if WatchlistModel.shared.state == .idle { await WatchlistModel.shared.load() } }
+        .task { if FavoritesModel.shared.state == .idle { await FavoritesModel.shared.load() } }
         .sheet(item: $streamRequest) { request in
             StreamPickerSheet(request: request)
         }
@@ -73,11 +74,18 @@ struct SearchDetailView: View {
                     HStack(spacing: 12) {
                         movieAction
                         watchlistButton
+                        favoriteButton
                     }
                 } else {
-                    watchlistButton
+                    HStack(spacing: 12) {
+                        watchlistButton
+                        favoriteButton
+                    }
                 }
                 if let err = WatchlistModel.shared.lastError, err.id == media.id {
+                    Text(err.message).font(.caption).foregroundStyle(.red)
+                }
+                if let err = FavoritesModel.shared.lastError, err.id == media.id {
                     Text(err.message).font(.caption).foregroundStyle(.red)
                 }
             }
@@ -97,6 +105,23 @@ struct SearchDetailView: View {
             .buttonStyle(.bordered)
             .help(on ? "Remove from your Trakt watchlist" : "Add to your Trakt watchlist")
             .disabled(WatchlistModel.shared.isToggling(media))
+        }
+    }
+
+    @ViewBuilder
+    private var favoriteButton: some View {
+        if TraktService.shared.isConnected {
+            let on = FavoritesModel.shared.isFavorite(media)
+            Button {
+                Task { await FavoritesModel.shared.toggle(media) }
+            } label: {
+                Label(on ? "Favorited" : "Add to Favorites",
+                      systemImage: on ? "heart.fill" : "heart")
+            }
+            .buttonStyle(.bordered)
+            .help(on ? "Remove from your Trakt favorites (favorites tune your recommendations)"
+                     : "Add to your Trakt favorites (favorites tune your recommendations)")
+            .disabled(FavoritesModel.shared.isToggling(media))
         }
     }
 

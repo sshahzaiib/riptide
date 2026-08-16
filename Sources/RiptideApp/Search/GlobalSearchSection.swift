@@ -54,6 +54,10 @@ struct GlobalSearchSection: View {
                                 Button(on ? "Remove from Watchlist" : "Add to Watchlist") {
                                     Task { await WatchlistModel.shared.toggle(media) }
                                 }
+                                let fav = FavoritesModel.shared.isFavorite(media)
+                                Button(fav ? "Remove from Favorites" : "Add to Favorites") {
+                                    Task { await FavoritesModel.shared.toggle(media) }
+                                }
                             }
                         }
                     }

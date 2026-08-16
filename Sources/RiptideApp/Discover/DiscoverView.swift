@@ -24,7 +24,10 @@ struct DiscoverView: View {
             }
             .keyboardShortcut("r")
         }
-        .task { model.load() }
+        .task {
+            model.load()
+            if FavoritesModel.shared.state == .idle { await FavoritesModel.shared.load() }
+        }
     }
 
     @ViewBuilder
@@ -54,6 +57,10 @@ struct DiscoverView: View {
                                     let on = WatchlistModel.shared.isOnWatchlist(media)
                                     Button(on ? "Remove from Watchlist" : "Add to Watchlist") {
                                         Task { await WatchlistModel.shared.toggle(media) }
+                                    }
+                                    let fav = FavoritesModel.shared.isFavorite(media)
+                                    Button(fav ? "Remove from Favorites" : "Add to Favorites") {
+                                        Task { await FavoritesModel.shared.toggle(media) }
                                     }
                                 }
                             }
