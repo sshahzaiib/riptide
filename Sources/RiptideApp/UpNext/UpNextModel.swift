@@ -37,6 +37,15 @@ final class UpNextModel {
         entries.first { $0.media.id == media.id }
     }
 
+    /// Called by TraktService on disconnect so a reconnect doesn't show the
+    /// previous account's rail.
+    func reset() {
+        inFlight?.cancel()
+        inFlight = nil
+        entries = []
+        state = .idle
+    }
+
     /// Single-flight; a loaded rail keeps rendering while it revalidates.
     func load() async {
         if let inFlight { await inFlight.value; return }

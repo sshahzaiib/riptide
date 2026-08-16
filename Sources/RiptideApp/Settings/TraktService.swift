@@ -71,6 +71,7 @@ final class TraktService {
         ratingsFetch = nil
         rebuildClient()
         FavoritesModel.shared.reset()
+        UpNextModel.shared.reset()
     }
 
     // MARK: Device flow
