@@ -141,9 +141,16 @@ final class DiscoverModel {
         shelves[shelf]?.items.remove(at: index)
         do {
             try await trakt.hideRecommendation(traktID: traktID, isShow: media.isShow)
+            // A shelf refresh in flight during this await can complete and
+            // overwrite `shelves[shelf]` with a stale list that still has
+            // this card in it; evict it again so a successful dismiss
+            // always ends with the card gone.
+            shelves[shelf]?.items.removeAll { $0.id == media.id }
         } catch {
             let insertAt = min(index, shelves[shelf]?.items.count ?? 0)
-            shelves[shelf]?.items.insert(media, at: insertAt)
+            if shelves[shelf]?.items.contains(where: { $0.id == media.id }) == false {
+                shelves[shelf]?.items.insert(media, at: insertAt)
+            }
             dismissError = (shelf, "Couldn't hide \"\(media.title)\"")
         }
     }
