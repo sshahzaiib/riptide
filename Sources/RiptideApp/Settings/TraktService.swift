@@ -72,6 +72,7 @@ final class TraktService {
         rebuildClient()
         FavoritesModel.shared.reset()
         UpNextModel.shared.reset()
+        DiscoverModel.shared.reset()
     }
 
     // MARK: Device flow

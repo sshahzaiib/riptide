@@ -48,6 +48,17 @@ final class DiscoverModel {
         }
     }
 
+    /// Called by TraktService on disconnect so a reconnect doesn't flash the
+    /// previous account's shelf content. Only the Trakt-gated shelves reset —
+    /// TMDB-backed shelves (trending/popular) are account-agnostic.
+    func reset() {
+        for shelf in [ShelfID.watchlist, .upNext, .recommendedMovies, .recommendedShows] {
+            shelves[shelf] = Shelf()
+        }
+        recTraktIDs = [:]
+        dismissError = nil
+    }
+
     func load(force: Bool = false) {
         for shelf in orderedShelves {
             guard shelves[shelf]?.state != .loading else { continue }
