@@ -92,10 +92,15 @@ final class UpNextModel {
             // awaits were suspended — don't let a stale account's results
             // overwrite the reset state.
             guard TraktService.shared.client === trakt else { return }
+            // resolveTMDBCards swallows CancellationError and returns fallback
+            // cards instead of throwing, so a cancelled load must be caught
+            // here explicitly before it writes state.
+            if Task.isCancelled { return }
             entries = zip(cards, items).map { Entry(media: $0, item: $1) }
             state = .loaded
         } catch {
             guard TraktService.shared.client === trakt else { return }
+            if Task.isCancelled { return }
             if !wasLoaded { state = .failed }
         }
     }
