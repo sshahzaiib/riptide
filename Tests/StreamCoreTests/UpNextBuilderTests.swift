@@ -76,4 +76,42 @@ final class UpNextBuilderTests: XCTestCase {
         """#)
         XCTAssertTrue(UpNextBuilder.build(playback: [noID], progressByShow: []).isEmpty)
     }
+
+    func testBuildDedupesDuplicateShowsInProgressByShow() {
+        let items = UpNextBuilder.build(
+            playback: [],
+            progressByShow: [
+                (watchedShow(tmdb: 10, watchedAt: "2026-08-05T00:00:00.000Z"),
+                 progress(nextSeason: 1, nextNumber: 1)),
+                (watchedShow(tmdb: 10, watchedAt: "2026-08-04T00:00:00.000Z"),
+                 progress(nextSeason: 1, nextNumber: 2)),
+            ])
+        XCTAssertEqual(items.count, 1)        // only one card for show 10
+        XCTAssertEqual(items[0].number, 1)    // first entry wins (input order)
+    }
+
+    func testShortlistDropsNilTmdbShows() {
+        let shows = [watchedShow(tmdb: 1, watchedAt: "2026-08-01T00:00:00.000Z")]
+        let nilTmdbShow = try! TraktClient.decoder.decode(TraktWatchedShow.self, from: Data(#"""
+        {"last_watched_at":"2026-08-03T00:00:00.000Z","show":{"ids":{"trakt":2}}}
+        """#.utf8))
+        let input = [shows[0], nilTmdbShow]
+        let out = UpNextBuilder.shortlist(watched: input, hiddenTMDBIDs: [], cap: 2)
+        XCTAssertEqual(out.count, 1)          // nil-tmdb show dropped
+        XCTAssertEqual(out[0].show.ids.tmdb, 1)
+    }
+
+    func testBuildDedupesDuplicateMoviesInPlayback() {
+        let newer = playbackEntry(json: #"""
+        {"progress":42.5,"paused_at":"2026-08-05T00:00:00.000Z","type":"movie",
+         "movie":{"ids":{"tmdb":603}}}
+        """#)
+        let older = playbackEntry(json: #"""
+        {"progress":10.0,"paused_at":"2026-08-01T00:00:00.000Z","type":"movie",
+         "movie":{"ids":{"tmdb":603}}}
+        """#)
+        let items = UpNextBuilder.build(playback: [older, newer], progressByShow: [])
+        XCTAssertEqual(items.count, 1)                 // no duplicate movie ids
+        XCTAssertEqual(items[0].progressPercent, 42.5)  // newest pausedAt wins
+    }
 }

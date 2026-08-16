@@ -30,7 +30,12 @@ public enum UpNextBuilder {
                                  hiddenTMDBIDs: Set<Int>,
                                  cap: Int = 25) -> [TraktWatchedShow] {
         Array(watched
-            .filter { show in show.show.ids.tmdb.map { !hiddenTMDBIDs.contains($0) } ?? true }
+            .filter { show in
+                if let tmdb = show.show.ids.tmdb {
+                    return !hiddenTMDBIDs.contains(tmdb)
+                }
+                return false
+            }
             .sorted { $0.lastWatchedAt > $1.lastWatchedAt }
             .prefix(cap))
     }
@@ -43,10 +48,12 @@ public enum UpNextBuilder {
                              progressByShow: [(show: TraktWatchedShow, progress: TraktShowProgress)]) -> [UpNextItem] {
         var items: [UpNextItem] = []
         var coveredShows: Set<Int> = []
+        var coveredMovies: Set<Int> = []
 
         let paused = playback.sorted { ($0.pausedAt ?? .distantPast) > ($1.pausedAt ?? .distantPast) }
         for entry in paused {
-            if entry.type == "movie", let id = entry.movie?.ids.tmdb {
+            if entry.type == "movie", let id = entry.movie?.ids.tmdb, !coveredMovies.contains(id) {
+                coveredMovies.insert(id)
                 items.append(UpNextItem(isShow: false, tmdbID: id, season: nil, number: nil,
                                         episodeTitle: nil, progressPercent: entry.progress,
                                         sortDate: entry.pausedAt ?? .distantPast))
@@ -66,6 +73,7 @@ public enum UpNextBuilder {
             guard let next = progress.nextEpisode,
                   let showID = watchedShow.show.ids.tmdb,
                   !coveredShows.contains(showID) else { continue }
+            coveredShows.insert(showID)
             items.append(UpNextItem(isShow: true, tmdbID: showID, season: next.season,
                                     number: next.number, episodeTitle: next.title,
                                     progressPercent: nil,
