@@ -585,6 +585,49 @@ final class TraktClientTests: XCTestCase {
         XCTAssertEqual(shows[0]["ids"] as! [String: Int], ["tmdb": 1396])
         XCTAssertNil(json["movies"])
     }
+
+    func testShowProgressDecodesNextEpisode() async throws {
+        MockURLProtocol.setHandler { _ in
+            .json(#"""
+            {"seasons":[{"number":1,"episodes":[{"number":1,"completed":true,
+              "last_watched_at":"2026-08-01T00:00:00.000Z"}]}],
+             "next_episode":{"season":2,"number":7,"title":"Matrimonium",
+              "ids":{"trakt":2705842,"tmdb":1401395}}}
+            """#)
+        }
+        let progress = try await makeClient(tokens: tok()).showProgress(traktID: 1390)
+        let next = try XCTUnwrap(progress.nextEpisode)
+        XCTAssertEqual(next.season, 2)
+        XCTAssertEqual(next.number, 7)
+        XCTAssertEqual(next.title, "Matrimonium")
+        XCTAssertEqual(next.ids.tmdb, 1401395)
+    }
+
+    func testShowProgressNextEpisodeNullForCompletedShow() async throws {
+        MockURLProtocol.setHandler { _ in
+            .json(#"{"seasons":[],"next_episode":null}"#)
+        }
+        let progress = try await makeClient(tokens: tok()).showProgress(traktID: 1390)
+        XCTAssertNil(progress.nextEpisode)
+    }
+
+    func testHiddenProgressShowsRequestAndDecode() async throws {
+        nonisolated(unsafe) var capturedURL: URL?
+        nonisolated(unsafe) var capturedAuth: String?
+        MockURLProtocol.setHandler { req in
+            capturedURL = req.url
+            capturedAuth = req.value(forHTTPHeaderField: "Authorization")
+            return .json(#"[{"hidden_at":"2026-08-01T00:00:00.000Z","type":"show","show":{"ids":{"trakt":1438,"tmdb":1438}}}]"#)
+        }
+        let hidden = try await makeClient(tokens: tok()).hiddenProgressShows()
+        XCTAssertEqual(hidden.count, 1)
+        XCTAssertEqual(hidden[0].show?.ids.tmdb, 1438)
+        let url = try XCTUnwrap(capturedURL)
+        XCTAssertEqual(url.path, "/users/hidden/progress_watched")
+        // request() sorts query keys alphabetically.
+        XCTAssertEqual(url.query, "limit=100&type=show")
+        XCTAssertEqual(capturedAuth, "Bearer at")
+    }
 }
 
 

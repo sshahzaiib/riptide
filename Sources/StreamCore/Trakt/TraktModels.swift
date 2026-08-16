@@ -107,6 +107,20 @@ public struct TraktWatchedShow: Decodable, Equatable, Sendable {
 /// Per-episode watched state from /shows/{trakt-id}/progress/watched.
 public struct TraktShowProgress: Decodable, Equatable, Sendable {
     public let seasons: [Season]
+    /// Nil once the show is fully watched.
+    public let nextEpisode: NextEpisode?
+
+    enum CodingKeys: String, CodingKey {
+        case seasons
+        case nextEpisode = "next_episode"
+    }
+
+    public struct NextEpisode: Decodable, Equatable, Sendable {
+        public let season: Int
+        public let number: Int
+        public let title: String?
+        public let ids: TraktIDs
+    }
 
     public struct Season: Decodable, Equatable, Sendable {
         public let number: Int
@@ -152,6 +166,11 @@ public struct TraktWatchlistEntry: Decodable, Equatable, Sendable {
     public let type: String          // "movie" | "show"
     public let movie: TraktListMedia?
     public let show: TraktListMedia?
+}
+
+/// Entry from /users/hidden/{section}; only the show ref matters here.
+public struct TraktHiddenItem: Decodable, Equatable, Sendable {
+    public let show: TraktShowRef?
 }
 
 /// Entry from /movies/trending or /shows/trending.

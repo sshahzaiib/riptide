@@ -336,6 +336,16 @@ public final class TraktClient {
                            body: try JSONEncoder().encode(WatchlistBody(tmdbID: tmdbID, isShow: isShow)))
     }
 
+    // MARK: - Hidden progress
+
+    /// Shows the user hid from progress/up-next on Trakt (paginated; one page
+    /// of 100 covers realistic use).
+    public func hiddenProgressShows() async throws -> [TraktHiddenItem] {
+        try Self.decoder.decode([TraktHiddenItem].self,
+                                from: try await send(path: "/users/hidden/progress_watched",
+                                                     query: ["type": "show", "limit": "100"]))
+    }
+
     static func historyBody(_ media: [TraktMedia]) -> HistoryBody {
         var movieIDs: Set<Int> = []
         var episodesByShow: [Int: [Int: Set<Int>]] = [:]   // show tmdb → season → episodes
