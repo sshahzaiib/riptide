@@ -32,6 +32,10 @@ final class UpNextModel {
     private(set) var state: State = .idle
 
     private var inFlight: Task<Void, Never>?
+    /// Identifies the current inFlight task so a finishing load() only clears
+    /// its own reference — otherwise a reset() + new load() racing the old
+    /// await could nil out the new task's inFlight, letting a third load run.
+    private var inFlightID: UUID?
 
     func entry(for media: SearchMedia) -> Entry? {
         entries.first { $0.media.id == media.id }
@@ -42,6 +46,7 @@ final class UpNextModel {
     func reset() {
         inFlight?.cancel()
         inFlight = nil
+        inFlightID = nil
         entries = []
         state = .idle
     }
@@ -49,10 +54,15 @@ final class UpNextModel {
     /// Single-flight; a loaded rail keeps rendering while it revalidates.
     func load() async {
         if let inFlight { await inFlight.value; return }
+        let id = UUID()
         let task = Task { await self.doLoad() }
         inFlight = task
+        inFlightID = id
         await task.value
-        inFlight = nil
+        if inFlightID == id {
+            inFlight = nil
+            inFlightID = nil
+        }
     }
 
     private func doLoad() async {
@@ -78,9 +88,14 @@ final class UpNextModel {
             // resolveTMDBCards is 1:1 and order-preserving, so zip is safe.
             let cards = await resolveTMDBCards(items.map { (isShow: $0.isShow, id: $0.tmdbID,
                                                             title: "", year: nil as Int?) })
+            // A reset() (Trakt disconnect) may have landed while the above
+            // awaits were suspended — don't let a stale account's results
+            // overwrite the reset state.
+            guard TraktService.shared.client === trakt else { return }
             entries = zip(cards, items).map { Entry(media: $0, item: $1) }
             state = .loaded
         } catch {
+            guard TraktService.shared.client === trakt else { return }
             if !wasLoaded { state = .failed }
         }
     }
