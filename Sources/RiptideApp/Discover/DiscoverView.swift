@@ -35,6 +35,9 @@ struct DiscoverView: View {
         let shelf = model.shelves[id] ?? .init()
         VStack(alignment: .leading, spacing: 8) {
             Text(id.rawValue).font(.title3.bold())
+            if let err = model.dismissError, err.shelf == id {
+                Text(err.message).font(.caption).foregroundStyle(.red)
+            }
             switch shelf.state {
             case .idle, .loading:
                 skeletonRow
@@ -61,6 +64,11 @@ struct DiscoverView: View {
                                     let fav = FavoritesModel.shared.isFavorite(media)
                                     Button(fav ? "Remove from Favorites" : "Add to Favorites") {
                                         Task { await FavoritesModel.shared.toggle(media) }
+                                    }
+                                    if model.isRecommendationShelf(id) {
+                                        Button("Not Interested") {
+                                            Task { await model.dismissRecommendation(media, in: id) }
+                                        }
                                     }
                                 }
                             }
