@@ -8,6 +8,7 @@ final class DiscoverModel {
 
     enum ShelfID: String, CaseIterable, Identifiable {
         case watchlist = "Watchlist"
+        case upNext = "Up Next"
         case recommendedMovies = "Recommended for You — Movies"
         case recommendedShows = "Recommended for You — Shows"
         case trendingMovies = "Trending Movies"
@@ -37,7 +38,7 @@ final class DiscoverModel {
     var orderedShelves: [ShelfID] {
         ShelfID.allCases.filter { shelf in
             switch shelf {
-            case .watchlist, .recommendedMovies, .recommendedShows:
+            case .watchlist, .upNext, .recommendedMovies, .recommendedShows:
                 return TraktService.shared.client != nil && TraktService.shared.isConnected
             case .traktTrendingMovies, .traktTrendingShows:
                 return TraktService.shared.client != nil
@@ -98,6 +99,12 @@ final class DiscoverModel {
                 throw URLError(.cannotLoadFromNetwork)
             }
             return Array(WatchlistModel.shared.items.prefix(20))
+        case .upNext:
+            await UpNextModel.shared.load()
+            if UpNextModel.shared.state == .failed {
+                throw URLError(.cannotLoadFromNetwork)
+            }
+            return Array(UpNextModel.shared.entries.prefix(20).map(\.media))
         case .recommendedMovies:
             guard let trakt = TraktService.shared.client else { return [] }
             let recs = try await trakt.recommendedMovies()

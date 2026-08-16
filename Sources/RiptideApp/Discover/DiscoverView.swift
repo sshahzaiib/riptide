@@ -1,9 +1,12 @@
 // Sources/RiptideApp/Discover/DiscoverView.swift
 import SwiftUI
 import StreamCore
+import class StreamCore.LibraryItem
 
 struct DiscoverView: View {
     @Environment(LibraryModel.self) private var library
+    @Environment(\.openWindow) private var openWindow
+    @State private var upNextError: String?
     private let model = DiscoverModel.shared
 
     var body: some View {
@@ -38,6 +41,9 @@ struct DiscoverView: View {
             if let err = model.dismissError, err.shelf == id {
                 Text(err.message).font(.caption).foregroundStyle(.red)
             }
+            if id == .upNext, let err = upNextError {
+                Text(err).font(.caption).foregroundStyle(.red)
+            }
             switch shelf.state {
             case .idle, .loading:
                 skeletonRow
@@ -51,8 +57,26 @@ struct DiscoverView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: 12) {
                         ForEach(shelf.items) { media in
-                            NavigationLink(destination: DiscoverDestination(media: media, library: library)) {
-                                card(for: media)
+                            Group {
+                                if id == .upNext, let entry = UpNextModel.shared.entry(for: media),
+                                   let libItem = library.libraryItem(tmdbID: entry.item.tmdbID,
+                                                                     season: entry.item.season,
+                                                                     episode: entry.item.number) {
+                                    // In the RD library: play directly, resuming from local WatchState.
+                                    Button {
+                                        Task { await playUpNext(libItem) }
+                                    } label: {
+                                        card(for: media, subtitle: entry.subtitle)
+                                    }
+                                } else if id == .upNext {
+                                    NavigationLink(destination: DiscoverDestination(media: media, library: library)) {
+                                        card(for: media, subtitle: UpNextModel.shared.entry(for: media)?.subtitle)
+                                    }
+                                } else {
+                                    NavigationLink(destination: DiscoverDestination(media: media, library: library)) {
+                                        card(for: media)
+                                    }
+                                }
                             }
                             .buttonStyle(.plain)
                             .contextMenu {
@@ -79,9 +103,9 @@ struct DiscoverView: View {
         }
     }
 
-    private func card(for media: SearchMedia) -> some View {
+    private func card(for media: SearchMedia, subtitle: String? = nil) -> some View {
         PosterCard(title: media.title,
-                   subtitle: media.year.map(String.init),
+                   subtitle: subtitle ?? media.year.map(String.init),
                    posterPath: media.posterPath)
             .frame(width: 160)
             .overlay(alignment: .topTrailing) {
@@ -92,6 +116,16 @@ struct DiscoverView: View {
                         .padding(6)
                 }
             }
+    }
+
+    private func playUpNext(_ item: LibraryItem) async {
+        upNextError = nil
+        do {
+            let playItem = try await library.playItem(for: item, autoResume: true)
+            openWindow(value: playItem)
+        } catch {
+            upNextError = "Could not start stream: \(error.localizedDescription)"
+        }
     }
 
     private var skeletonRow: some View {
