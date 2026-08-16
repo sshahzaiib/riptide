@@ -69,7 +69,13 @@ final class FavoritesModel {
         guard let trakt = TraktService.shared.client else { return }
         guard !toggling.contains(media.id) else { return }
         toggling.insert(media.id)
-        defer { toggling.remove(media.id) }
+        defer {
+            toggling.remove(media.id)
+            // Invalidate any in-flight load() started while this toggle was
+            // executing, preventing a stale fetched snapshot from overwriting
+            // this mutation's result.
+            mutationCount += 1
+        }
 
         mutationCount += 1
         lastError = nil
