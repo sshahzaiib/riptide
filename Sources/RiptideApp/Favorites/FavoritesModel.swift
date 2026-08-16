@@ -29,6 +29,14 @@ final class FavoritesModel {
         toggling.contains(media.id)
     }
 
+    /// Called by TraktService on disconnect so a reconnect doesn't show the
+    /// previous account's favorites.
+    func reset() {
+        membership = []
+        state = .idle
+        lastError = nil
+    }
+
     /// Single-flight fetch; concurrent callers await the same request.
     func load() async {
         if let inFlight { await inFlight.value; return }

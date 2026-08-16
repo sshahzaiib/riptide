@@ -45,7 +45,7 @@ struct SearchDetailView: View {
         .navigationTitle(media.title)
         .task { await loadShowIfNeeded() }
         .task { if WatchlistModel.shared.state == .idle { await WatchlistModel.shared.load() } }
-        .task { if FavoritesModel.shared.state == .idle { await FavoritesModel.shared.load() } }
+        .task { if FavoritesModel.shared.state != .loading { await FavoritesModel.shared.load() } }
         .sheet(item: $streamRequest) { request in
             StreamPickerSheet(request: request)
         }

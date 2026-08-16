@@ -26,7 +26,7 @@ struct DiscoverView: View {
         }
         .task {
             model.load()
-            if FavoritesModel.shared.state == .idle { await FavoritesModel.shared.load() }
+            if FavoritesModel.shared.state != .loading { await FavoritesModel.shared.load() }
         }
     }
 
