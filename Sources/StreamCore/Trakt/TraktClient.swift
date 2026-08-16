@@ -291,6 +291,33 @@ public final class TraktClient {
                            body: try JSONEncoder().encode(WatchlistBody(tmdbID: tmdbID, isShow: isShow)))
     }
 
+    // MARK: - Recommendations (VIP-personalized)
+
+    /// Personalized recs; requires OAuth. VIP accounts get a deep rec pool,
+    /// so the default asks for the API max of 100.
+    public func recommendedMovies(limit: Int = 100) async throws -> [TraktListMedia] {
+        try await recommendations(kind: "movies", limit: limit)
+    }
+
+    public func recommendedShows(limit: Int = 100) async throws -> [TraktListMedia] {
+        try await recommendations(kind: "shows", limit: limit)
+    }
+
+    private func recommendations(kind: String, limit: Int) async throws -> [TraktListMedia] {
+        try Self.decoder.decode([TraktListMedia].self,
+                                from: try await send(path: "/recommendations/\(kind)",
+                                                     query: ["limit": String(limit),
+                                                             "ignore_collected": "true",
+                                                             "ignore_watchlisted": "true"]))
+    }
+
+    /// Hides one item from future recommendations ("not interested").
+    /// Takes the TRAKT id — /recommendations/*/{id} resolves in Trakt's namespace.
+    public func hideRecommendation(traktID: Int, isShow: Bool) async throws {
+        _ = try await send(path: "/recommendations/\(isShow ? "shows" : "movies")/\(traktID)",
+                           method: "DELETE")
+    }
+
     static func historyBody(_ media: [TraktMedia]) -> HistoryBody {
         var movieIDs: Set<Int> = []
         var episodesByShow: [Int: [Int: Set<Int>]] = [:]   // show tmdb → season → episodes

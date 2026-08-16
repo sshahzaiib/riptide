@@ -475,6 +475,63 @@ final class TraktClientTests: XCTestCase {
             guard case .unauthorized = e else { return XCTFail("wrong error: \(e)") }
         } catch { XCTFail("wrong error: \(error)") }
     }
+
+    func testRecommendedMoviesRequestAndDecode() async throws {
+        nonisolated(unsafe) var capturedURL: URL?
+        nonisolated(unsafe) var capturedAuth: String?
+        MockURLProtocol.setHandler { req in
+            capturedURL = req.url
+            capturedAuth = req.value(forHTTPHeaderField: "Authorization")
+            return .json(#"[{"title":"Inception","year":2010,"ids":{"trakt":16662,"tmdb":27205}}]"#)
+        }
+        let recs = try await makeClient(tokens: tok()).recommendedMovies()
+        XCTAssertEqual(recs.count, 1)
+        XCTAssertEqual(recs[0].title, "Inception")
+        XCTAssertEqual(recs[0].ids.tmdb, 27205)
+        XCTAssertEqual(recs[0].ids.trakt, 16662)
+        let url = try XCTUnwrap(capturedURL)
+        XCTAssertEqual(url.path, "/recommendations/movies")
+        // request() sorts query keys alphabetically.
+        XCTAssertEqual(url.query, "ignore_collected=true&ignore_watchlisted=true&limit=100")
+        XCTAssertEqual(capturedAuth, "Bearer at")
+    }
+
+    func testRecommendedShowsPathAndLimit() async throws {
+        nonisolated(unsafe) var capturedURL: URL?
+        MockURLProtocol.setHandler { req in
+            capturedURL = req.url
+            return .json("[]")
+        }
+        _ = try await makeClient(tokens: tok()).recommendedShows(limit: 25)
+        let url = try XCTUnwrap(capturedURL)
+        XCTAssertEqual(url.path, "/recommendations/shows")
+        XCTAssertEqual(url.query, "ignore_collected=true&ignore_watchlisted=true&limit=25")
+    }
+
+    func testHideRecommendationDeletes() async throws {
+        nonisolated(unsafe) var capturedPath: String?
+        nonisolated(unsafe) var capturedMethod: String?
+        MockURLProtocol.setHandler { req in
+            capturedPath = req.url?.path
+            capturedMethod = req.httpMethod
+            return .json("", status: 204)
+        }
+        try await makeClient(tokens: tok()).hideRecommendation(traktID: 16662, isShow: false)
+        XCTAssertEqual(capturedPath, "/recommendations/movies/16662")
+        XCTAssertEqual(capturedMethod, "DELETE")
+
+        try await makeClient(tokens: tok()).hideRecommendation(traktID: 1390, isShow: true)
+        XCTAssertEqual(capturedPath, "/recommendations/shows/1390")
+    }
+
+    func testRecommendationsWithoutTokensThrowsUnauthorized() async {
+        do {
+            try await makeClient(tokens: nil).recommendedMovies()
+            XCTFail("expected unauthorized")
+        } catch let e as TraktError {
+            guard case .unauthorized = e else { return XCTFail("wrong error: \(e)") }
+        } catch { XCTFail("wrong error: \(error)") }
+    }
 }
 
 
