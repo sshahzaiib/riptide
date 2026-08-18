@@ -31,14 +31,16 @@ final class UpNextModel {
     private(set) var entries: [Entry] = []
     private(set) var state: State = .idle
     private(set) var isLoadingMore = false
+    /// Built items (playback + fetched shows) not yet resolved into cards.
+    private var pendingItems: [UpNextItem] = []
     /// Shortlisted shows whose progress hasn't been fetched yet.
-    private var pending: [TraktWatchedShow] = []
+    private var pendingShows: [TraktWatchedShow] = []
     /// Bumped by every full (re)load and reset so a stale loadMore() page
     /// can't append onto entries it wasn't computed against.
     private var generation = 0
     private let pageSize = 20
 
-    var hasMore: Bool { !pending.isEmpty }
+    var hasMore: Bool { !pendingItems.isEmpty || !pendingShows.isEmpty }
 
     private var inFlight: Task<Void, Never>?
     /// Identifies the current inFlight task so a finishing load() only clears
@@ -57,7 +59,8 @@ final class UpNextModel {
         inFlight = nil
         inFlightID = nil
         entries = []
-        pending = []
+        pendingItems = []
+        pendingShows = []
         isLoadingMore = false
         generation += 1
         state = .idle
@@ -101,10 +104,13 @@ final class UpNextModel {
             let progress = await fetchProgress(for: Array(shortlist.prefix(pageSize)),
                                                client: trakt)
             let items = UpNextBuilder.build(playback: playback, progressByShow: progress)
+            // First page is pageSize entries total — playback can alone
+            // exceed it; the overflow waits in pendingItems for loadMore().
+            let firstPage = Array(items.prefix(pageSize))
 
             // resolveTMDBCards is 1:1 and order-preserving, so zip is safe.
-            let cards = await resolveTMDBCards(items.map { (isShow: $0.isShow, id: $0.tmdbID,
-                                                            title: "", year: nil as Int?) })
+            let cards = await resolveTMDBCards(firstPage.map { (isShow: $0.isShow, id: $0.tmdbID,
+                                                                title: "", year: nil as Int?) })
             // A reset() (Trakt disconnect) may have landed while the above
             // awaits were suspended — don't let a stale account's results
             // overwrite the reset state.
@@ -113,8 +119,9 @@ final class UpNextModel {
             // cards instead of throwing, so a cancelled load must be caught
             // here explicitly before it writes state.
             if Task.isCancelled { return }
-            entries = zip(cards, items).map { Entry(media: $0, item: $1) }
-            pending = Array(shortlist.dropFirst(pageSize))
+            entries = zip(cards, firstPage).map { Entry(media: $0, item: $1) }
+            pendingItems = Array(items.dropFirst(pageSize))
+            pendingShows = Array(shortlist.dropFirst(pageSize))
             generation += 1
             state = .loaded
         } catch {
@@ -135,18 +142,32 @@ final class UpNextModel {
         isLoadingMore = true
         defer { isLoadingMore = false }
         let gen = generation
-        let page = Array(pending.prefix(pageSize))
-        let progress = await fetchProgress(for: page, client: trakt)
-        let items = UpNextBuilder.build(playback: [], progressByShow: progress)
-        let cards = await resolveTMDBCards(items.map { (isShow: $0.isShow, id: $0.tmdbID,
+        // Work on local copies; commit back only after the staleness guards.
+        var queue = pendingItems
+        var shows = pendingShows
+        var known = Set((entries.map(\.item) + queue).map(dedupKey))
+        // Top the queue up to a full page — completed shows have no next
+        // episode, so one fetched page can yield fewer than pageSize items.
+        while queue.count < pageSize && !shows.isEmpty {
+            let page = Array(shows.prefix(pageSize))
+            let progress = await fetchProgress(for: page, client: trakt)
+            queue += UpNextBuilder.build(playback: [], progressByShow: progress)
+                .filter { known.insert(dedupKey($0)).inserted }
+            shows.removeFirst(page.count)
+        }
+        let batch = Array(queue.prefix(pageSize))
+        let cards = await resolveTMDBCards(batch.map { (isShow: $0.isShow, id: $0.tmdbID,
                                                         title: "", year: nil as Int?) })
         // A reset or full reload landed while we were suspended — this page
         // was computed against stale entries/pending, so drop it.
         guard TraktService.shared.client === trakt, generation == gen else { return }
-        let existing = Set(entries.map(\.id))
-        entries += zip(cards, items).map { Entry(media: $0, item: $1) }
-            .filter { !existing.contains($0.id) }
-        pending.removeFirst(page.count)
+        entries += zip(cards, batch).map { Entry(media: $0, item: $1) }
+        pendingItems = Array(queue.dropFirst(batch.count))
+        pendingShows = shows
+    }
+
+    private func dedupKey(_ item: UpNextItem) -> String {
+        "\(item.isShow ? "show" : "movie")-\(item.tmdbID)"
     }
 
     /// One progress call per shortlisted show; a failed call drops that
