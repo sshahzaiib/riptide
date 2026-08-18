@@ -74,6 +74,19 @@ struct UpNextView: View {
                 }
             }
             .padding()
+            if model.hasMore {
+                Button {
+                    Task { await model.loadMore() }
+                } label: {
+                    if model.isLoadingMore {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text("Show More")
+                    }
+                }
+                .disabled(model.isLoadingMore)
+                .padding(.bottom)
+            }
         }
         .overlay {
             if model.entries.isEmpty && model.state == .loaded {

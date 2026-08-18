@@ -30,6 +30,15 @@ final class UpNextModel {
 
     private(set) var entries: [Entry] = []
     private(set) var state: State = .idle
+    private(set) var isLoadingMore = false
+    /// Shortlisted shows whose progress hasn't been fetched yet.
+    private var pending: [TraktWatchedShow] = []
+    /// Bumped by every full (re)load and reset so a stale loadMore() page
+    /// can't append onto entries it wasn't computed against.
+    private var generation = 0
+    private let pageSize = 20
+
+    var hasMore: Bool { !pending.isEmpty }
 
     private var inFlight: Task<Void, Never>?
     /// Identifies the current inFlight task so a finishing load() only clears
@@ -48,6 +57,9 @@ final class UpNextModel {
         inFlight = nil
         inFlightID = nil
         entries = []
+        pending = []
+        isLoadingMore = false
+        generation += 1
         state = .idle
     }
 
@@ -81,11 +93,13 @@ final class UpNextModel {
             let playback = try await playbackFetch
 
             let hiddenIDs = Set(hidden.compactMap { $0.show?.ids.tmdb })
-            // Uncapped: one progress call per watched show (rate limit is
-            // 1000 GET/5min; URLSession's per-host limit throttles the burst).
+            // Full sorted shortlist, but progress is fetched one page at a
+            // time — loadMore() pulls the next pageSize shows on demand, so
+            // a large watch history never fans out all at once.
             let shortlist = UpNextBuilder.shortlist(watched: watched, hiddenTMDBIDs: hiddenIDs,
                                                     cap: .max)
-            let progress = await fetchProgress(for: shortlist, client: trakt)
+            let progress = await fetchProgress(for: Array(shortlist.prefix(pageSize)),
+                                               client: trakt)
             let items = UpNextBuilder.build(playback: playback, progressByShow: progress)
 
             // resolveTMDBCards is 1:1 and order-preserving, so zip is safe.
@@ -100,12 +114,39 @@ final class UpNextModel {
             // here explicitly before it writes state.
             if Task.isCancelled { return }
             entries = zip(cards, items).map { Entry(media: $0, item: $1) }
+            pending = Array(shortlist.dropFirst(pageSize))
+            generation += 1
             state = .loaded
         } catch {
             guard TraktService.shared.client === trakt else { return }
             if Task.isCancelled { return }
             if !wasLoaded { state = .failed }
         }
+    }
+
+    /// Fetch progress for the next page of pending shows and append their
+    /// entries. Individual failures just drop those shows (fetchProgress
+    /// never throws), so the page always consumes — a page can therefore
+    /// yield fewer than pageSize new cards (completed shows have no next
+    /// episode).
+    func loadMore() async {
+        guard state == .loaded, !isLoadingMore, hasMore,
+              let trakt = TraktService.shared.client else { return }
+        isLoadingMore = true
+        defer { isLoadingMore = false }
+        let gen = generation
+        let page = Array(pending.prefix(pageSize))
+        let progress = await fetchProgress(for: page, client: trakt)
+        let items = UpNextBuilder.build(playback: [], progressByShow: progress)
+        let cards = await resolveTMDBCards(items.map { (isShow: $0.isShow, id: $0.tmdbID,
+                                                        title: "", year: nil as Int?) })
+        // A reset or full reload landed while we were suspended — this page
+        // was computed against stale entries/pending, so drop it.
+        guard TraktService.shared.client === trakt, generation == gen else { return }
+        let existing = Set(entries.map(\.id))
+        entries += zip(cards, items).map { Entry(media: $0, item: $1) }
+            .filter { !existing.contains($0.id) }
+        pending.removeFirst(page.count)
     }
 
     /// One progress call per shortlisted show; a failed call drops that
