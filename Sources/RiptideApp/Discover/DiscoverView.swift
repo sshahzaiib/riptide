@@ -37,7 +37,15 @@ struct DiscoverView: View {
     private func shelfView(_ id: DiscoverModel.ShelfID) -> some View {
         let shelf = model.shelves[id] ?? .init()
         VStack(alignment: .leading, spacing: 8) {
-            Text(id.rawValue).font(.title3.bold())
+            HStack(alignment: .firstTextBaseline) {
+                Text(id.rawValue).font(.title3.bold())
+                if id == .upNext, shelf.state == .loaded, !UpNextModel.shared.entries.isEmpty {
+                    Spacer()
+                    NavigationLink("See All") { UpNextView() }
+                        .buttonStyle(.link)
+                        .font(.callout)
+                }
+            }
             if let err = model.dismissError, err.shelf == id {
                 Text(err.message).font(.caption).foregroundStyle(.red)
             }

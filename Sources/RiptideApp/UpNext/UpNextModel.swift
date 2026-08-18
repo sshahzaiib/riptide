@@ -81,7 +81,10 @@ final class UpNextModel {
             let playback = try await playbackFetch
 
             let hiddenIDs = Set(hidden.compactMap { $0.show?.ids.tmdb })
-            let shortlist = UpNextBuilder.shortlist(watched: watched, hiddenTMDBIDs: hiddenIDs)
+            // Uncapped: one progress call per watched show (rate limit is
+            // 1000 GET/5min; URLSession's per-host limit throttles the burst).
+            let shortlist = UpNextBuilder.shortlist(watched: watched, hiddenTMDBIDs: hiddenIDs,
+                                                    cap: .max)
             let progress = await fetchProgress(for: shortlist, client: trakt)
             let items = UpNextBuilder.build(playback: playback, progressByShow: progress)
 
