@@ -172,6 +172,14 @@ final class MPVPlayerController: NSViewController {
         checkError(mpv_set_option_string(mpv, "gpu-api", "vulkan"))
         checkError(mpv_set_option_string(mpv, "gpu-context", "moltenvk"))
         checkError(mpv_set_option_string(mpv, "hwdec", "videotoolbox"))
+        // AVFoundation first: on macOS 26+/27 mpv 0.41's coreaudio init registers a
+        // CoreAudio hotplug listener, then fails (-50 setting the channel layout)
+        // and frees the ao without unregistering. The next audio-device change
+        // then calls hotplug_cb on freed memory and segfaults the app.
+        // Fixed upstream in mpv af067b5e + c5d391ad (2026-09-01), not yet in
+        // any MPVKit release. Skipping coreaudio sidesteps it; it stays as
+        // fallback in case avfoundation ever fails.
+        checkError(mpv_set_option_string(mpv, "ao", "avfoundation,coreaudio"))
         checkError(mpv_set_option_string(mpv, "ytdl", "no"))
         checkError(mpv_set_option_string(mpv, "keep-open", "yes"))
         // Auto-select English subtitles during load: a manual sid switch on
