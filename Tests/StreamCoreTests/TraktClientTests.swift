@@ -1,6 +1,13 @@
 import XCTest
 @testable import StreamCore
 
+private let progressFixtureJSON = #"""
+{"aired":73,"completed":2,"seasons":[
+  {"number":1,"aired":10,"episodes":[
+    {"number":1,"completed":true,"last_watched_at":"2026-07-01T21:00:00.000Z"},
+    {"number":2,"completed":false,"last_watched_at":null}]}]}
+"""#
+
 @MainActor
 final class TraktClientTests: XCTestCase {
     override func tearDown() {
@@ -190,12 +197,7 @@ final class TraktClientTests: XCTestCase {
         nonisolated(unsafe) var capturedPath: String?
         MockURLProtocol.setHandler { req in
             capturedPath = req.url?.path
-            return .json(#"""
-            {"aired":73,"completed":2,"seasons":[
-              {"number":1,"aired":10,"episodes":[
-                {"number":1,"completed":true,"last_watched_at":"2026-07-01T21:00:00.000Z"},
-                {"number":2,"completed":false,"last_watched_at":null}]}]}
-            """#)
+            return .json(progressFixtureJSON)
         }
         let progress = try await makeClient(tokens: tok()).showProgress(traktID: 1390)
         XCTAssertEqual(capturedPath, "/shows/1390/progress/watched")
@@ -358,6 +360,60 @@ final class TraktClientTests: XCTestCase {
         }
         _ = try await makeClient(tokens: nil).trendingShows()
         XCTAssertEqual(seen?.url?.path, "/shows/trending")
+    }
+
+    // MARK: - User read cache
+
+    /// Client wired to `cache` (fresh in-memory by default), seeded with `accessToken`.
+    private func makeClientWithCache(cache: MetadataCache = MetadataCache(directory: nil),
+                                     accessToken: String = "at") -> TraktClient {
+        let client = makeClient(tokens: TraktTokens(accessToken: accessToken,
+                                                    refreshToken: "rt",
+                                                    createdAt: 0, expiresIn: 7200))
+        client.cache = cache
+        return client
+    }
+
+    func testWatchlistSecondReadWithinTTLHitsCache() async throws {
+        nonisolated(unsafe) var requestCount = 0
+        MockURLProtocol.setHandler { _ in requestCount += 1; return .json("[]") }
+        let client = makeClientWithCache()
+        _ = try await client.watchlist()
+        _ = try await client.watchlist()
+        XCTAssertEqual(requestCount, 1)
+    }
+
+    func testPlaybackNeverConsultsCache() async throws {
+        nonisolated(unsafe) var requestCount = 0
+        MockURLProtocol.setHandler { _ in requestCount += 1; return .json("[]") }
+        let client = makeClientWithCache()
+        _ = try await client.playback()
+        _ = try await client.playback()
+        XCTAssertEqual(requestCount, 2)
+    }
+
+    func testShowProgressLastActivityBustsOlderEntry() async throws {
+        nonisolated(unsafe) var requestCount = 0
+        MockURLProtocol.setHandler { _ in requestCount += 1; return .json(progressFixtureJSON) }
+        let client = makeClientWithCache()
+        _ = try await client.showProgress(traktID: 1, lastActivity: nil)
+        // Newer activity than the cache stamp -> refetch.
+        _ = try await client.showProgress(traktID: 1,
+                                          lastActivity: Date().addingTimeInterval(60))
+        XCTAssertEqual(requestCount, 2)
+        // Older activity -> cache hit.
+        _ = try await client.showProgress(traktID: 1,
+                                          lastActivity: Date().addingTimeInterval(-3600))
+        XCTAssertEqual(requestCount, 2)
+    }
+
+    func testCacheKeyIsAccountScoped() async throws {
+        nonisolated(unsafe) var requestCount = 0
+        MockURLProtocol.setHandler { _ in requestCount += 1; return .json("[]") }
+        let cache = MetadataCache(directory: nil)
+        _ = try await makeClientWithCache(cache: cache, accessToken: "token-A").watchlist()
+        _ = try await makeClientWithCache(cache: cache, accessToken: "token-B").watchlist()
+        XCTAssertEqual(requestCount, 2)  // different account -> different key -> miss
     }
 
     func testTrendingMoviesCaches() async throws {

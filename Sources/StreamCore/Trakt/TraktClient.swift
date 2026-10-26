@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// Trakt.tv API v2 client. MainActor because tokens mutate and the app is
@@ -117,6 +118,50 @@ public final class TraktClient {
         return fetched
     }
 
+    // MARK: User read cache
+
+    public static let userCachePrefix = "trakt:user:"
+
+    private enum UserTTL {
+        static let watched: TimeInterval = 15 * 60
+        static let watchlist: TimeInterval = 15 * 60
+        static let favorites: TimeInterval = 30 * 60
+        static let recommendations: TimeInterval = 6 * 3600
+        static let hidden: TimeInterval = 6 * 3600
+        static let progress: TimeInterval = 24 * 3600
+    }
+
+    /// "trakt:user:<8-hex-of-token-sha>:<path>[?<sorted query>]"
+    private func userCacheKey(path: String, query: [String: String]?) -> String? {
+        guard let token = tokens?.accessToken else { return nil }
+        let acct = SHA256.hash(data: Data(token.utf8))
+            .map { String(format: "%02x", $0) }.joined().prefix(8)
+        let sortedQuery = (query ?? [:]).sorted { $0.key < $1.key }
+            .map { "\($0.key)=\($0.value)" }.joined(separator: "&")
+        return "\(Self.userCachePrefix)\(acct):\(path)" + (sortedQuery.isEmpty ? "" : "?\(sortedQuery)")
+    }
+
+    /// Bumped by every authorized write (Task 3). A GET already in flight when
+    /// a write lands must not store its stale response into the purged cache.
+    private var writeEpoch = 0
+
+    /// Cache-through authorized GET. Miss/expired/corrupt falls to the network
+    /// and re-stores. `notBefore` invalidates entries stored before that date.
+    private func cachedSend(path: String, query: [String: String]? = nil,
+                            ttl: TimeInterval,
+                            notBefore: Date? = nil) async throws -> Data {
+        guard let cache, let key = userCacheKey(path: path, query: query) else {
+            return try await send(path: path, query: query)
+        }
+        if let hit = await cache.data(for: key, ttl: ttl, notBefore: notBefore) {
+            return hit
+        }
+        let epoch = writeEpoch
+        let fresh = try await send(path: path, query: query)
+        if epoch == writeEpoch { await cache.store(fresh, for: key) }
+        return fresh
+    }
+
     // MARK: Request infra
 
     private func request(path: String, method: String, body: Data?,
@@ -178,7 +223,7 @@ public final class TraktClient {
 
     public func watchlist() async throws -> [TraktWatchlistEntry] {
         try Self.decoder.decode([TraktWatchlistEntry].self,
-                                from: try await send(path: "/sync/watchlist"))
+                                from: try await cachedSend(path: "/sync/watchlist", ttl: UserTTL.watchlist))
     }
 
     public func trendingMovies(bypassCache: Bool = false) async throws -> [TraktTrendingEntry] {
@@ -222,19 +267,25 @@ public final class TraktClient {
 
     public func watchedMovies() async throws -> [TraktWatchedMovie] {
         try Self.decoder.decode([TraktWatchedMovie].self,
-                                from: try await send(path: "/sync/watched/movies"))
+                                from: try await cachedSend(path: "/sync/watched/movies",
+                                                           ttl: UserTTL.watched))
     }
 
     public func watchedShows() async throws -> [TraktWatchedShow] {
         try Self.decoder.decode([TraktWatchedShow].self,
-                                from: try await send(path: "/sync/watched/shows"))
+                                from: try await cachedSend(path: "/sync/watched/shows",
+                                                           ttl: UserTTL.watched))
     }
 
     /// NOTE: takes the TRAKT id (not TMDB) — /shows/{id} resolves ids in
     /// Trakt's namespace.
-    public func showProgress(traktID: Int) async throws -> TraktShowProgress {
+    public func showProgress(traktID: Int,
+                             lastActivity: Date? = nil) async throws -> TraktShowProgress {
         try Self.decoder.decode(TraktShowProgress.self,
-                                from: try await send(path: "/shows/\(traktID)/progress/watched"))
+                                from: try await cachedSend(
+                                    path: "/shows/\(traktID)/progress/watched",
+                                    ttl: UserTTL.progress,
+                                    notBefore: lastActivity))
     }
 
     // MARK: Ratings
@@ -305,10 +356,11 @@ public final class TraktClient {
 
     private func recommendations(kind: String, limit: Int) async throws -> [TraktListMedia] {
         try Self.decoder.decode([TraktListMedia].self,
-                                from: try await send(path: "/recommendations/\(kind)",
+                                from: try await cachedSend(path: "/recommendations/\(kind)",
                                                      query: ["limit": String(limit),
                                                              "ignore_collected": "true",
-                                                             "ignore_watchlisted": "true"]))
+                                                             "ignore_watchlisted": "true"],
+                                                     ttl: UserTTL.recommendations))
     }
 
     /// Hides one item from future recommendations ("not interested").
@@ -323,7 +375,7 @@ public final class TraktClient {
     /// Favorites feed Trakt's rec engine; the app only toggles membership.
     public func favorites() async throws -> [TraktWatchlistEntry] {
         try Self.decoder.decode([TraktWatchlistEntry].self,
-                                from: try await send(path: "/sync/favorites"))
+                                from: try await cachedSend(path: "/sync/favorites", ttl: UserTTL.favorites))
     }
 
     public func addToFavorites(tmdbID: Int, isShow: Bool) async throws {
@@ -342,8 +394,9 @@ public final class TraktClient {
     /// of 100 covers realistic use).
     public func hiddenProgressShows() async throws -> [TraktHiddenItem] {
         try Self.decoder.decode([TraktHiddenItem].self,
-                                from: try await send(path: "/users/hidden/progress_watched",
-                                                     query: ["type": "show", "limit": "100"]))
+                                from: try await cachedSend(path: "/users/hidden/progress_watched",
+                                                     query: ["type": "show", "limit": "100"],
+                                                     ttl: UserTTL.hidden))
     }
 
     static func historyBody(_ media: [TraktMedia]) -> HistoryBody {
