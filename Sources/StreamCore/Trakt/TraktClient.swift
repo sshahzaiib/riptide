@@ -453,6 +453,14 @@ public final class TraktClient {
                                 from: try await send(path: "/sync/ratings/shows"))
     }
 
+    /// Any successful non-GET write drops cached user reads; bumping the epoch
+    /// stops in-flight GETs from re-storing pre-write data.
+    private func invalidateUserCache(after method: String) async {
+        guard method != "GET" else { return }
+        writeEpoch += 1
+        if let cache { await cache.remove(prefix: Self.userCachePrefix) }
+    }
+
     /// Authorized call with a single automatic token refresh on 401.
     func send(path: String, method: String = "GET", body: Data? = nil,
               query: [String: String]? = nil) async throws -> Data {
@@ -461,14 +469,18 @@ public final class TraktClient {
             for: request(path: path, method: method, body: body, authorized: true, query: query))
         guard let http = response as? HTTPURLResponse else { throw TraktError.badResponse }
         switch http.statusCode {
-        case 200, 201, 204: return data
+        case 200, 201, 204:
+            await invalidateUserCache(after: method)
+            return data
         case 401:
             try await refreshTokens()   // throws .unauthorized on failure
             let (data2, response2) = try await session.data(
                 for: request(path: path, method: method, body: body, authorized: true, query: query))
             guard let http2 = response2 as? HTTPURLResponse else { throw TraktError.badResponse }
             switch http2.statusCode {
-            case 200...299: return data2
+            case 200...299:
+                await invalidateUserCache(after: method)
+                return data2
             case 401: throw TraktError.unauthorized
             // Transient server error after a good refresh is not an auth failure.
             default: throw TraktError.http(http2.statusCode)

@@ -364,8 +364,9 @@ final class TraktClientTests: XCTestCase {
 
     // MARK: - User read cache
 
-    /// Client wired to `cache` (fresh in-memory by default), seeded with `accessToken`.
-    private func makeClientWithCache(cache: MetadataCache = MetadataCache(directory: nil),
+    /// Client wired to `cache` (fresh isolated temp dir by default), seeded with `accessToken`.
+    private func makeClientWithCache(cache: MetadataCache = MetadataCache(directory: FileManager.default.temporaryDirectory
+                                                .appendingPathComponent(UUID().uuidString)),
                                      accessToken: String = "at") -> TraktClient {
         let client = makeClient(tokens: TraktTokens(accessToken: accessToken,
                                                     refreshToken: "rt",
@@ -381,6 +382,16 @@ final class TraktClientTests: XCTestCase {
         _ = try await client.watchlist()
         _ = try await client.watchlist()
         XCTAssertEqual(requestCount, 1)
+    }
+
+    func testWriteInvalidatesCachedReads() async throws {
+        nonisolated(unsafe) var requestCount = 0
+        MockURLProtocol.setHandler { _ in requestCount += 1; return .json("[]") }
+        let client = makeClientWithCache()
+        _ = try await client.watchlist()                              // network #1, cached
+        try await client.addToWatchlist(tmdbID: 603, isShow: false)   // network #2, purges
+        _ = try await client.watchlist()                              // network #3 — purged
+        XCTAssertEqual(requestCount, 3)
     }
 
     func testPlaybackNeverConsultsCache() async throws {
