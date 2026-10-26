@@ -1,6 +1,6 @@
 import Foundation
 
-public struct TMDBMovie: Sendable, Equatable, Decodable {
+public struct TMDBMovie: Sendable, Equatable, Codable {
     public let id: Int
     public let title: String
     public let overview: String
@@ -23,7 +23,7 @@ public struct TMDBMovie: Sendable, Equatable, Decodable {
     }
 }
 
-public struct TMDBShow: Sendable, Equatable, Decodable {
+public struct TMDBShow: Sendable, Equatable, Codable {
     public let id: Int
     public let name: String
     public let overview: String

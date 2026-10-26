@@ -2,7 +2,7 @@ import Foundation
 
 /// One card in the Up Next rail: a paused playback item or a show's next
 /// unwatched episode.
-public struct UpNextItem: Equatable, Sendable {
+public struct UpNextItem: Equatable, Sendable, Codable {
     public let isShow: Bool
     public let tmdbID: Int          // movie id, or the SHOW's id for episodes
     public let season: Int?

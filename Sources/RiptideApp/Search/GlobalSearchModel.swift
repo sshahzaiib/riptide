@@ -2,7 +2,7 @@ import Foundation
 import StreamCore
 
 /// A TMDB search hit that may not be in the library yet.
-enum SearchMedia: Identifiable {
+enum SearchMedia: Identifiable, Codable {
     case movie(TMDBMovie)
     case show(TMDBShow)
 

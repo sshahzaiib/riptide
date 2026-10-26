@@ -30,6 +30,7 @@ final class WatchlistModel {
         membership = []
         lastError = nil
         state = .idle
+        ShelfDiskCache.remove(name: "watchlist")
     }
 
     func isOnWatchlist(_ media: SearchMedia) -> Bool {
@@ -56,6 +57,12 @@ final class WatchlistModel {
             items = []; membership = []; state = .idle
             return
         }
+        if state == .idle,
+           let cached = ShelfDiskCache.load([SearchMedia].self, name: "watchlist") {
+            items = cached
+            membership = Set(cached.map(\.id))
+            state = .loaded  // keeps rendering; the fetch below revalidates
+        }
         let wasLoaded = state == .loaded
         if !wasLoaded { state = .loading }
         do {
@@ -73,6 +80,7 @@ final class WatchlistModel {
             items = resolved
             membership = Set(resolved.map(\.id))
             state = .loaded
+            ShelfDiskCache.save(items, name: "watchlist")
         } catch {
             // Keep showing a populated list on a failed silent refresh.
             if !wasLoaded { state = .failed }

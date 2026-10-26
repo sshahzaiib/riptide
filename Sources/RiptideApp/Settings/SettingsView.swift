@@ -34,6 +34,7 @@ struct SettingsView: View {
     private func clearCache() async {
         URLCache.shared.removeAllCachedResponses()
         await MetadataCache.shared.clear()
+        ShelfDiskCache.removeAll()
         // Wait for URLCache disk cleanup to settle so we don't display a stale size.
         try? await Task.sleep(nanoseconds: 500_000_000)
         await refreshCacheSize()

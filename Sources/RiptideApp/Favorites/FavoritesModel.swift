@@ -35,6 +35,7 @@ final class FavoritesModel {
         membership = []
         state = .idle
         lastError = nil
+        ShelfDiskCache.remove(name: "favorites")
     }
 
     /// Single-flight fetch; concurrent callers await the same request.
@@ -50,6 +51,11 @@ final class FavoritesModel {
         guard let trakt = TraktService.shared.client else {
             membership = []; state = .idle
             return
+        }
+        if state == .idle,
+           let cached = ShelfDiskCache.load(Set<String>.self, name: "favorites") {
+            membership = cached
+            state = .loaded
         }
         let wasLoaded = state == .loaded
         if !wasLoaded { state = .loading }
@@ -67,6 +73,7 @@ final class FavoritesModel {
                 return (isShow ? "show-" : "movie-") + String(tmdb)
             })
             state = .loaded
+            ShelfDiskCache.save(membership, name: "favorites")
         } catch {
             if !wasLoaded { state = .failed }
         }

@@ -57,10 +57,19 @@ final class DiscoverModel {
         }
         recTraktIDs = [:]
         dismissError = nil
+        ShelfDiskCache.remove(name: "discover")
     }
 
     func load(force: Bool = false) {
         guard force else {
+            if let cached = ShelfDiskCache.load([String: [SearchMedia]].self, name: "discover") {
+                for shelf in orderedShelves
+                where (shelves[shelf]?.state ?? .idle) == .idle {
+                    if let items = cached[shelf.rawValue], !items.isEmpty {
+                        shelves[shelf] = Shelf(items: items, state: .loaded)
+                    }
+                }
+            }
             for shelf in orderedShelves where shelves[shelf]?.state != .loading {
                 fetch(shelf, bypassCache: false)
             }
@@ -79,15 +88,23 @@ final class DiscoverModel {
         fetch(shelf, bypassCache: false)
     }
 
+    private var inFlightShelves: Set<ShelfID> = []
+
     private func fetch(_ shelf: ShelfID, bypassCache: Bool) {
+        guard !inFlightShelves.contains(shelf) else { return }
+        inFlightShelves.insert(shelf)
         let wasLoaded = shelves[shelf]?.state == .loaded
         if !wasLoaded {
             shelves[shelf]?.state = .loading
         }
         Task {
+            defer { inFlightShelves.remove(shelf) }
             do {
                 let items = try await items(for: shelf, bypassCache: bypassCache)
                 shelves[shelf] = Shelf(items: items, state: .loaded)
+                let snapshot = shelves.compactMapValues { $0.state == .loaded ? $0.items : nil }
+                ShelfDiskCache.save(Dictionary(uniqueKeysWithValues:
+                    snapshot.map { ($0.key.rawValue, $0.value) }), name: "discover")
             } catch {
                 if !wasLoaded {
                     shelves[shelf]?.state = .failed

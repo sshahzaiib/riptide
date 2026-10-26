@@ -71,6 +71,7 @@ final class TraktService {
         ratingsFetch = nil
         rebuildClient()
         Task { await MetadataCache.shared.remove(prefix: TraktClient.userCachePrefix) }
+        ShelfDiskCache.removeAll()
         FavoritesModel.shared.reset()
         WatchlistModel.shared.reset()
         UpNextModel.shared.reset()

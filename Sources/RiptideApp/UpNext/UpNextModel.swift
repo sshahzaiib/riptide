@@ -12,7 +12,7 @@ final class UpNextModel {
 
     enum State { case idle, loading, loaded, failed }
 
-    struct Entry: Identifiable {
+    struct Entry: Identifiable, Codable {
         let media: SearchMedia
         let item: UpNextItem
         var id: String { media.id }
@@ -64,6 +64,7 @@ final class UpNextModel {
         isLoadingMore = false
         generation += 1
         state = .idle
+        ShelfDiskCache.remove(name: "upnext")
     }
 
     /// Single-flight; a loaded rail keeps rendering while it revalidates.
@@ -84,6 +85,11 @@ final class UpNextModel {
         guard let trakt = TraktService.shared.client else {
             entries = []; state = .idle
             return
+        }
+        if state == .idle,
+           let cached = ShelfDiskCache.load([Entry].self, name: "upnext") {
+            entries = cached
+            state = .loaded
         }
         let wasLoaded = state == .loaded
         if !wasLoaded { state = .loading }
@@ -124,6 +130,7 @@ final class UpNextModel {
             pendingShows = Array(shortlist.dropFirst(pageSize))
             generation += 1
             state = .loaded
+            ShelfDiskCache.save(Array(entries.prefix(pageSize)), name: "upnext")
         } catch {
             guard TraktService.shared.client === trakt else { return }
             if Task.isCancelled { return }
