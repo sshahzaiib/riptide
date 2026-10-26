@@ -88,7 +88,8 @@ public struct TraktSyncer {
         for show in try await client.watchedShows() {
             guard let showID = show.show.ids.tmdb, localShowIDs.contains(showID),
                   let traktID = show.show.ids.trakt else { continue }
-            let progress = try await client.showProgress(traktID: traktID)
+            let progress = try await client.showProgress(traktID: traktID,
+                                                         lastActivity: show.lastWatchedAt)
             for season in progress.seasons {
                 for episode in season.episodes where episode.completed {
                     for key in episodeKeys["\(showID)#\(season.number)#\(episode.number)"] ?? [] {

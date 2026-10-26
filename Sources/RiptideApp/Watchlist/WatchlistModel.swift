@@ -21,6 +21,17 @@ final class WatchlistModel {
     private var mutationCount = 0
     private var toggling: Set<String> = []
 
+    /// Called on Trakt disconnect so a reconnect doesn't show the old account's list.
+    func reset() {
+        inFlight?.cancel()
+        inFlight = nil
+        mutationCount += 1
+        items = []
+        membership = []
+        lastError = nil
+        state = .idle
+    }
+
     func isOnWatchlist(_ media: SearchMedia) -> Bool {
         membership.contains(media.id)
     }

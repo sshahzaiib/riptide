@@ -60,9 +60,17 @@ final class DiscoverModel {
     }
 
     func load(force: Bool = false) {
-        for shelf in orderedShelves {
-            guard shelves[shelf]?.state != .loading else { continue }
-            fetch(shelf, bypassCache: force)
+        guard force else {
+            for shelf in orderedShelves where shelves[shelf]?.state != .loading {
+                fetch(shelf, bypassCache: false)
+            }
+            return
+        }
+        Task {
+            await MetadataCache.shared.remove(prefix: TraktClient.userCachePrefix)
+            for shelf in orderedShelves where shelves[shelf]?.state != .loading {
+                fetch(shelf, bypassCache: true)
+            }
         }
     }
 

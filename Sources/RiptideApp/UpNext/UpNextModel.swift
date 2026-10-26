@@ -180,7 +180,8 @@ final class UpNextModel {
             for (index, show) in shows.enumerated() {
                 guard let traktID = show.show.ids.trakt else { continue }
                 group.addTask { @MainActor in
-                    (index, try? await client.showProgress(traktID: traktID))
+                    (index, try? await client.showProgress(traktID: traktID,
+                                                           lastActivity: show.lastWatchedAt))
                 }
             }
             for await (index, progress) in group {
