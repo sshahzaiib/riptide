@@ -15,6 +15,15 @@ via mpv, sync watch progress with Trakt.
     swift test                # run all StreamCoreTests
     swift test --filter TestClassName/testMethodName   # single test
     scripts/run.sh             # build, codesign, and launch the app
+    NOTARY_PROFILE=riptide scripts/package.sh   # release .app + DMG, notarized
+
+Release builds land in `dist/` (gitignored), signed with the Developer ID
+for team `YWM9Q6F35V`. The notarytool credentials live in the login Keychain
+under profile `riptide` (created once via `xcrun notarytool store-credentials
+riptide --apple-id <apple-id> --team-id YWM9Q6F35V` with an app-specific
+password — run it in Terminal.app, the password prompt needs a real TTY).
+Omit `NOTARY_PROFILE` for a signed-but-unnotarized local build; set
+`VERSION=x.y.z` to bump `CFBundleShortVersionString`.
 
 Always use `scripts/run.sh` instead of `swift run RiptideApp` — `swift run`
 leaves the binary ad-hoc signed, so its signature hash changes on every
