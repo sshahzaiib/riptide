@@ -1,3 +1,4 @@
+import CryptoKit
 import XCTest
 @testable import StreamCore
 
@@ -78,6 +79,47 @@ final class MetadataCacheTests: XCTestCase {
         // Additional cross-instance check
         let goneCross = await MetadataCache(directory: dir, now: { clock.now }).data(for: "k", ttl: .infinity)
         XCTAssertNil(goneCross)
+    }
+
+    func testRemovePrefixPurgesMemoryAndDisk() async {
+        let cache = MetadataCache(directory: dir)
+        await cache.store(Data("a".utf8), for: "trakt:user:abc:/sync/watchlist?")
+        await cache.store(Data("b".utf8), for: "tmdb:movie/1?")
+        await cache.remove(prefix: "trakt:user:")
+        let purged = await cache.data(for: "trakt:user:abc:/sync/watchlist?", ttl: 3600)
+        XCTAssertNil(purged)
+        let kept = await cache.data(for: "tmdb:movie/1?", ttl: 3600)
+        XCTAssertEqual(kept, Data("b".utf8))
+        // Fresh instance over the same directory: the disk copy must be gone too.
+        let rehydrated = MetadataCache(directory: dir)
+        let diskPurged = await rehydrated.data(for: "trakt:user:abc:/sync/watchlist?", ttl: 3600)
+        XCTAssertNil(diskPurged)
+        let diskKept = await rehydrated.data(for: "tmdb:movie/1?", ttl: 3600)
+        XCTAssertEqual(diskKept, Data("b".utf8))
+    }
+
+    func testNotBeforeBarrierInvalidatesOlderEntries() async {
+        let clock = MockClock()
+        let cache = MetadataCache(directory: dir, now: { clock.now })
+        await cache.store(Data("x".utf8), for: "k")
+        // Barrier after the store stamp -> miss; barrier before it -> hit.
+        let stale = await cache.data(for: "k", ttl: 3600,
+                                     notBefore: clock.now.addingTimeInterval(10))
+        XCTAssertNil(stale)
+        await cache.store(Data("x".utf8), for: "k")
+        let fresh = await cache.data(for: "k", ttl: 3600,
+                                     notBefore: clock.now.addingTimeInterval(-10))
+        XCTAssertEqual(fresh, Data("x".utf8))
+    }
+
+    func testOldFormatHashOnlyFileReadsAsMiss() async {
+        let cache = MetadataCache(directory: dir)
+        // Pre-namespacing format: filename was the bare SHA-256 of the key.
+        let oldName = SHA256.hash(data: Data("legacy".utf8))
+            .map { String(format: "%02x", $0) }.joined() + ".json"
+        try? Data("raw".utf8).write(to: dir.appendingPathComponent(oldName))
+        let hit = await cache.data(for: "legacy", ttl: 3600)
+        XCTAssertNil(hit)  // new naming never matches the old path
     }
 }
 

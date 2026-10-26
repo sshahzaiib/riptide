@@ -21,24 +21,42 @@ public actor MetadataCache {
             at: self.directory, withIntermediateDirectories: true)
     }
 
-    public func data(for key: String, ttl: TimeInterval) -> Data? {
+    public func data(for key: String, ttl: TimeInterval,
+                     notBefore: Date? = nil) -> Data? {
+        func valid(_ stamp: Date) -> Bool {
+            now().timeIntervalSince(stamp) < ttl
+                && (notBefore.map { stamp >= $0 } ?? true)
+        }
         if let hit = memory[key] {
-            if now().timeIntervalSince(hit.stamp) < ttl {
-                return hit.data
-            } else {
-                memory.removeValue(forKey: key)
-            }
+            if valid(hit.stamp) { return hit.data }
+            memory.removeValue(forKey: key)
+            // Same stamp is on disk; don't fall through and resurrect it.
+            return nil
         }
         let url = fileURL(for: key)
         guard
-            let attrs = try? FileManager.default
-                .attributesOfItem(atPath: url.path),
+            let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
             let modified = attrs[.modificationDate] as? Date,
-            now().timeIntervalSince(modified) < ttl,
+            valid(modified),
             let data = try? Data(contentsOf: url)
         else { return nil }
         memory[key] = (modified, data)
         return data
+    }
+
+    /// Purge every entry whose key starts with `prefix`, from memory and disk.
+    /// Precondition: `prefix` must not contain "/" (memory filters by
+    /// `hasPrefix`, disk by the sanitized namespace before the first "/").
+    public func remove(prefix: String) {
+        memory = memory.filter { !$0.key.hasPrefix(prefix) }
+        let filePrefix = Self.sanitize(prefix.prefix(while: { $0 != "/" }))
+        guard !filePrefix.isEmpty else { return }
+        let fm = FileManager.default
+        for url in (try? fm.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: nil)) ?? []
+        where url.lastPathComponent.hasPrefix(filePrefix) {
+            try? fm.removeItem(at: url)
+        }
     }
 
     public func store(_ data: Data, for key: String) {
@@ -86,9 +104,21 @@ public actor MetadataCache {
         }
     }
 
-    private func fileURL(for key: String) -> URL {
+    /// Filename namespace: the key up to (excluding) its first "/", with every
+    /// non-alphanumeric mapped to "_". 1:1 char mapping keeps string-prefix
+    /// relations intact, so remove(prefix:) can match on filenames alone.
+    nonisolated private static func sanitize(_ s: Substring) -> String {
+        String(s.map { $0.isLetter || $0.isNumber ? $0 : "_" })
+    }
+
+    nonisolated static func fileName(for key: String) -> String {
+        let namespace = sanitize(key.prefix(while: { $0 != "/" }))
         let hash = SHA256.hash(data: Data(key.utf8))
             .map { String(format: "%02x", $0) }.joined()
-        return directory.appendingPathComponent(hash + ".json")
+        return namespace + "-" + hash + ".json"
+    }
+
+    private func fileURL(for key: String) -> URL {
+        directory.appendingPathComponent(Self.fileName(for: key))
     }
 }
