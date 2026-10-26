@@ -57,6 +57,7 @@ final class DiscoverModel {
         }
         recTraktIDs = [:]
         dismissError = nil
+        resetGeneration += 1
         ShelfDiskCache.remove(name: "discover")
     }
 
@@ -89,6 +90,7 @@ final class DiscoverModel {
     }
 
     private var inFlightShelves: Set<ShelfID> = []
+    private var resetGeneration = 0
 
     private func fetch(_ shelf: ShelfID, bypassCache: Bool) {
         guard !inFlightShelves.contains(shelf) else { return }
@@ -97,10 +99,12 @@ final class DiscoverModel {
         if !wasLoaded {
             shelves[shelf]?.state = .loading
         }
+        let generation = resetGeneration
         Task {
             defer { inFlightShelves.remove(shelf) }
             do {
                 let items = try await items(for: shelf, bypassCache: bypassCache)
+                guard generation == resetGeneration else { return }
                 shelves[shelf] = Shelf(items: items, state: .loaded)
                 let snapshot = shelves.compactMapValues { $0.state == .loaded ? $0.items : nil }
                 ShelfDiskCache.save(Dictionary(uniqueKeysWithValues:

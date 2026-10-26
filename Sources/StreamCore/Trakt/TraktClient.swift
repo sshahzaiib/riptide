@@ -457,6 +457,12 @@ public final class TraktClient {
     /// stops in-flight GETs from re-storing pre-write data.
     private func invalidateUserCache(after method: String) async {
         guard method != "GET" else { return }
+        await invalidateUserCache()
+    }
+
+    /// Drops cached user reads. The epoch bump is synchronous (before the first
+    /// suspension) so in-flight GETs can't re-store afterwards.
+    public func invalidateUserCache() async {
         writeEpoch += 1
         if let cache { await cache.remove(prefix: Self.userCachePrefix) }
     }

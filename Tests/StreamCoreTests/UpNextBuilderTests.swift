@@ -21,6 +21,14 @@ final class UpNextBuilderTests: XCTestCase {
         try! TraktClient.decoder.decode(TraktPlaybackEntry.self, from: Data(json.utf8))
     }
 
+    func testActivityDateIsLaterOfWatchedAndUpdated() throws {
+        let show = try TraktClient.decoder.decode(TraktWatchedShow.self, from: Data(#"""
+        {"last_watched_at":"2026-08-01T00:00:00.000Z","last_updated_at":"2026-08-05T00:00:00.000Z","show":{"ids":{"trakt":1,"tmdb":2}}}
+        """#.utf8))
+        XCTAssertEqual(show.lastUpdatedAt, show.activityDate)
+        XCTAssertGreaterThan(show.activityDate, show.lastWatchedAt)
+    }
+
     func testShortlistSortsFiltersAndCaps() {
         let shows = [watchedShow(tmdb: 1, watchedAt: "2026-08-01T00:00:00.000Z"),
                      watchedShow(tmdb: 2, watchedAt: "2026-08-03T00:00:00.000Z"),

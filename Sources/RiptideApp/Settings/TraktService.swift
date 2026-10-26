@@ -69,8 +69,9 @@ final class TraktService {
         ratingsCache = nil
         ratingsFetch?.cancel()
         ratingsFetch = nil
+        let oldClient = client
         rebuildClient()
-        Task { await MetadataCache.shared.remove(prefix: TraktClient.userCachePrefix) }
+        Task { await oldClient?.invalidateUserCache() }
         ShelfDiskCache.removeAll()
         FavoritesModel.shared.reset()
         WatchlistModel.shared.reset()
@@ -168,7 +169,7 @@ final class TraktService {
                 .first(where: { $0.show.ids.tmdb == tmdbID }),
                let traktID = show.show.ids.trakt {
                 for season in try await client.showProgress(traktID: traktID,
-                                                            lastActivity: show.lastWatchedAt).seasons {
+                                                            lastActivity: show.activityDate).seasons {
                     for ep in season.episodes where ep.completed {
                         states["\(season.number)#\(ep.number)"] = (1, true)
                     }

@@ -394,6 +394,25 @@ final class TraktClientTests: XCTestCase {
         XCTAssertEqual(requestCount, 3)
     }
 
+    func testInvalidateUserCacheForcesRefetch() async throws {
+        nonisolated(unsafe) var requestCount = 0
+        MockURLProtocol.setHandler { _ in requestCount += 1; return .json("[]") }
+        let client = makeClientWithCache()
+        _ = try await client.watchlist()
+        await client.invalidateUserCache()
+        _ = try await client.watchlist()
+        XCTAssertEqual(requestCount, 2)
+    }
+
+    func testRatingsNeverConsultCache() async throws {
+        nonisolated(unsafe) var requestCount = 0
+        MockURLProtocol.setHandler { _ in requestCount += 1; return .json("[]") }
+        let client = makeClientWithCache()
+        _ = try await client.ratedMovies()
+        _ = try await client.ratedMovies()
+        XCTAssertEqual(requestCount, 2)
+    }
+
     func testPlaybackNeverConsultsCache() async throws {
         nonisolated(unsafe) var requestCount = 0
         MockURLProtocol.setHandler { _ in requestCount += 1; return .json("[]") }
@@ -421,7 +440,8 @@ final class TraktClientTests: XCTestCase {
     func testCacheKeyIsAccountScoped() async throws {
         nonisolated(unsafe) var requestCount = 0
         MockURLProtocol.setHandler { _ in requestCount += 1; return .json("[]") }
-        let cache = MetadataCache(directory: nil)
+        let cache = MetadataCache(directory: FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString))
         _ = try await makeClientWithCache(cache: cache, accessToken: "token-A").watchlist()
         _ = try await makeClientWithCache(cache: cache, accessToken: "token-B").watchlist()
         XCTAssertEqual(requestCount, 2)  // different account -> different key -> miss

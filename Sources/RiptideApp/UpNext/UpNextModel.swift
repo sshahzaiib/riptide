@@ -188,7 +188,7 @@ final class UpNextModel {
                 guard let traktID = show.show.ids.trakt else { continue }
                 group.addTask { @MainActor in
                     (index, try? await client.showProgress(traktID: traktID,
-                                                           lastActivity: show.lastWatchedAt))
+                                                           lastActivity: show.activityDate))
                 }
             }
             for await (index, progress) in group {

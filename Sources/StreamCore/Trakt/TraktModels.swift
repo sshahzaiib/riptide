@@ -97,10 +97,15 @@ public struct TraktWatchedMovie: Decodable, Equatable, Sendable {
 public struct TraktWatchedShow: Decodable, Equatable, Sendable {
     public let show: TraktShowRef
     public let lastWatchedAt: Date
+    public let lastUpdatedAt: Date?
+
+    /// Staleness-barrier date: the later of watch time and record update time.
+    public var activityDate: Date { max(lastWatchedAt, lastUpdatedAt ?? lastWatchedAt) }
 
     enum CodingKeys: String, CodingKey {
         case show
         case lastWatchedAt = "last_watched_at"
+        case lastUpdatedAt = "last_updated_at"
     }
 }
 

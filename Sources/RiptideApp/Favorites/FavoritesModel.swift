@@ -67,6 +67,7 @@ final class FavoritesModel {
                 // than discard (same guard WatchlistModel uses).
                 return await doLoad()
             }
+            guard TraktService.shared.client === trakt else { return }
             membership = Set(entries.compactMap { entry in
                 let isShow = entry.type == "show"
                 guard let tmdb = (isShow ? entry.show : entry.movie)?.ids.tmdb else { return nil }
