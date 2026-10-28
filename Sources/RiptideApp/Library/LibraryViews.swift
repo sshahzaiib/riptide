@@ -412,7 +412,7 @@ struct HistoryCard: View {
 
     var body: some View {
         Group {
-            if isEpisode, let show = model.shows.first(where: { entry.tmdbID != nil && $0.tmdbID == entry.tmdbID }) {
+            if isEpisode, let id = entry.tmdbID, let show = model.showGroup(tmdbID: id) {
                 NavigationLink(destination: ShowDetailView(show: show)) { card }
             } else if !isEpisode, let id = entry.tmdbID,
                       let item = model.libraryItem(tmdbID: id, season: nil, episode: nil) {

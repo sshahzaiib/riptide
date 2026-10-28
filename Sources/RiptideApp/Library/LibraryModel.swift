@@ -42,8 +42,9 @@ final class LibraryModel {
         self.store = store
         // ponytail: one-shot flag lives here so StreamCore stays UserDefaults-free.
         if !UserDefaults.standard.bool(forKey: "historyBackfilled") {
-            _ = try? store.backfillHistory()
-            UserDefaults.standard.set(true, forKey: "historyBackfilled")
+            if (try? store.backfillHistory()) != nil {
+                UserDefaults.standard.set(true, forKey: "historyBackfilled")
+            }
         }
         reload()
     }
@@ -70,8 +71,14 @@ final class LibraryModel {
         filtered.filter { $0.mediaKind == "movie" && $0.tmdbID != nil }
     }
 
-    var shows: [ShowGroup] {
-        let episodes = filtered.filter { $0.mediaKind == "episode" }
+    var shows: [ShowGroup] { Self.groupShows(filtered.filter { $0.mediaKind == "episode" }) }
+
+    /// Unfiltered lookup for the History tab (independent of `searchText`).
+    func showGroup(tmdbID: Int) -> ShowGroup? {
+        Self.groupShows(items.filter { $0.mediaKind == "episode" && $0.tmdbID == tmdbID }).first
+    }
+
+    private static func groupShows(_ episodes: [LibraryItem]) -> [ShowGroup] {
         let grouped = Dictionary(grouping: episodes) { $0.title.lowercased() }
         return grouped.values.map { eps in
             let sorted = eps.sorted {
