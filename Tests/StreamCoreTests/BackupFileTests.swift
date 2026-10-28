@@ -20,4 +20,17 @@ final class BackupFileTests: XCTestCase {
             guard case BackupError.unsupportedVersion(2) = $0 else { return XCTFail("\($0)") }
         }
     }
+
+    func testCorruptDefaultsThrows() {
+        let f = BackupFile(createdAt: Date(), keychain: [:], defaults: Data("[1]".utf8), history: [], watchStates: [])
+        XCTAssertThrowsError(try f.defaultsDictionary()) {
+            guard case BackupError.corruptDefaults = $0 else { return XCTFail("\($0)") }
+        }
+    }
+
+    func testDefaultsDataDropsNonJSONValues() throws {
+        let data = try BackupFile.defaultsData(from: ["a": 1, "bm": Data([1, 2])])
+        let f = BackupFile(createdAt: Date(), keychain: [:], defaults: data, history: [], watchStates: [])
+        XCTAssertEqual(try f.defaultsDictionary().keys.sorted(), ["a"])
+    }
 }
