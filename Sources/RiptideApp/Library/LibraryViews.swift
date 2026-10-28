@@ -7,6 +7,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
     case discover = "Discover"
     case watchlist = "Watchlist"
     case continueWatching = "Continue Watching"
+    case history = "History"
     case movies = "Movies"
     case shows = "TV Shows"
     case files = "Other Files"
@@ -17,6 +18,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
         case .discover: "safari"
         case .watchlist: "bookmark"
         case .continueWatching: "play.circle"
+        case .history: "clock.arrow.circlepath"
         case .movies: "film"
         case .shows: "tv"
         case .files: "doc"
@@ -211,6 +213,7 @@ struct LibraryRootView: View {
         case .discover: DiscoverView()
         case .watchlist: WatchlistView()
         case .continueWatching: ContinueWatchingGrid()
+        case .history: HistoryGrid()
         case .movies: MovieGrid()
         case .shows: ShowsList()
         case .files: FileList()
@@ -359,6 +362,84 @@ struct ContinueWatchingGrid: View {
                                        description: Text("Movies you start watching appear here."))
             }
         }
+    }
+}
+
+struct HistoryGrid: View {
+    @Environment(LibraryModel.self) private var model
+    @State private var streamRequest: StreamRequest?
+
+    var body: some View {
+        ScrollView {
+            LazyVGrid(columns: posterColumns, spacing: 20) {
+                ForEach(model.history, id: \.key) { entry in
+                    HistoryCard(entry: entry, streamRequest: $streamRequest)
+                }
+            }
+            .padding()
+        }
+        .overlay {
+            if model.history.isEmpty && model.searchText.isEmpty {
+                ContentUnavailableView("Nothing watched yet", systemImage: "clock.arrow.circlepath",
+                                       description: Text("Everything you play appears here."))
+            }
+        }
+        .sheet(item: $streamRequest) { StreamPickerSheet(request: $0) }
+    }
+}
+
+struct HistoryCard: View {
+    @Environment(LibraryModel.self) private var model
+    let entry: HistoryEntry
+    @Binding var streamRequest: StreamRequest?
+
+    private var isEpisode: Bool { entry.mediaKind == "episode" }
+
+    private var card: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            PosterCard(title: entry.title,
+                       subtitle: isEpisode ? "S\(entry.season ?? 0)E\(entry.episode ?? 0)"
+                                           : entry.year.map(String.init),
+                       posterPath: entry.posterPath)
+            HStack(spacing: 4) {
+                ProgressView(value: entry.finished ? 1 : entry.progress).controlSize(.small)
+                if entry.finished {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                }
+            }
+        }
+    }
+
+    var body: some View {
+        Group {
+            if isEpisode, let show = model.shows.first(where: { entry.tmdbID != nil && $0.tmdbID == entry.tmdbID }) {
+                NavigationLink(destination: ShowDetailView(show: show)) { card }
+            } else if !isEpisode, let id = entry.tmdbID,
+                      let item = model.libraryItem(tmdbID: id, season: nil, episode: nil) {
+                NavigationLink(destination: ItemDetailView(item: item)) { card }
+            } else if let id = entry.tmdbID {
+                Button { Task { await findStreams(tmdbID: id) } } label: { card }
+            } else {
+                card
+            }
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button("Remove from History", role: .destructive) { model.removeHistory(entry) }
+        }
+    }
+
+    private func findStreams(tmdbID: Int) async {
+        let token = AppSettings.shared.tmdbToken
+        guard !token.isEmpty else { return }
+        let tmdb = TMDBClient(bearerToken: token, cache: .shared)
+        // ponytail: fetch failure leaves the card inert, no error UI.
+        let ids = isEpisode ? try? await tmdb.externalIDs(showID: tmdbID)
+                            : try? await tmdb.externalIDs(movieID: tmdbID)
+        guard let imdbID = ids?.imdbID else { return }
+        streamRequest = StreamRequest(type: isEpisode ? .series : .movie, imdbID: imdbID,
+                                      title: entry.title, season: entry.season,
+                                      episode: entry.episode, tmdbID: tmdbID)
     }
 }
 

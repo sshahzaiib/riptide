@@ -27,6 +27,7 @@ final class LibraryModel {
 
     private(set) var items: [LibraryItem] = []
     private(set) var continueWatching: [ContinueEntry] = []
+    private var allHistory: [HistoryEntry] = []
     private(set) var refreshing = false
     var searchText = ""
     var errorMessage: String?
@@ -39,6 +40,21 @@ final class LibraryModel {
 
     init(store: LibraryStore) {
         self.store = store
+        // ponytail: one-shot flag lives here so StreamCore stays UserDefaults-free.
+        if !UserDefaults.standard.bool(forKey: "historyBackfilled") {
+            _ = try? store.backfillHistory()
+            UserDefaults.standard.set(true, forKey: "historyBackfilled")
+        }
+        reload()
+    }
+
+    var history: [HistoryEntry] {
+        guard !searchText.isEmpty else { return allHistory }
+        return allHistory.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
+    }
+
+    func removeHistory(_ entry: HistoryEntry) {
+        try? store.removeHistory(key: entry.key)
         reload()
     }
 
@@ -75,6 +91,7 @@ final class LibraryModel {
 
     func reload() {
         items = (try? store.items()) ?? []
+        allHistory = (try? store.history()) ?? []
         let states = (try? store.continueWatching()) ?? []
         let entries: [ContinueEntry] = states.compactMap { state in
             guard let item = items.first(where: { $0.itemKey == state.itemKey }),
