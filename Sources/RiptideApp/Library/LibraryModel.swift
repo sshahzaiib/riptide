@@ -76,10 +76,50 @@ final class LibraryModel {
     func reload() {
         items = (try? store.items()) ?? []
         let states = (try? store.continueWatching()) ?? []
-        continueWatching = states.compactMap { state in
+        let entries: [ContinueEntry] = states.compactMap { state in
             guard let item = items.first(where: { $0.itemKey == state.itemKey }),
                   item.mediaKind != "extra" else { return nil }
             return ContinueEntry(state: state, item: item)
+        }
+        // Duplicate copies (same tmdbID/season/episode) collapse to the newest.
+        func dupKey(_ e: ContinueEntry) -> String {
+            e.item.tmdbID.map { "\($0)/\(e.item.season ?? -1)/\(e.item.episode ?? -1)" } ?? e.item.itemKey
+        }
+        let newest = Dictionary(entries.map { (dupKey($0), $0) }) {
+            $0.state.lastWatchedAt >= $1.state.lastWatchedAt ? $0 : $1
+        }
+        var seen = Set<String>()
+        continueWatching = entries.compactMap { e in
+            let k = dupKey(e)
+            return seen.insert(k).inserted ? newest[k] : nil
+        }
+    }
+
+    /// Items awaiting the "Ask before deleting" confirmation (one dialog on the root view).
+    var pendingDelete: [LibraryItem]?
+
+    func requestDelete(_ items: [LibraryItem]) {
+        if UserDefaults.standard.object(forKey: "confirmDelete") as? Bool ?? true {
+            pendingDelete = items
+        } else {
+            Task { for item in items { await delete(item) } }
+        }
+    }
+
+    /// Deletes the item's whole torrent from the debrid account, then locally.
+    func delete(_ item: LibraryItem) async {
+        // Multi-version selections can share a torrent; it's already gone then.
+        guard items.contains(where: { $0.itemKey == item.itemKey }) else { return }
+        let settings = AppSettings.shared
+        let service: any DebridService = item.service == "ad"
+            ? AllDebridService(client: AllDebridClient(token: settings.adToken))
+            : RealDebridService(rd: RealDebridClient(token: settings.rdToken))
+        do {
+            try await service.delete(id: item.torrentID)
+            try store.delete(torrentID: item.torrentID)
+            reload()
+        } catch {
+            errorMessage = "Delete failed: \(error)"
         }
     }
 

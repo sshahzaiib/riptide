@@ -17,6 +17,7 @@ struct SettingsView: View {
     @State private var traktClientSecret = TraktService.shared.clientSecret
     @State private var showTraktConnect = false
     @AppStorage("autoplayNext") private var autoplayNext = true
+    @AppStorage("confirmDelete") private var confirmDelete = true
     @AppStorage(StreamingCachePreset.storageKey)
     private var streamingCache: StreamingCachePreset = .default
 
@@ -46,6 +47,7 @@ struct SettingsView: View {
                 Toggle("Autoplay next episode", isOn: $autoplayNext)
                 Text("When an episode ends, the next one starts after a 10-second countdown.")
                     .font(.caption).foregroundStyle(.secondary)
+                Toggle("Ask before deleting", isOn: $confirmDelete)
                 Picker("Streaming cache", selection: $streamingCache) {
                     ForEach(StreamingCachePreset.allCases, id: \.self) { preset in
                         Text(preset.label).tag(preset)

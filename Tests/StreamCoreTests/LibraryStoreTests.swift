@@ -68,6 +68,17 @@ final class LibraryStoreTests: XCTestCase {
         XCTAssertEqual(try store.continueWatching().map(\.itemKey), ["T1#0"])
     }
 
+    func testDeleteByTorrentIDRemovesItemsAndWatchState() throws {
+        let store = try LibraryStore.inMemory()
+        _ = try store.upsert(entries: [entry(torrentID: "T1", filename: "A.2020.mkv"),
+                                       entry(torrentID: "T2", filename: "B.2021.mkv")])
+        try store.saveProgress(itemKey: "T1#0", position: 100, duration: 7200)
+        try store.saveProgress(itemKey: "T2#0", position: 100, duration: 7200)
+        try store.delete(torrentID: "T1")
+        XCTAssertEqual(try store.items().map(\.itemKey), ["T2#0"])
+        XCTAssertEqual(try store.allWatchStates().map(\.itemKey), ["T2#0"])
+    }
+
     func testEntryCountsAndCachedEntries() throws {
         let store = try LibraryStore.inMemory()
         let originals = [

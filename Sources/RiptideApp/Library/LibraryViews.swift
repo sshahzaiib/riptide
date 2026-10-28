@@ -143,6 +143,15 @@ struct LibraryRootView: View {
                 .background(.bar)
             }
         }
+        .confirmationDialog("Delete from debrid?", isPresented: Binding(
+            get: { model.pendingDelete != nil }, set: { if !$0 { model.pendingDelete = nil } }),
+            presenting: model.pendingDelete) { items in
+            Button("Delete", role: .destructive) { Task { for i in items { await model.delete(i) } } }
+        } message: { items in
+            let torrents = Set(items.map(\.torrentID))
+            let others = model.items.filter { torrents.contains($0.torrentID) }.count - items.count
+            Text("Removes the whole torrent from your debrid account" + (others > 0 ? " and \(others) other files." : "."))
+        }
         .environment(model)
         .environment(downloads)
         .environment(localDownloads)
@@ -248,16 +257,40 @@ struct MovieGrid: View {
     @Environment(LibraryModel.self) private var model
     @Environment(LocalDownloadManager.self) private var downloads
 
+    /// One entry per tmdbID, copies preference-ranked (first = preferred).
+    private var groups: [[LibraryItem]] {
+        let states = Dictionary(((try? model.store.allWatchStates()) ?? []).map { ($0.itemKey, $0) },
+                                uniquingKeysWith: { first, _ in first })
+        var order: [Int] = []
+        let byID = Dictionary(grouping: model.movies) { $0.tmdbID! }
+        for m in model.movies where !order.contains(m.tmdbID!) { order.append(m.tmdbID!) }
+        return order.map { VersionPreference.ranked(items: byID[$0]!, states: states) }
+    }
+
     var body: some View {
         ScrollView {
             LazyVGrid(columns: posterColumns, spacing: 20) {
-                ForEach(model.movies, id: \.itemKey) { item in
+                ForEach(groups, id: \.first!.itemKey) { copies in
+                    let item = copies[0]
                     NavigationLink(destination: ItemDetailView(item: item)) {
-                        PosterCard(title: item.title, subtitle: item.year.map(String.init),
+                        PosterCard(title: item.title,
+                                   subtitle: [item.year.map(String.init),
+                                              copies.count > 1 ? "\(copies.count) versions" : nil]
+                                       .compactMap { $0 }.joined(separator: " · ").nilIfEmpty,
                                    posterPath: item.posterPath,
                                    downloaded: downloads.isDownloaded(item.itemKey))
                     }
                     .buttonStyle(.plain)
+                    .contextMenu {
+                        ForEach(copies, id: \.itemKey) { v in
+                            Button("Delete · \(versionLabel(v, isPreferred: false))", role: .destructive) {
+                                model.requestDelete([v])
+                            }
+                        }
+                        if copies.count > 1 {
+                            Button("Delete All Versions", role: .destructive) { model.requestDelete(copies) }
+                        }
+                    }
                 }
             }
             .padding()
@@ -481,4 +514,8 @@ struct ServiceBadge: View {
                 .background(.quaternary, in: Capsule())
         }
     }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

@@ -170,6 +170,18 @@ struct ItemDetailView: View {
                     .fixedSize()
                     .help("Download or copy the direct link")
 
+                    Menu {
+                        ForEach(versions, id: \.itemKey) { version in
+                            Button("Delete · \(versionLabel(version, isPreferred: version.itemKey == current.itemKey))",
+                                   role: .destructive) { model.requestDelete([version]) }
+                        }
+                    } label: {
+                        Image(systemName: "trash").padding(.vertical, 8)
+                    }
+                    .buttonStyle(.bordered)
+                    .fixedSize()
+                    .help("Delete from debrid")
+
                     if let playError {
                         Text(playError).foregroundStyle(.red).font(.callout)
                     }
@@ -651,6 +663,12 @@ struct ShowDetailView: View {
             .contextMenu {
                 Button(model.isFinished(episode) ? "Mark Unwatched" : "Mark Watched") {
                     model.setWatched(!model.isFinished(episode), items: [episode])
+                }
+                Menu("Delete from Debrid") {
+                    ForEach(slot.items, id: \.itemKey) { version in
+                        Button("Delete · \(versionLabel(version, isPreferred: version.itemKey == episode.itemKey))",
+                               role: .destructive) { library.requestDelete([version]) }
+                    }
                 }
                 if slot.items.count > 1 {
                     Menu("Versions") {

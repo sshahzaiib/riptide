@@ -121,6 +121,17 @@ public final class LibraryStore {
         return summary
     }
 
+    /// Remove every file of a torrent (and their watch state) after a debrid delete.
+    public func delete(torrentID: String) throws {
+        let gone = try context.fetch(FetchDescriptor<LibraryItem>()).filter { $0.torrentID == torrentID }
+        let keys = Set(gone.map(\.itemKey))
+        for state in try context.fetch(FetchDescriptor<WatchState>()) where keys.contains(state.itemKey) {
+            context.delete(state)
+        }
+        gone.forEach(context.delete)
+        try context.save()
+    }
+
     public func items() throws -> [LibraryItem] {
         try context.fetch(FetchDescriptor<LibraryItem>(
             sortBy: [SortDescriptor(\.addedAt, order: .reverse)]))
