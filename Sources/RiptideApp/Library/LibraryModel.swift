@@ -11,6 +11,12 @@ struct ShowGroup: Identifiable {
     var tmdbID: Int? { episodes.compactMap(\.tmdbID).first }
 }
 
+struct HistoryCardGroup: Identifiable {
+    let id: String
+    let entries: [HistoryEntry]
+    var newest: HistoryEntry { entries.max { $0.lastWatchedAt < $1.lastWatchedAt }! }
+}
+
 struct ContinueEntry: Identifiable {
     var id: String { state.itemKey }
     let state: WatchState
@@ -52,6 +58,18 @@ final class LibraryModel {
     var history: [HistoryEntry] {
         guard !searchText.isEmpty else { return allHistory }
         return allHistory.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
+    }
+
+    /// Episodes merged per show; movies/unmatched stay one card each. First-seen order kept.
+    var historyGroups: [HistoryCardGroup] {
+        var order: [String] = []
+        var buckets: [String: [HistoryEntry]] = [:]
+        for e in history {
+            let id = e.mediaKind == "episode" ? "show:" + (e.tmdbID.map(String.init) ?? e.title.lowercased()) : e.key
+            if buckets[id] == nil { order.append(id) }
+            buckets[id, default: []].append(e)
+        }
+        return order.map { HistoryCardGroup(id: $0, entries: buckets[$0]!) }
     }
 
     func removeHistory(_ entry: HistoryEntry) {

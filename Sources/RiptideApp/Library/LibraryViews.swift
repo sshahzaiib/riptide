@@ -372,8 +372,8 @@ struct HistoryGrid: View {
     var body: some View {
         ScrollView {
             LazyVGrid(columns: posterColumns, spacing: 20) {
-                ForEach(model.history, id: \.key) { entry in
-                    HistoryCard(entry: entry, streamRequest: $streamRequest)
+                ForEach(model.historyGroups) { group in
+                    HistoryCard(group: group, streamRequest: $streamRequest)
                 }
             }
             .padding()
@@ -391,17 +391,19 @@ struct HistoryGrid: View {
 struct HistoryCard: View {
     @Environment(LibraryModel.self) private var model
     @Environment(\.openWindow) private var openWindow
-    let entry: HistoryEntry
+    let group: HistoryCardGroup
     @Binding var streamRequest: StreamRequest?
 
+    private var entry: HistoryEntry { group.newest }
     private var isEpisode: Bool { entry.mediaKind == "episode" }
 
     private var card: some View {
         VStack(alignment: .leading, spacing: 6) {
             PosterCard(title: entry.title,
                        subtitle: isEpisode ? "S\(entry.season ?? 0)E\(entry.episode ?? 0)"
+                                             + (group.entries.count > 1 ? " · \(group.entries.count) episodes" : "")
                                            : entry.year.map(String.init),
-                       posterPath: entry.posterPath)
+                       posterPath: entry.posterPath ?? group.entries.lazy.compactMap(\.posterPath).first)
             HStack(spacing: 4) {
                 ProgressView(value: entry.finished ? 1 : entry.progress).controlSize(.small)
                 if entry.finished {
@@ -428,7 +430,7 @@ struct HistoryCard: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            Button("Remove from History", role: .destructive) { model.removeHistory(entry) }
+            Button("Remove from History", role: .destructive) { group.entries.forEach(model.removeHistory) }
         }
     }
 
