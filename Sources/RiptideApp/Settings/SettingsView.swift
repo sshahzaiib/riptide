@@ -7,6 +7,7 @@ struct SettingsView: View {
     /// number newly adopted. Injected so Settings needn't reach the manager
     /// through the sheet's environment.
     var onScanFolder: (() -> Int)? = nil
+    let store: LibraryStore
     @State private var scanResult: String?
     @Environment(\.dismiss) private var dismiss
     @State private var rdToken = AppSettings.shared.rdToken
@@ -93,6 +94,7 @@ struct SettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
+            BackupSection(store: store)
             Section("Cache") {
                 LabeledContent("Storage used", value: cacheSize)
                 Button("Clear cache") { Task { await clearCache() } }
