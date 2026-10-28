@@ -26,7 +26,8 @@ public final class LibraryStore {
     public static func inMemory() throws -> LibraryStore {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: LibraryItem.self, WatchState.self,
-                                           DownloadRecord.self, configurations: config)
+                                           DownloadRecord.self, HistoryEntry.self,
+                                           configurations: config)
         return LibraryStore(container: container)
     }
 
@@ -45,11 +46,13 @@ public final class LibraryStore {
         func open() throws -> LibraryStore {
             let config = ModelConfiguration(url: storeURL)
             let container = try ModelContainer(for: LibraryItem.self, WatchState.self,
-                                               DownloadRecord.self, configurations: config)
+                                               DownloadRecord.self, HistoryEntry.self,
+                                           configurations: config)
             let store = LibraryStore(container: container)
             _ = try store.context.fetchCount(FetchDescriptor<LibraryItem>())
             _ = try store.context.fetchCount(FetchDescriptor<WatchState>())
             _ = try store.context.fetchCount(FetchDescriptor<DownloadRecord>())
+            _ = try store.context.fetchCount(FetchDescriptor<HistoryEntry>())
             return store
         }
         do { return try open() } catch {
@@ -305,6 +308,8 @@ public final class LibraryStore {
                                       durationSeconds: duration, finished: finished))
         }
         try context.save()
+        try recordHistory(itemKey: itemKey, progress: duration > 0 ? position / duration : 0,
+                          finished: finished, at: .now)
     }
 
     /// Remote (Trakt) playback position. Unlike saveProgress this keeps the
@@ -325,6 +330,8 @@ public final class LibraryStore {
             context.insert(state)
         }
         try context.save()
+        try recordHistory(itemKey: itemKey, progress: duration > 0 ? position / duration : 0,
+                          finished: nil, at: watchedAt)
     }
 
     /// Remote (Trakt) watched marker: finished, position/duration preserved.
@@ -341,6 +348,7 @@ public final class LibraryStore {
             context.insert(state)
         }
         try context.save()
+        try recordHistory(itemKey: itemKey, progress: 1, finished: true, at: watchedAt)
     }
 
     /// Manual watched toggle (context menus). Writes a fresh lastWatchedAt so
@@ -360,6 +368,65 @@ public final class LibraryStore {
         state.positionSeconds = watched ? state.durationSeconds : 0
         state.lastWatchedAt = .now
         try context.save()
+        try recordHistory(itemKey: itemKey, progress: watched ? 1 : 0, finished: watched, at: .now)
+    }
+
+    // MARK: History
+
+    private func recordHistory(itemKey: String, progress: Double, finished: Bool?, at: Date) throws {
+        let d = FetchDescriptor<LibraryItem>(predicate: #Predicate { $0.itemKey == itemKey })
+        guard let item = try context.fetch(d).first else { return }
+        try recordHistory(item: item, progress: progress, finished: finished, at: at)
+    }
+
+    /// Upserts the history row for `item`. Newest timestamp wins for progress/finished;
+    /// lastWatchedAt only moves forward. `finished: nil` leaves the flag alone.
+    public func recordHistory(item: LibraryItem, progress: Double, finished: Bool?, at: Date) throws {
+        guard item.mediaKind != "extra" else { return }
+        let key = HistoryEntry.key(for: item)
+        let d = FetchDescriptor<HistoryEntry>(predicate: #Predicate { $0.key == key })
+        if let row = try context.fetch(d).first {
+            if at >= row.lastWatchedAt {
+                row.progress = progress
+                if let finished {
+                    // ponytail: progress 0 + false is how setWatched(false) resets; other false never regresses
+                    row.finished = finished || (row.finished && progress > 0)
+                }
+            }
+            row.lastWatchedAt = max(row.lastWatchedAt, at)
+        } else {
+            context.insert(HistoryEntry(
+                key: key, title: item.title, year: item.year, mediaKind: item.mediaKind,
+                tmdbID: item.tmdbID, season: item.season, episode: item.episode,
+                posterPath: item.posterPath, lastWatchedAt: at, progress: progress,
+                finished: finished ?? false))
+        }
+        try context.save()
+    }
+
+    public func history() throws -> [HistoryEntry] {
+        try context.fetch(FetchDescriptor<HistoryEntry>(
+            sortBy: [SortDescriptor(\.lastWatchedAt, order: .reverse)]))
+    }
+
+    public func removeHistory(key: String) throws {
+        try context.delete(model: HistoryEntry.self, where: #Predicate { $0.key == key })
+        try context.save()
+    }
+
+    /// One-time seed from existing watch states; orphans (no item) are skipped.
+    public func backfillHistory() throws -> Int {
+        var n = 0
+        for s in try allWatchStates() where s.positionSeconds > 0 || s.finished {
+            let key = s.itemKey
+            let d = FetchDescriptor<LibraryItem>(predicate: #Predicate { $0.itemKey == key })
+            guard let item = try context.fetch(d).first, item.mediaKind != "extra" else { continue }
+            try recordHistory(item: item,
+                              progress: s.durationSeconds > 0 ? s.positionSeconds / s.durationSeconds : (s.finished ? 1 : 0),
+                              finished: s.finished, at: s.lastWatchedAt)
+            n += 1
+        }
+        return n
     }
 
     /// Unfinished, started items, most recently watched first.

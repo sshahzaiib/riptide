@@ -98,3 +98,35 @@ public final class WatchState {
         self.finished = finished
     }
 }
+
+/// One row per watched title (movie / episode), independent of the library:
+/// survives torrent deletion and orphan cleanup.
+@Model
+public final class HistoryEntry {
+    @Attribute(.unique) public var key: String   // tmdb:<id> | tmdb:<id>/S<s>E<e> | file:<filename>
+    public var title: String
+    public var year: Int?
+    public var mediaKind: String
+    public var tmdbID: Int?
+    public var season: Int?
+    public var episode: Int?
+    public var posterPath: String?
+    public var lastWatchedAt: Date
+    public var progress: Double
+    public var finished: Bool
+
+    public init(key: String, title: String, year: Int?, mediaKind: String, tmdbID: Int?,
+                season: Int?, episode: Int?, posterPath: String?, lastWatchedAt: Date,
+                progress: Double, finished: Bool) {
+        self.key = key; self.title = title; self.year = year; self.mediaKind = mediaKind
+        self.tmdbID = tmdbID; self.season = season; self.episode = episode
+        self.posterPath = posterPath; self.lastWatchedAt = lastWatchedAt
+        self.progress = progress; self.finished = finished
+    }
+
+    public static func key(for item: LibraryItem) -> String {
+        guard let id = item.tmdbID else { return "file:\(item.filename)" }
+        if let s = item.season, let e = item.episode { return "tmdb:\(id)/S\(s)E\(e)" }
+        return "tmdb:\(id)"
+    }
+}
