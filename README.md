@@ -41,6 +41,12 @@ account. It hosts nothing, indexes nothing, and ships with no content
 sources. You are responsible for what you add to your account and for
 complying with the terms of the services you connect.
 
+## Support
+
+Riptide is free and GPL-licensed. If it replaced a paid player for you,
+[Ko-fi](https://ko-fi.com/sshahzaiib) or
+[GitHub Sponsors](https://github.com/sponsors/sshahzaiib) keeps it shipping.
+
 ## Attribution
 
 - This product uses the TMDB API but is not endorsed or certified by TMDB.
