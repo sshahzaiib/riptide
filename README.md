@@ -8,7 +8,7 @@ metadata, play anything mpv can decode, and sync watch progress with Trakt.
 
 ## Requirements
 
-- macOS 14+
+- macOS 26+
 - Real-Debrid premium account + [API token](https://real-debrid.com/apitoken)
 - Free [TMDB API Read Access Token](https://www.themoviedb.org/settings/api) (posters/metadata)
 - Optional: [AllDebrid API key](https://alldebrid.com/apikeys) as a backup resolver
