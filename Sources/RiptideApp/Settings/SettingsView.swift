@@ -121,6 +121,8 @@ struct SettingsView: View {
                 Link("Create a free key at themoviedb.org/settings/api",
                      destination: URL(string: "https://www.themoviedb.org/settings/api")!)
                     .font(.caption)
+                Text("This product uses the TMDB API but is not endorsed or certified by TMDB.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("OpenSubtitles (optional)") {
                 SecureField("API key", text: $openSubsKey).frame(maxWidth: .infinity)
@@ -134,6 +136,8 @@ struct SettingsView: View {
                 Link("Create an app at trakt.tv/oauth/applications",
                      destination: URL(string: "https://trakt.tv/oauth/applications")!)
                     .font(.caption)
+                Text("Riptide uses Trakt but is not endorsed or certified by Trakt.")
+                    .font(.caption).foregroundStyle(.secondary)
                 HStack {
                     if trakt.isConnected {
                         Label(trakt.needsReauth ? "Reconnect needed" : "Connected",
