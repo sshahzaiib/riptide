@@ -139,7 +139,7 @@ switch the dependency to the `MPVKit-GPL` product.
 
 ## Design/planning docs
 
-`docs/superpowers/specs/` and `docs/superpowers/plans/` hold the
-spec-then-plan documents this codebase was built from (superpowers
+`docs/superpowers/specs/` and `docs/superpowers/plans/` (local only, gitignored)
+hold the spec-then-plan documents this codebase was built from (superpowers
 brainstorming/writing-plans workflow) — check there for the reasoning behind
 a feature before re-deriving it from the diff.

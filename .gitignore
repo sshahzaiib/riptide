@@ -3,3 +3,5 @@
 *.xcodeproj
 .swiftpm/
 dist/
+docs/superpowers/
+.superpowers/
