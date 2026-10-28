@@ -390,6 +390,7 @@ struct HistoryGrid: View {
 
 struct HistoryCard: View {
     @Environment(LibraryModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
     let entry: HistoryEntry
     @Binding var streamRequest: StreamRequest?
 
@@ -419,6 +420,8 @@ struct HistoryCard: View {
                 NavigationLink(destination: ItemDetailView(item: item)) { card }
             } else if let id = entry.tmdbID {
                 Button { Task { await findStreams(tmdbID: id) } } label: { card }
+            } else if let item = model.items.first(where: { $0.tmdbID == nil && HistoryEntry.key(for: $0) == entry.key }) {
+                Button { Task { if let p = try? await model.playItem(for: item) { openWindow(value: p) } } } label: { card }
             } else {
                 card
             }

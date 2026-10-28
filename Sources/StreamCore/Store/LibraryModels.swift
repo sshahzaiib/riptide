@@ -126,7 +126,7 @@ public final class HistoryEntry {
 
     public static func key(for item: LibraryItem) -> String {
         guard let id = item.tmdbID else { return "file:\(item.filename)" }
-        if let s = item.season, let e = item.episode { return "tmdb:\(id)/S\(s)E\(e)" }
+        if item.mediaKind == "episode" { return "tmdb:\(id)/S\(item.season ?? 0)E\(item.episode ?? 0)" }
         return "tmdb:\(id)"
     }
 }

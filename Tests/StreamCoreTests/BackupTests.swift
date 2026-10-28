@@ -46,6 +46,21 @@ final class BackupTests: XCTestCase {
         XCTAssertEqual(try store.history()[0].progress, 0.1, accuracy: 0.0001)
     }
 
+    func testImportWatchStatesNewestWins() throws {
+        let store = try LibraryStore.inMemory()
+        try matched(store, ["T1": 1])
+        try store.saveProgress(itemKey: "T1#0", position: 50, duration: 100)
+        let local = try XCTUnwrap(store.exportWatchStates().first)
+        func dto(_ delta: TimeInterval, _ p: Double) -> WatchStateDTO {
+            var d = local; d.lastWatchedAt = local.lastWatchedAt.addingTimeInterval(delta); d.positionSeconds = p
+            return d
+        }
+        XCTAssertEqual(try store.importWatchStates([dto(-60, 10)]), 0)
+        XCTAssertEqual(try store.exportWatchStates()[0].positionSeconds, 50, accuracy: 0.0001)
+        XCTAssertEqual(try store.importWatchStates([dto(60, 10)]), 1)
+        XCTAssertEqual(try store.exportWatchStates()[0].positionSeconds, 10, accuracy: 0.0001)
+    }
+
     func testWatchStateRoundTrip() throws {
         let store = try LibraryStore.inMemory()
         try matched(store, ["T1": 1])

@@ -56,9 +56,15 @@ public final class LibraryStore {
             return store
         }
         do { return try open() } catch {
+            // Keep a copy so HistoryEntry rows stay recoverable.
+            let stamp = Date().formatted(.verbatim("\(year: .defaultDigits)\(month: .twoDigits)\(day: .twoDigits)-\(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased))\(minute: .twoDigits)\(second: .twoDigits)",
+                                                   locale: .init(identifier: "en_US_POSIX"), timeZone: .current, calendar: .init(identifier: .gregorian)))
             for suffix in ["", "-shm", "-wal"] {
-                try? FileManager.default.removeItem(
-                    at: URL(fileURLWithPath: storeURL.path + suffix))
+                let src = URL(fileURLWithPath: storeURL.path + suffix)
+                let dst = URL(fileURLWithPath: storeURL.path + ".corrupt-\(stamp)" + suffix)
+                if (try? FileManager.default.moveItem(at: src, to: dst)) == nil {
+                    try? FileManager.default.removeItem(at: src)
+                }
             }
             return try open()
         }
