@@ -44,8 +44,7 @@ complying with the terms of the services you connect.
 ## Support
 
 Riptide is free and GPL-licensed. If it replaced a paid player for you,
-[Ko-fi](https://ko-fi.com/sshahzaiib) or
-[GitHub Sponsors](https://github.com/sponsors/sshahzaiib) keeps it shipping.
+[Ko-fi](https://ko-fi.com/sshahzaiib) keeps it shipping.
 
 ## Attribution
 
