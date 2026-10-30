@@ -37,7 +37,7 @@ struct MainTabView: View {
             ExploreTab().titleStack().tabItem { Text("Explore") }.tag("Explore")
             ShowsTab(library: AppModels.library).titleStack().tabItem { Text("TV Shows") }.tag("TV Shows")
             MoviesTab(library: AppModels.library).titleStack().tabItem { Text("Movies") }.tag("Movies")
-            Text("Settings").tabItem { Text("Settings") }.tag("Settings")
+            SettingsTab().tabItem { Text("Settings") }.tag("Settings")
         }
     }
 }
