@@ -9,7 +9,7 @@ import StreamCore
 final class TraktService {
     static let shared = TraktService()
 
-    private let keychain = KeychainStore()
+    private let keychain: KeychainStore
     private(set) var clientID: String
     private(set) var clientSecret: String
     private(set) var tokens: TraktTokens?
@@ -20,7 +20,8 @@ final class TraktService {
     /// Dedupes the initial ratings fetch when several menus appear at once.
     private var ratingsFetch: Task<[String: Int], Never>?
 
-    init() {
+    init(keychain: KeychainStore = KeychainStore()) {
+        self.keychain = keychain
         clientID = keychain.get("trakt-client-id") ?? ""
         clientSecret = keychain.get("trakt-client-secret") ?? ""
         if let raw = keychain.get("trakt-tokens"),

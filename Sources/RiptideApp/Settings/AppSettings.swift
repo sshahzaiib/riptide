@@ -16,7 +16,7 @@ struct ConfiguredAddon: Codable, Identifiable, Hashable {
 final class AppSettings {
     static let shared = AppSettings()
 
-    private let keychain = KeychainStore()
+    private let keychain: KeychainStore
     private(set) var rdToken: String
     private(set) var mediaFolderPath: String
     private(set) var adToken: String
@@ -24,7 +24,8 @@ final class AppSettings {
     private(set) var openSubsKey: String
     private(set) var addons: [ConfiguredAddon]
 
-    init() {
+    init(keychain: KeychainStore = KeychainStore()) {
+        self.keychain = keychain
         rdToken = keychain.get("rd-token") ?? ""
         mediaFolderPath = keychain.get("media-folder") ?? ""
         adToken = keychain.get("ad-token") ?? ""
