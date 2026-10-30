@@ -38,8 +38,10 @@ enum PlayResolver {
     static func playItem(url: URL, request: StreamRequest) -> PlayItem {
         var title = request.title
         if let s = request.season, let e = request.episode { title += " — S\(s)E\(e)" }
-        return PlayItem(itemKey: "addon#\(request.imdbID):\(request.season ?? 0):\(request.episode ?? 0)",
-                        title: title, url: url, resumeFrom: nil, subtitleQuery: request.title,
+        let key = "addon#\(request.imdbID):\(request.season ?? 0):\(request.episode ?? 0)"
+        let resume = (try? AppModels.store.continueWatching())?.first { $0.itemKey == key }?.positionSeconds
+        return PlayItem(itemKey: key,
+                        title: title, url: url, resumeFrom: resume, subtitleQuery: request.title,
                         season: request.season, episode: request.episode,
                         tmdbID: request.tmdbID, autoResume: false)
     }
@@ -51,6 +53,24 @@ enum PlayResolver {
         Task {
             try? await Task.sleep(for: .seconds(10))
             await AppModels.library.refresh()
+        }
+    }
+}
+
+enum PlayStart { case ask, resume, fromStart }
+
+extension PlayItem {
+    func starting(_ s: PlayStart) -> PlayItem {
+        switch s {
+        case .ask: return self
+        case .resume:
+            return PlayItem(itemKey: itemKey, title: title, url: url, resumeFrom: resumeFrom,
+                            subtitleQuery: subtitleQuery, season: season, episode: episode,
+                            tmdbID: tmdbID, autoResume: true)
+        case .fromStart:
+            return PlayItem(itemKey: itemKey, title: title, url: url, resumeFrom: nil,
+                            subtitleQuery: subtitleQuery, season: season, episode: episode,
+                            tmdbID: tmdbID, autoResume: autoResume)
         }
     }
 }

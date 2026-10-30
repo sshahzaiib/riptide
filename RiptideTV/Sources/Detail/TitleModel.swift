@@ -29,6 +29,29 @@ final class TitleModel {
     private(set) var showModel: ShowPageModel?
     var season = 1
     private var imdbID: String?
+    private(set) var watchStates: [String: WatchState] = [:]   // unfinished, started
+    private var finishedKeys: Set<String> = []
+
+    func refreshWatchStates() {
+        let store = AppModels.store
+        watchStates = Dictionary(((try? store.continueWatching()) ?? []).map { ($0.itemKey, $0) },
+                                 uniquingKeysWith: { a, _ in a })
+        finishedKeys = Set(((try? store.allWatchStates()) ?? []).filter(\.finished).map(\.itemKey))
+    }
+
+    /// Resumable state (>60s in, <95% done) for a row (nil = movie), newest first.
+    func resumeState(for row: EpisodeRow?) -> WatchState? {
+        var keys = (row?.items ?? movieItems).map(\.itemKey)
+        if let imdbID { keys.append("addon#\(imdbID):\(row?.season ?? 0):\(row?.number ?? 0)") }
+        return keys.compactMap { watchStates[$0] }
+            .filter(resumable)
+            .max { $0.lastWatchedAt < $1.lastWatchedAt }
+    }
+
+    private func rowFinished(_ r: EpisodeRow) -> Bool {
+        r.finished || finishedKeys.contains("addon#\(imdbID ?? ""):\(r.season):\(r.number)")
+            || r.items.contains { finishedKeys.contains($0.itemKey) }
+    }
 
     init(ref: TitleRef) {
         self.ref = ref.resolved
@@ -62,10 +85,16 @@ final class TitleModel {
     var playTarget: EpisodeRow? {
         if let key = showModel?.selected?.itemKey,
            let hit = rows.first(where: { $0.items.contains { $0.itemKey == key } }) { return hit }
+        if showModel == nil {
+            let resumable = rows.compactMap { r in resumeState(for: r).map { (r, $0.lastWatchedAt) } }
+            if let hit = resumable.max(by: { $0.1 < $1.1 }) { return hit.0 }
+            return rows.first { !rowFinished($0) } ?? rows.first
+        }
         return rows.first
     }
 
     func load() async {
+        refreshWatchStates()
         if let showModel { seasonNumbers = showModel.visibleSeasonNumbers }   // unmatched packs have no TMDB id
         guard let id = ref.tmdbID else { return }
         if ref.isShow {
@@ -79,14 +108,32 @@ final class TitleModel {
                 seasonNumbers = showModel.visibleSeasonNumbers
                 if let s = showModel.selected?.season { season = s }
             }
+            if showModel == nil, let s = await remoteResumeSeason(id: id) { season = s }
             if !seasonNumbers.contains(season) {
                 season = seasonNumbers.first { $0 > 0 } ?? seasonNumbers.first ?? 1
             }
             await loadSeason()
         } else if let d = try? await tmdb.movieDetails(id: id) {
+            if imdbID == nil { imdbID = (try? await tmdb.externalIDs(movieID: id))?.imdbID }
             backdropPath = d.backdropPath
             if !d.overview.isEmpty { overview = d.overview }
         }
+    }
+
+    /// Season of the newest addon resume state for a remote show, if any.
+    private func remoteResumeSeason(id: Int) async -> Int? {
+        guard !watchStates.isEmpty,
+              let ids = try? await tmdb.externalIDs(showID: id), let imdb = ids.imdbID, !imdb.isEmpty
+        else { return nil }
+        imdbID = imdb
+        let prefix = "addon#\(imdb):"
+        let best = watchStates.values.filter { $0.itemKey.hasPrefix(prefix) && resumable($0) }
+            .max { $0.lastWatchedAt < $1.lastWatchedAt }
+        return best.flatMap { Int($0.itemKey.dropFirst(prefix.count).split(separator: ":").first ?? "") }
+    }
+
+    private func resumable(_ s: WatchState) -> Bool {
+        s.positionSeconds > 60 && !s.finished && (s.durationSeconds == 0 || s.positionSeconds / s.durationSeconds < 0.95)
     }
 
     /// Non-library shows only; owned shows read ShowPageModel.

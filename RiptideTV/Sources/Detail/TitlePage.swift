@@ -23,7 +23,7 @@ struct TitlePage: View {
                 header
                 buttons
                 if let error { Text(error).foregroundStyle(.red) }
-                if model.ref.isShow { seasons; EpisodeList(rows: model.rows) { run($0) } }
+                if model.ref.isShow { seasons; EpisodeList(rows: model.rows) { run($0, start: $1) } }
             }
             .padding(60)
         }
@@ -32,6 +32,7 @@ struct TitlePage: View {
             await model.load()
             if openVersionsOnLoad { run(nil, forcePicker: true) }
         }
+        .onChange(of: playItem) { if playItem == nil { model.refreshWatchStates() } }
         .onChange(of: model.season) { Task { await model.loadSeason() } }
         .onDisappear { runTask?.cancel() }
         .sheet(item: $picker, onDismiss: {
@@ -61,14 +62,37 @@ struct TitlePage: View {
     }
 
     private var buttons: some View {
-        HStack(spacing: 30) {
-            Button { run(model.ref.isShow ? model.playTarget : nil) } label: {
-                Label("Play", systemImage: "play.fill").font(.title3.bold()).padding(.horizontal, 40)
+        let target = model.ref.isShow ? model.playTarget : nil
+        let resume = model.resumeState(for: target)
+        let episode = target.map { "S\($0.season) E\($0.number)" + ($0.name.isEmpty ? "" : " · \($0.name)") }
+        return HStack(spacing: 30) {
+            if let resume {
+                Button { run(target, start: .resume) } label: {
+                    VStack(spacing: 6) {
+                        Label("Resume", systemImage: "play.fill").font(.title3.bold())
+                        Text([episode, timeLeft(resume)].compactMap { $0 }.joined(separator: " · "))
+                            .font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                    }.padding(.horizontal, 40)
+                }
+                .buttonStyle(.borderedProminent)
+                Button("Play from start") { run(target, start: .fromStart) }
+            } else {
+                Button { run(target) } label: {
+                    Label(episode.map { "Play \($0)" } ?? "Play", systemImage: "play.fill")
+                        .font(.title3.bold()).lineLimit(1).padding(.horizontal, 40)
+                }
+                .buttonStyle(.borderedProminent)
             }
-            .buttonStyle(.borderedProminent)
-            Button("Other versions") { run(model.ref.isShow ? model.playTarget : nil, forcePicker: true) }
+            Button("Other versions") { run(target, forcePicker: true) }
         }
         .disabled(busy)
+    }
+
+    private func timeLeft(_ s: WatchState) -> String {
+        let pos = s.positionSeconds, dur = s.durationSeconds
+        guard dur > 0 else { let t = Int(pos); return String(format: "from %d:%02d", t / 60, t % 60) }
+        let m = Int(((dur - pos) / 60).rounded())
+        return m >= 60 ? "\(m / 60) h \(m % 60) min left" : "\(max(m, 1)) min left"
     }
 
     private var seasons: some View {
@@ -83,7 +107,7 @@ struct TitlePage: View {
     }
 
     /// nil row = movie. Resolves on a task; picker/player presented from the outcome.
-    private func run(_ row: EpisodeRow?, forcePicker: Bool = false) {
+    private func run(_ row: EpisodeRow?, forcePicker: Bool = false, start: PlayStart = .ask) {
         busy = true; error = nil
         runTask?.cancel()
         runTask = Task {
@@ -97,7 +121,7 @@ struct TitlePage: View {
                     forcePicker: forcePicker, alwaysShow: alwaysShowVersions)
                 guard !Task.isCancelled else { return }
                 switch outcome {
-                case .play(let item): playItem = item; PlayResolver.refreshLibraryLater(for: item)
+                case .play(let item): playItem = item.starting(start); PlayResolver.refreshLibraryLater(for: item)
                 case .picker(let ctx): picker = ctx
                 }
             } catch { if !Task.isCancelled { self.error = error.localizedDescription } }

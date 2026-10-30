@@ -13,12 +13,12 @@ struct EpisodeRow: Identifiable {
 
 struct EpisodeList: View {
     let rows: [EpisodeRow]
-    let onPlay: (EpisodeRow) -> Void
+    let onPlay: (EpisodeRow, PlayStart) -> Void
 
     var body: some View {
         LazyVStack(alignment: .leading, spacing: 12) {
             ForEach(rows) { row in
-                Button { onPlay(row) } label: {
+                Button { onPlay(row, .ask) } label: {
                     HStack(spacing: 20) {
                         Text(row.number > 0 ? "E\(row.number) · \(row.name)" : row.name).lineLimit(1)
                         Spacer()
@@ -26,9 +26,16 @@ struct EpisodeList: View {
                             Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
                         } else if let p = row.progress, p > 0 {
                             ProgressView(value: min(p, 1)).frame(width: 140)
+                            Text("\(Int(min(p, 1) * 100))%").font(.caption).foregroundStyle(.secondary)
                         }
                     }
                     .padding(.vertical, 8)
+                }
+                .contextMenu {
+                    if let p = row.progress, p > 0, !row.finished {
+                        Button("Resume") { onPlay(row, .resume) }
+                    }
+                    Button("Play from start") { onPlay(row, .fromStart) }
                 }
             }
         }
