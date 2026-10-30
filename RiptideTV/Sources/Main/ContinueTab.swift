@@ -48,7 +48,7 @@ struct ContinueTab: View {
             parts.append("S\(s) E\(n)")
             if let t = e.item.episodeTitle, !t.isEmpty { parts.append(t) }
         }
-        if let pct = e.item.progressPercent, pct > 0 { parts.append("\(Int(pct))% watched") }
+        if let pct = e.item.progressPercent, pct > 0 { parts.append("\(Int(pct))%") }
         return parts.joined(separator: " · ")
     }
 
