@@ -39,4 +39,9 @@ final class PairingTests: XCTestCase {
         XCTAssertTrue(html.contains("Rejected by TMDB"))
         XCTAssertFalse(html.lowercased().contains("<script"))
     }
+    func testParseRejectsMalformedContentLength() {
+        XCTAssertNil(PairingHTTP.parse(Data("POST /x HTTP/1.1\r\nContent-Length: -5\r\n\r\nabc".utf8)))
+        XCTAssertNil(PairingHTTP.parse(Data("POST /x HTTP/1.1\r\nContent-Length: abc\r\n\r\nabc".utf8)))
+        XCTAssertNil(PairingHTTP.parse(Data([0xFF, 0xFE])))
+    }
 }

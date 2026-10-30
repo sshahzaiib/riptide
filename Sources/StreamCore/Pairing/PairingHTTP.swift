@@ -26,16 +26,19 @@ public enum PairingHTTP {
         let start = lines.removeFirst().split(separator: " ")
         guard start.count >= 2 else { return nil }
         var length = 0
+        var badLength = false
         var contentType: String?
         for line in lines {
             guard let colon = line.firstIndex(of: ":") else { continue }
             let name = line[..<colon].lowercased()
             let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
-            if name == "content-length" { length = Int(value) ?? 0 }
+            if name == "content-length" {
+                if let n = Int(value), n >= 0 { length = n } else { badLength = true }
+            }
             if name == "content-type" { contentType = value }
         }
         let bodyData = raw[split.upperBound...]
-        guard bodyData.count >= length,
+        guard !badLength, bodyData.count >= length,
               let body = String(data: bodyData.prefix(length), encoding: .utf8)
         else { return nil }
         return PairingRequest(method: String(start[0]), path: String(start[1]),
