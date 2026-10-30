@@ -18,6 +18,7 @@ struct SearchTab: View {
                     }
                 }
             }
+            .navigationDestination(for: TitleRef.self) { TitlePage(ref: $0) }
             .searchable(text: $query)
             .task(id: query) {
                 try? await Task.sleep(for: .milliseconds(400))
@@ -32,9 +33,7 @@ struct SearchTab: View {
         if !items.isEmpty {
             PosterRow(title: title, items: items) { media in
                 PosterCard(title: media.title,
-                           posterURL: media.posterPath.map { TMDB.imageURL(path: $0, width: 342) }) {
-                    // Task 10: open TitlePage
-                }
+                           posterURL: media.posterPath.map { TMDB.imageURL(path: $0, width: 342) }, ref: .media(media))
                 .frame(width: 220)
             }
         }

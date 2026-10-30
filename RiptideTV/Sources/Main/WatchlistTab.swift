@@ -10,9 +10,7 @@ struct WatchlistTab: View {
             if TraktService.shared.isConnected {
                 PosterGrid(items: model.items) { media in
                     PosterCard(title: media.title,
-                               posterURL: media.posterPath.map { TMDB.imageURL(path: $0, width: 342) }) {
-                        // Task 10: open TitlePage
-                    }
+                               posterURL: media.posterPath.map { TMDB.imageURL(path: $0, width: 342) }, ref: .media(media))
                 }
             } else {
                 Text("Sign in to Trakt in Settings to see your watchlist")

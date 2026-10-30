@@ -16,9 +16,7 @@ struct ContinueTab: View {
                         PosterCard(title: entry.media.title,
                                    posterURL: entry.media.posterPath.map { TMDB.imageURL(path: $0, width: 780) },
                                    progress: entry.item.progressPercent.map { $0 / 100 },
-                                   wide: true) {
-                            // Task 10: open TitlePage
-                        }
+                                   wide: true, ref: .media(entry.media))
                         .frame(width: 520)
                     }
                 }
@@ -28,9 +26,7 @@ struct ContinueTab: View {
                                    posterURL: entry.item.posterPath.map { TMDB.imageURL(path: $0, width: 780) },
                                    progress: entry.state.durationSeconds > 0
                                        ? entry.state.positionSeconds / entry.state.durationSeconds : 0,
-                                   wide: true) {
-                            // Task 10: open TitlePage
-                        }
+                                   wide: true, ref: .forItem(entry.item))
                         .frame(width: 520)
                     }
                 }

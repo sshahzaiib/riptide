@@ -5,11 +5,11 @@ struct PosterCard: View {
     let posterURL: URL?
     var progress: Double? = nil
     var wide = false
-    let action: () -> Void
+    let ref: TitleRef
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Button(action: action) {
+            NavigationLink(value: ref) {
                 AsyncImage(url: posterURL) { image in
                     image.resizable().aspectRatio(contentMode: .fill)
                 } placeholder: {
