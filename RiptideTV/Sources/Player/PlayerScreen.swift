@@ -9,6 +9,7 @@ struct PlayerScreen: View {
     @State private var hideTask: Task<Void, Never>?
     @State private var closed = false
     @State private var sheet: Sheet?
+    @State private var syncing = false
     /// Outer nil = undecided (resume prompt pending); inner nil = start from 0.
     @State private var startAt: Double??
     @State private var askResume = false
@@ -37,15 +38,17 @@ struct PlayerScreen: View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let startAt { MPVHostView(model: model, item: item, startAt: startAt).ignoresSafeArea() }
-            if !controlsVisible {
+            if !controlsVisible && !syncing {
                 Color.clear.focusable().onMoveCommand { _ in showControls() }
                     .onTapGesture { showControls() }
             }
-            if controlsVisible {
+            if syncing {
+                SubSyncOverlay(model: model) { syncing = false; showControls() }
+            } else if controlsVisible {
                 ControlsOverlay(model: model, item: item,
                                 hasPrev: prevEpisode != nil, hasNext: nextEpisode != nil,
                                 onPrev: { go(prevEpisode) }, onNext: { go(nextEpisode) },
-                                onAudio: { sheet = .audio }, onSubs: { sheet = .subtitles },
+                                onAudio: { sheet = .audio }, onSubs: { sheet = .subtitles }, onSync: { startSync() },
                                 onMore: { sheet = .more }, onInput: showControls)
             }
             if let err = model.playbackError {
@@ -60,11 +63,11 @@ struct PlayerScreen: View {
             Button("Start over") { startAt = .some(nil) }
         }
         .onPlayPauseCommand { model.togglePause(); showControls() }
-        .onExitCommand { controlsVisible ? hide() : close() }
+        .onExitCommand { if syncing { return }; controlsVisible ? hide() : close() }
         .sheet(item: $sheet) { s in
             switch s {
             case .audio: TrackPicker(kind: .audio, model: model, item: item)
-            case .subtitles: TrackPicker(kind: .subtitles, model: model, item: item)
+            case .subtitles: TrackPicker(kind: .subtitles, model: model, item: item, onSync: { startSync() })
             case .more: MoreSheet(model: model)
             }
         }
@@ -82,6 +85,8 @@ struct PlayerScreen: View {
             if sheet == nil { shutdownOnce() }   // a sheet presented from here must not kill mpv
         }
     }
+
+    private func startSync() { sheet = nil; hideTask?.cancel(); controlsVisible = false; syncing = true }
 
     private func hide() { hideTask?.cancel(); controlsVisible = false }
 

@@ -2,7 +2,7 @@ import SwiftUI
 import StreamCore
 
 struct ControlsOverlay: View {
-    enum Focus { case prev, back, playPause, fwd, next, audio, subs, more }
+    enum Focus { case prev, back, playPause, fwd, next, audio, subs, sync, more }
     let model: PlayerModel
     let item: PlayItem
     let hasPrev: Bool
@@ -11,6 +11,7 @@ struct ControlsOverlay: View {
     let onNext: () -> Void
     let onAudio: () -> Void
     let onSubs: () -> Void
+    let onSync: () -> Void
     let onMore: () -> Void
     let onInput: () -> Void
     @FocusState private var focus: Focus?
@@ -60,6 +61,8 @@ struct ControlsOverlay: View {
                     .focused($focus, equals: .audio)
                 button("captions.bubble.fill", action: onSubs)
                     .focused($focus, equals: .subs)
+                button("clock.arrow.trianglehead.counterclockwise.rotate.90", action: onSync)
+                    .focused($focus, equals: .sync)
                 button("ellipsis", action: onMore)
                     .focused($focus, equals: .more)
             }
