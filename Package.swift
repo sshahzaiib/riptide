@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "Riptide",
-    platforms: [.macOS(.v26)],
+    platforms: [.macOS(.v26), .tvOS(.v18)],
     products: [.library(name: "StreamCore", targets: ["StreamCore"])],
     dependencies: [
         .package(url: "https://github.com/mpvkit/MPVKit.git", from: "0.41.0"),
