@@ -43,6 +43,16 @@ struct MoreSheet: View {
                         }
                     }
                 }
+                Section("Subtitle delay") {
+                    HStack { Text("Current"); Spacer()
+                        Text(PlayerModel.formatMS(model.subDelay)).foregroundStyle(.secondary) }
+                    Button("\u{2212}500 ms") { model.adjustSubDelay(by: -0.5) }
+                    Button("\u{2212}50 ms") { model.adjustSubDelay(by: -PlayerModel.subDelayStep) }
+                    Button("+50 ms") { model.adjustSubDelay(by: PlayerModel.subDelayStep) }
+                    Button("+500 ms") { model.adjustSubDelay(by: 0.5) }
+                    Button("Reset") { model.resetSubDelay() }
+                        .disabled(model.subDelay == 0)
+                }
             }
             .navigationTitle("More")
         }
