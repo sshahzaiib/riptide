@@ -6,7 +6,7 @@ cd "$(dirname "$0")/../RiptideTV"
 xcodegen generate --quiet
 xcodebuild -project RiptideTV.xcodeproj -scheme RiptideTV \
   -destination "platform=tvOS Simulator,name=$DEV" -derivedDataPath build \
-  build CODE_SIGNING_ALLOWED=NO | tail -5
+  build CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=YES DEVELOPMENT_TEAM="" | tail -5
 xcrun simctl boot "$DEV" 2>/dev/null || true
 open -a Simulator 2>/dev/null || true
 xcrun simctl bootstatus "$DEV" -b >/dev/null

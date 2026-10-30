@@ -147,7 +147,7 @@ there must compile on both platforms; guard with `#if canImport(AppKit)`.
 DEBUG env hooks, passed as `SIMCTL_CHILD_*` to `xcrun simctl launch`:
 `RIPTIDE_TV_SKIP_WIZARD=1`, `RIPTIDE_TV_TAB=<label>`,
 `RIPTIDE_TV_WIZARD_STEP=trakt|done`, `RIPTIDE_TV_OPEN=<tmdbID>[:movie|show]`,
-`RIPTIDE_TV_DEBUG_URL=<url>`.
+`RIPTIDE_TV_DEBUG_URL=<url>`. Relaunching with a hook requires terminating first (`xcrun simctl terminate booted com.northlab.riptide.tv`, or `xcrun simctl launch --terminate-running-process`), because a plain `simctl launch` of a running app returns the same PID and ignores the new environment.
 
 The phone-pairing contract lives in `Sources/StreamCore/Pairing/` (tested in
 StreamCoreTests). First-run wizard: Pair -> Trakt (skippable) -> Done.
