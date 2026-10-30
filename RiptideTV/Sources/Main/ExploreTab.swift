@@ -12,8 +12,7 @@ struct ExploreTab: View {
                     if let shelf = model.shelves[id], shelf.state == .loaded, !shelf.items.isEmpty {
                         PosterRow(title: id.rawValue, items: shelf.items) { media in
                             PosterCard(title: media.title,
-                                       posterURL: media.posterPath.map { TMDB.imageURL(path: $0, width: 342) }, ref: .media(media))
-                            .frame(width: 220)
+                                       posterURL: media.posterPath.map { TMDB.imageURL(path: $0, width: 342) }, width: 220, ref: .media(media))
                         }
                     }
                 }

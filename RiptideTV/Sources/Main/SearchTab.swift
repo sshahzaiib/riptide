@@ -33,8 +33,7 @@ struct SearchTab: View {
         if !items.isEmpty {
             PosterRow(title: title, items: items) { media in
                 PosterCard(title: media.title,
-                           posterURL: media.posterPath.map { TMDB.imageURL(path: $0, width: 342) }, ref: .media(media))
-                .frame(width: 220)
+                           posterURL: media.posterPath.map { TMDB.imageURL(path: $0, width: 342) }, width: 220, ref: .media(media))
             }
         }
     }

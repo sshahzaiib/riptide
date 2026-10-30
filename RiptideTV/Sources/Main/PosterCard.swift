@@ -5,6 +5,8 @@ struct PosterCard: View {
     let posterURL: URL?
     var progress: Double? = nil
     var wide = false
+    var width: CGFloat? = nil
+    var subtitle: String? = nil
     let ref: TitleRef
 
     var body: some View {
@@ -19,7 +21,7 @@ struct PosterCard: View {
                             .foregroundStyle(.secondary).padding()
                     }
                 }
-                .aspectRatio(wide ? 16 / 9 : 2 / 3, contentMode: .fill)
+                .modifier(ArtFrame(width: width, wide: wide))
                 .clipped()
                 .overlay(alignment: .bottom) {
                     if wide, let progress {
@@ -34,6 +36,22 @@ struct PosterCard: View {
             }
             .buttonStyle(.card)
             Text(title).font(.callout.weight(.medium)).lineLimit(1)
+            if let subtitle, !subtitle.isEmpty {
+                Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }
+        .frame(width: width)
+    }
+}
+
+private struct ArtFrame: ViewModifier {
+    let width: CGFloat?
+    let wide: Bool
+    func body(content: Content) -> some View {
+        if let width {
+            content.frame(width: width, height: width * (wide ? 9 / 16 : 3 / 2))
+        } else {
+            content.aspectRatio(wide ? 16 / 9 : 2 / 3, contentMode: .fill)
         }
     }
 }
