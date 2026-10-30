@@ -24,7 +24,7 @@ struct PosterCard: View {
                 .modifier(ArtFrame(width: width, wide: wide))
                 .clipped()
                 .overlay(alignment: .bottom) {
-                    if wide, let progress {
+                    if let progress {
                         GeometryReader { geo in
                             Rectangle().fill(.white.opacity(0.3)).overlay(alignment: .leading) {
                                 Rectangle().fill(.red).frame(width: geo.size.width * min(max(progress, 0), 1))
