@@ -9,12 +9,21 @@ struct PlayerScreen: View {
     @State private var hideTask: Task<Void, Never>?
     @State private var closed = false
     @State private var sheet: Sheet?
+    /// Outer nil = undecided (resume prompt pending); inner nil = start from 0.
+    @State private var startAt: Double??
+    @State private var askResume = false
+    @State private var goTask: Task<Void, Never>?
     @Environment(\.dismiss) private var dismiss
 
     enum Sheet: String, Identifiable { case audio, subtitles, more; var id: String { rawValue } }
 
     init(item: PlayItem) {
         _item = State(initialValue: item)
+        if let r = item.resumeFrom, r > 60 {
+            if item.autoResume { _startAt = State(initialValue: .some(r)) } else { _askResume = State(initialValue: true) }
+        } else {
+            _startAt = State(initialValue: .some(nil))
+        }
         _model = State(initialValue: PlayerModel(store: AppModels.store, itemKey: item.itemKey,
                                                  traktMedia: TraktMedia(playItem: item)))
     }
@@ -27,9 +36,10 @@ struct PlayerScreen: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            MPVHostView(model: model, item: item).ignoresSafeArea()
+            if let startAt { MPVHostView(model: model, item: item, startAt: startAt).ignoresSafeArea() }
             if !controlsVisible {
                 Color.clear.focusable().onMoveCommand { _ in showControls() }
+                    .onTapGesture { showControls() }
             }
             if controlsVisible {
                 ControlsOverlay(model: model, item: item,
@@ -44,6 +54,10 @@ struct PlayerScreen: View {
                     Button("Close") { close() }
                 }.padding(60).background(.black.opacity(0.85))
             }
+        }
+        .confirmationDialog("Resume playback?", isPresented: $askResume, titleVisibility: .visible) {
+            Button("Resume from \(clock(item.resumeFrom ?? 0))") { startAt = .some(item.resumeFrom) }
+            Button("Start over") { startAt = .some(nil) }
         }
         .onPlayPauseCommand { model.togglePause(); showControls() }
         .onExitCommand { controlsVisible ? hide() : close() }
@@ -65,7 +79,7 @@ struct PlayerScreen: View {
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
             hideTask?.cancel()
-            shutdownOnce()
+            if sheet == nil { shutdownOnce() }   // a sheet presented from here must not kill mpv
         }
     }
 
@@ -82,8 +96,9 @@ struct PlayerScreen: View {
 
     private func go(_ episode: LibraryItem?) {
         guard let episode else { return }
-        Task {
-            guard let next = try? await PlayItemBuilder.make(for: episode, store: store) else { return }
+        goTask?.cancel()
+        goTask = Task {
+            guard let next = try? await PlayItemBuilder.make(for: episode, store: store), !closed else { return }
             item = next
             model.advance(to: next)   // reloads on the same controller
             showControls()

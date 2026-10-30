@@ -10,6 +10,7 @@ struct ScrubBar: View {
     let model: PlayerModel
     var onInput: () -> Void = {}
     @FocusState private var focused: Bool
+    @State private var lastMove = Date.distantPast
 
     private var fraction: Double {
         model.duration > 0 ? min(1, max(0, model.position / model.duration)) : 0
@@ -37,11 +38,15 @@ struct ScrubBar: View {
         .onChange(of: focused) { onInput() }
         .onMoveCommand { dir in
             onInput()
+            // Swipe/hold scrubs: repeated moves within 0.6 s step 60 s instead of 10 s.
+            let step: Double = Date().timeIntervalSince(lastMove) < 0.6 ? 60 : 10
+            lastMove = Date()
             switch dir {
-            case .left: model.seek(relative: -10)
-            case .right: model.seek(relative: 10)
+            case .left: model.seek(relative: -step)
+            case .right: model.seek(relative: step)
             default: break
             }
         }
+        .onTapGesture { model.togglePause(); onInput() }   // click toggles play/pause
     }
 }

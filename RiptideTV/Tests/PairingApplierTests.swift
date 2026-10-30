@@ -31,6 +31,19 @@ final class PairingApplierTests: XCTestCase {
         XCTAssertTrue(states.first { $0.name == "rdToken" }!.isSet)
     }
 
+    func testBlankFieldsKeepExistingValues() async {
+        let settings = makeSettings()
+        settings.save(rdToken: "r", tmdbToken: "t", openSubsKey: "o", adToken: "")
+        let applier = PairingApplier(settings: settings, trakt: makeTrakt(), validators: Fake())
+        var p = PairingPayload(); p.rdToken = " "; p.openSubsKey = ""; p.traktClientID = "  "
+        let states = await applier.apply(p)
+        XCTAssertEqual(settings.rdToken, "r")
+        XCTAssertEqual(settings.tmdbToken, "t")
+        XCTAssertEqual(settings.openSubsKey, "o")
+        XCTAssertNil(states.first { $0.name == "rdToken" }?.result)
+        XCTAssertEqual(states.count, 7)
+    }
+
     func testClearErasesField() async {
         let settings = makeSettings()
         settings.save(rdToken: "r", tmdbToken: "t", openSubsKey: "", adToken: "a")

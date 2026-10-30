@@ -29,9 +29,9 @@ struct RootView: View {
             content
             #endif
         }
-        .task { await pullTrakt() }
+        .task { await refreshLibrary() }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await pullTrakt() } }
+            if phase == .active { Task { await refreshLibrary() } }
         }
     }
 
@@ -45,8 +45,8 @@ struct RootView: View {
         }
     }
 
-    private func pullTrakt() async {
-        guard TraktService.shared.isConnected else { return }
-        await TraktService.shared.pullSync(store: AppModels.store)
+    private func refreshLibrary() async {
+        // refresh() fetches RD, pulls Trakt when connected, and reloads.
+        await AppModels.library.refresh()
     }
 }

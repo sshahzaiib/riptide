@@ -66,6 +66,7 @@ final class TitleModel {
     }
 
     func load() async {
+        if let showModel { seasonNumbers = showModel.visibleSeasonNumbers }   // unmatched packs have no TMDB id
         guard let id = ref.tmdbID else { return }
         if ref.isShow {
             if let d = try? await tmdb.showDetails(id: id) {

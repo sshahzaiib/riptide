@@ -15,7 +15,13 @@ struct PairingApplier {
         self.validators = validators
     }
 
-    func apply(_ p: PairingPayload) async -> [PairingFieldState] {
+    func apply(_ raw: PairingPayload) async -> [PairingFieldState] {
+        // Blank (empty/whitespace) means "keep", per the PairingPayload contract.
+        func norm(_ s: String?) -> String? { s?.trimmed.isEmpty == false ? s!.trimmed : nil }
+        var p = raw
+        p.rdToken = norm(p.rdToken); p.adToken = norm(p.adToken); p.tmdbToken = norm(p.tmdbToken)
+        p.openSubsKey = norm(p.openSubsKey)
+        p.traktClientID = norm(p.traktClientID); p.traktClientSecret = norm(p.traktClientSecret)
         var rd = settings.rdToken, tmdb = settings.tmdbToken, ad = settings.adToken
         var osk = settings.openSubsKey
         var tID = trakt.clientID, tSecret = trakt.clientSecret
