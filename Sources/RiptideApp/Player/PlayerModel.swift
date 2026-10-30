@@ -1,4 +1,6 @@
+#if canImport(AppKit)
 import AppKit
+#endif
 import Foundation
 import Observation
 import StreamCore
@@ -19,7 +21,9 @@ final class PlayerModel {
     private(set) var muted = false
     private(set) var speed: Double = 1.0
     private(set) var ended = false
+    #if canImport(AppKit)
     private(set) var isMiniPlayer = false
+    #endif
 
     var audioTracks: [MPVTrack] { tracks.filter { $0.type == "audio" } }
     var subTracks: [MPVTrack] { tracks.filter { $0.type == "sub" } }
@@ -33,9 +37,11 @@ final class PlayerModel {
     private var lastSaved: Double = 0
     private var scrobbleStarted = false
     private var sleepActivity: NSObjectProtocol?
+    #if canImport(AppKit)
     private var savedNormalFrame: NSRect?
     private var savedCollectionBehavior: NSWindow.CollectionBehavior = []
     private var fullscreenExitObserver: NSObjectProtocol?
+    #endif
 
     init(store: LibraryStore, itemKey: String, traktMedia: TraktMedia? = nil) {
         self.store = store
@@ -43,15 +49,19 @@ final class PlayerModel {
         self.traktMedia = traktMedia
     }
 
+    #if canImport(AppKit)
     /// The player's NSWindow — scopes the keyboard event monitor.
     var hostWindow: NSWindow? { controller?.view.window }
+    #endif
 
     func attach(_ controller: MPVPlayerController) {
         self.controller = controller
         controller.onEvent = { [weak self] event in
             self?.handle(event)
         }
+        #if canImport(AppKit)
         controller.onFullscreenIntent = { [weak self] in self?.toggleFullscreen() }
+        #endif
     }
 
     /// Clamped: seeks/EOF can push position past duration, and Trakt 400s
@@ -165,7 +175,9 @@ final class PlayerModel {
 
     /// Window closing: persist position, then destroy the mpv instance.
     func shutdown() {
+        #if canImport(AppKit)
         clearFullscreenExitObserver()
+        #endif
         if scrobbleStarted {
             scrobbleStarted = false
             scrobble(.stop)
@@ -183,7 +195,9 @@ final class PlayerModel {
         // ponytail: the mini aspect lock can't be re-derived here (the next
         // file's aspect is unknown until it loads) — just unlock; the next
         // manual mini enter re-locks.
+        #if canImport(AppKit)
         if isMiniPlayer { hostWindow?.resizeIncrements = NSSize(width: 1, height: 1) }
+        #endif
         flushProgress()
         if scrobbleStarted {
             scrobbleStarted = false
@@ -370,10 +384,12 @@ final class PlayerModel {
         speed = newSpeed
         controller?.setSpeed(newSpeed)
     }
+    #if canImport(AppKit)
     func toggleFullscreen() {
         if isMiniPlayer { exitMiniPlayer() }   // spec: mini → fullscreen exits mini first
         controller?.toggleFullscreen()
     }
+    #endif
     /// Seek to the end of the detected intro. Absolute, never relative: the old
     /// +90s/next-chapter jump fast-forwarded from wherever the user happened to be.
     func skipIntro() {
@@ -381,6 +397,7 @@ final class PlayerModel {
         seek(to: intro.upperBound)
     }
 
+    #if canImport(AppKit)
     // MARK: Mini player (issue #11)
 
     func toggleMiniPlayer() {
@@ -452,4 +469,5 @@ final class PlayerModel {
         }
         fullscreenExitObserver = nil
     }
+    #endif
 }

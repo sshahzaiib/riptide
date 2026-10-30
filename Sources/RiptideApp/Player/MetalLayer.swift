@@ -1,5 +1,8 @@
 import Foundation
+import QuartzCore
+#if canImport(AppKit)
 import AppKit
+#endif
 
 // Adapted from MPVKit's macOS demo (Demo/Demo-macOS/Player/Metal/MetalLayer.swift).
 // Both overrides work around MoltenVK behaviors; see

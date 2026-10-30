@@ -1,4 +1,12 @@
+#if canImport(AppKit)
 import AppKit
+typealias PlatformViewController = NSViewController
+typealias PlatformView = NSView
+#else
+import UIKit
+typealias PlatformViewController = UIViewController
+typealias PlatformView = UIView
+#endif
 import Libmpv
 import StreamCore
 
@@ -35,10 +43,12 @@ struct MPVTrack: Identifiable, Equatable {
 /// Layer-hosting video view. SwiftUI does not reliably drive
 /// NSViewController.viewDidLayout for layer-hosting views, so the view itself
 /// keeps the metal layer glued to its bounds and backing scale.
-final class MPVVideoView: NSView {
-    let metalLayer = MetalLayer()
+final class MPVVideoView: PlatformView {
     var onResize: (() -> Void)?
     var onDoubleClick: (() -> Void)?
+
+    #if canImport(AppKit)
+    let metalLayer = MetalLayer()
 
     // Mini-player drag-anywhere. isMovableByWindowBackground gates this to
     // mini mode (it stays false in normal mode).
@@ -86,9 +96,32 @@ final class MPVVideoView: NSView {
                                          height: bounds.height * scale)
         onResize?()
     }
+
+    #else
+    override class var layerClass: AnyClass { MetalLayer.self }
+    var metalLayer: MetalLayer { layer as! MetalLayer }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        metalLayer.contentsScale = UIScreen.main.scale
+        metalLayer.framebufferOnly = true
+        metalLayer.backgroundColor = UIColor.black.cgColor
+    }
+
+    required init?(coder: NSCoder) { fatalError("unused") }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let scale = window?.screen.scale ?? UIScreen.main.scale
+        metalLayer.contentsScale = scale
+        metalLayer.drawableSize = CGSize(width: bounds.width * scale,
+                                         height: bounds.height * scale)
+        onResize?()
+    }
+    #endif
 }
 
-final class MPVPlayerController: NSViewController {
+final class MPVPlayerController: PlatformViewController {
     nonisolated(unsafe) static let mpvLogFile: UnsafeMutablePointer<FILE>? =
         ProcessInfo.processInfo.environment["RIPTIDE_MPV_LOG"].flatMap { fopen($0, "w") }
     private let videoView = MPVVideoView(frame: .init(x: 0, y: 0, width: 1280, height: 720))
@@ -103,14 +136,17 @@ final class MPVPlayerController: NSViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        #if canImport(AppKit)
         videoView.onDoubleClick = { [weak self] in
             guard let self else { return }
             (self.onFullscreenIntent ?? self.toggleFullscreen)()
         }
         videoView.onResize = { [weak self] in self?.scheduleSurfaceAdopt() }
+        #endif
         setupMpv()
     }
 
+    #if canImport(AppKit)
     override func viewDidAppear() {
         super.viewDidAppear()
         // Min size lives AppKit-side (not SwiftUI .frame) so mini-player
@@ -141,6 +177,8 @@ final class MPVPlayerController: NSViewController {
         resizeKick = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
     }
+
+    #endif
 
     /// Explicit teardown — MUST be called when the player window closes.
     /// The wakeup callback holds a retained reference to self, so deinit can
@@ -279,6 +317,7 @@ final class MPVPlayerController: NSViewController {
     /// mode locks the window to it.
     var videoAspect: Double { getDouble("video-params/aspect") }
 
+    #if canImport(AppKit)
     /// Set by PlayerModel so double-click fullscreen routes through the
     /// model (which exits mini mode first). Falls back to the direct toggle.
     var onFullscreenIntent: (() -> Void)?
@@ -293,6 +332,7 @@ final class MPVPlayerController: NSViewController {
         window.collectionBehavior.insert(.fullScreenPrimary)
         window.toggleFullScreen(nil)
     }
+    #endif
 
     func seek(relative seconds: Double) {
         command("seek", args: [String(seconds), "relative"])
