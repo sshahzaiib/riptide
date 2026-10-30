@@ -138,7 +138,7 @@ struct PlayerScreen: View {
             for n in stride(from: 10, to: 0, by: -1) {
                 upNextCountdown = n
                 try? await Task.sleep(for: .seconds(1))
-                while model.paused {
+                while model.paused && !model.ended {   // keep-open pauses at EOF; only a user pause holds the count
                     try? await Task.sleep(for: .milliseconds(250))
                     guard !Task.isCancelled else { return }
                 }
