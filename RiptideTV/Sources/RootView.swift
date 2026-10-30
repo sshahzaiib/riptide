@@ -13,17 +13,35 @@ struct RootView: View {
         #endif
     }
 
+    #if DEBUG
+    private let debugItem: PlayItem? = ProcessInfo.processInfo.environment["RIPTIDE_TV_DEBUG_URL"]
+        .flatMap(URL.init(string:)).map {
+            PlayItem(itemKey: "debug", title: "Debug", url: $0, resumeFrom: nil, subtitleQuery: "",
+                     season: nil, episode: nil, tmdbID: nil, autoResume: false)
+        }
+    #endif
+
     var body: some View {
+        Group {
+            #if DEBUG
+            if let debugItem { PlayerScreen(item: debugItem) } else { content }
+            #else
+            content
+            #endif
+        }
+        .task { await pullTrakt() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await pullTrakt() } }
+        }
+    }
+
+    @ViewBuilder private var content: some View {
         Group {
             if forceMain || (wizardDone && AppSettings.shared.isConfigured) {
                 MainTabView()
             } else {
                 WizardView(wizardDone: $wizardDone)
             }
-        }
-        .task { await pullTrakt() }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await pullTrakt() } }
         }
     }
 
