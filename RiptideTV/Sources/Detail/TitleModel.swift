@@ -103,6 +103,9 @@ final class TitleModel {
                 if !d.overview.isEmpty { overview = d.overview }
                 seasonNumbers = d.seasonNumbers
             }
+            if showModel != nil, imdbID == nil {
+                imdbID = (try? await tmdb.externalIDs(showID: id))?.imdbID
+            }
             if let showModel {
                 await showModel.load(tmdb: tmdb)
                 seasonNumbers = showModel.visibleSeasonNumbers
@@ -122,7 +125,7 @@ final class TitleModel {
 
     /// Season of the newest addon resume state for a remote show, if any.
     private func remoteResumeSeason(id: Int) async -> Int? {
-        guard !watchStates.isEmpty,
+        guard !(watchStates.isEmpty && finishedKeys.isEmpty),
               let ids = try? await tmdb.externalIDs(showID: id), let imdb = ids.imdbID, !imdb.isEmpty
         else { return nil }
         imdbID = imdb

@@ -8,6 +8,7 @@ struct TitlePage: View {
     @State private var playItem: PlayItem?
     @State private var picker: PickerContext?
     @State private var pendingPlay: PlayItem?
+    @State private var pendingStart: PlayStart = .ask
     @State private var busy = false
     @State private var error: String?
     @State private var runTask: Task<Void, Never>?
@@ -32,12 +33,15 @@ struct TitlePage: View {
             await model.load()
             if openVersionsOnLoad { run(nil, forcePicker: true) }
         }
-        .onChange(of: playItem) { if playItem == nil { model.refreshWatchStates() } }
+        .onChange(of: playItem) { if playItem == nil {
+                model.refreshWatchStates()
+                Task { try? await Task.sleep(for: .seconds(1)); model.refreshWatchStates() }
+            } }
         .onChange(of: model.season) { Task { await model.loadSeason() } }
         .onDisappear { runTask?.cancel() }
         .sheet(item: $picker, onDismiss: {
-            if let item = pendingPlay { playItem = item; PlayResolver.refreshLibraryLater(for: item) }
-            pendingPlay = nil
+            if let item = pendingPlay { playItem = item.starting(pendingStart); PlayResolver.refreshLibraryLater(for: item) }
+            pendingPlay = nil; pendingStart = .ask
         }) { ctx in
             VersionPicker(libraryItems: ctx.items, request: ctx.request) { item in
                 pendingPlay = item
@@ -122,7 +126,7 @@ struct TitlePage: View {
                 guard !Task.isCancelled else { return }
                 switch outcome {
                 case .play(let item): playItem = item.starting(start); PlayResolver.refreshLibraryLater(for: item)
-                case .picker(let ctx): picker = ctx
+                case .picker(let ctx): pendingStart = start; picker = ctx
                 }
             } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
         }
