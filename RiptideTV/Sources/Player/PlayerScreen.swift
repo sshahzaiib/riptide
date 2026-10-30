@@ -14,6 +14,7 @@ struct PlayerScreen: View {
     @State private var startAt: Double??
     @State private var askResume = false
     @State private var goTask: Task<Void, Never>?
+    @FocusState private var skipFocused: Bool
     @AppStorage("autoplayNext") private var autoplayNext = true
     @State private var upNextCountdown: Int?
     @State private var upNextShown = false
@@ -63,9 +64,12 @@ struct PlayerScreen: View {
             }
             if inIntro && !syncing {
                 Button { model.skipIntro() } label: { Label("Skip Intro", systemImage: "forward.frame") }
-                    .onMoveCommand { _ in showControls() }
+                    .focused($skipFocused)
+                    .defaultFocus($skipFocused, true)
+                    .focusSection()
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(60)
+                    .onAppear { DispatchQueue.main.async { skipFocused = true } }
             }
             if upNextShown && !syncing, let next = nextEpisode {
                 UpNextBanner(next: next, countdown: upNextCountdown, onPlay: playUpNext, onCancel: cancelUpNext)
@@ -97,6 +101,7 @@ struct PlayerScreen: View {
         }
         .onChange(of: shouldOfferUpNext) { _, offer in
             if offer && nextEpisode != nil && !upNextDismissed && !upNextShown { beginUpNext() }
+            else if !offer && !model.ended { clearUpNext() }
         }
         .onAppear {
             UIApplication.shared.isIdleTimerDisabled = true
@@ -114,6 +119,7 @@ struct PlayerScreen: View {
     private func hide() { hideTask?.cancel(); controlsVisible = false }
 
     private func showControls() {
+        guard !upNextShown else { return }
         controlsVisible = true
         hideTask?.cancel()
         hideTask = Task {
@@ -128,9 +134,13 @@ struct PlayerScreen: View {
         controlsVisible = false
         guard autoplayNext else { return }
         upNextTask = Task {
-            for n in stride(from: 10, through: 0, by: -1) {
+            for n in stride(from: 10, to: 0, by: -1) {
                 upNextCountdown = n
                 try? await Task.sleep(for: .seconds(1))
+                while model.paused {
+                    try? await Task.sleep(for: .milliseconds(250))
+                    guard !Task.isCancelled else { return }
+                }
                 if Task.isCancelled { return }
             }
             playUpNext()
@@ -153,7 +163,12 @@ struct PlayerScreen: View {
         upNextDismissed = false
         goTask?.cancel()
         goTask = Task {
-            guard let next = try? await PlayItemBuilder.make(for: episode, store: store), !closed else { return }
+            guard !closed else { return }
+            guard let next = try? await PlayItemBuilder.make(for: episode, store: store) else {
+                if model.ended { close() }
+                return
+            }
+            guard !closed else { return }
             item = next
             model.advance(to: next)   // reloads on the same controller
             showControls()
@@ -163,6 +178,7 @@ struct PlayerScreen: View {
     private func shutdownOnce() {
         guard !closed else { return }
         closed = true
+        upNextTask?.cancel(); goTask?.cancel()
         model.shutdown()
     }
 

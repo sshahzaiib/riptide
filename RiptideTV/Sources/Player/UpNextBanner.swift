@@ -29,6 +29,8 @@ struct UpNextBanner: View {
         .background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 20))
         .padding(60)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-        .onAppear { playFocused = true }
+        .defaultFocus($playFocused, true)
+        .focusSection()
+        .onAppear { DispatchQueue.main.async { playFocused = true } }
     }
 }
