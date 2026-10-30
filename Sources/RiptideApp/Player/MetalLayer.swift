@@ -19,6 +19,7 @@ final class MetalLayer: CAMetalLayer {
         }
     }
 
+    #if !os(tvOS)
     // EDR activation only takes effect from the main thread.
     override var wantsExtendedDynamicRangeContent: Bool {
         get { super.wantsExtendedDynamicRangeContent }
@@ -32,4 +33,5 @@ final class MetalLayer: CAMetalLayer {
             }
         }
     }
+    #endif
 }
