@@ -70,6 +70,7 @@ struct PlayerScreen: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(60)
                     .onAppear { DispatchQueue.main.async { skipFocused = true } }
+                    .onMoveCommand { _ in if !controlsVisible { showControls() } }   // swipe still reveals controls; overlay takes focus onAppear
             }
             if upNextShown && !syncing, let next = nextEpisode {
                 UpNextBanner(next: next, countdown: upNextCountdown, onPlay: playUpNext, onCancel: cancelUpNext)
