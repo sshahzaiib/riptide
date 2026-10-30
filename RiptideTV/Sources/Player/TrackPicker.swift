@@ -15,6 +15,19 @@ struct TrackPicker: View {
         NavigationStack {
             List {
                 if kind == .subtitles {
+                    Section("Delay (ms)") {
+                        HStack {
+                            Button("\u{2212}500") { model.adjustSubDelay(by: -0.5) }
+                            Button("\u{2212}50") { model.adjustSubDelay(by: -PlayerModel.subDelayStep) }
+                            Text(PlayerModel.formatMS(model.subDelay)).monospacedDigit().frame(minWidth: 160)
+                            Button("+50") { model.adjustSubDelay(by: PlayerModel.subDelayStep) }
+                            Button("+500") { model.adjustSubDelay(by: 0.5) }
+                            Button("Reset") { model.resetSubDelay() }.disabled(model.subDelay == 0)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+                if kind == .subtitles {
                     row("Off", checked: !tracks.contains { $0.selected }) {
                         model.setSubtitleTrack(nil)
                     }
