@@ -10,6 +10,7 @@ struct VersionPicker: View {
     @State private var model = StreamPickerModel()
     @State private var status: String?
     @State private var picking = false
+    @State private var pickTask: Task<Void, Never>?
 
     var body: some View {
         VStack(alignment: .leading) {
@@ -40,6 +41,7 @@ struct VersionPicker: View {
             }
         }
         .disabled(picking)
+        .onDisappear { pickTask?.cancel() }
         .task { if let request { await model.load(request) } }
     }
 
@@ -60,9 +62,14 @@ struct VersionPicker: View {
 
     private func pick(_ make: @escaping () async throws -> PlayItem) {
         picking = true; status = "Starting…"
-        Task {
+        pickTask?.cancel()
+        pickTask = Task {
             defer { picking = false }
-            do { onPick(try await make()) } catch { status = error.localizedDescription }
+            do {
+                let item = try await make()
+                guard !Task.isCancelled else { return }
+                onPick(item)
+            } catch { if !Task.isCancelled { status = error.localizedDescription } }
         }
     }
 
@@ -73,9 +80,12 @@ struct VersionPicker: View {
             return pick { PlayResolver.playItem(url: url, request: request) }
         }
         picking = true; status = "Adding to debrid…"
-        Task {
+        pickTask?.cancel()
+        pickTask = Task {
             defer { picking = false }
-            switch await model.registerUncached(row: row) {
+            let outcome = await model.registerUncached(row: row)
+            guard !Task.isCancelled else { return }
+            switch outcome {
             case .added(let service, let id):
                 // Failover placement: the resolver URL is bound to the addon's own service.
                 guard service == row.intendedService else {
@@ -83,7 +93,9 @@ struct VersionPicker: View {
                     return
                 }
                 status = "Downloading…"
-                if await model.waitUntilDownloaded(service: service, transferID: id) {
+                let done = await model.waitUntilDownloaded(service: service, transferID: id)
+                guard !Task.isCancelled else { return }
+                if done {
                     onPick(PlayResolver.playItem(url: url, request: request))
                 } else { status = "Download failed." }
             case .probed: status = "Sent to your debrid service. Try again in a few minutes."

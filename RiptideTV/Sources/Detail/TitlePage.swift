@@ -10,6 +10,7 @@ struct TitlePage: View {
     @State private var pendingPlay: PlayItem?
     @State private var busy = false
     @State private var error: String?
+    @State private var runTask: Task<Void, Never>?
 
     init(ref: TitleRef, openVersionsOnLoad: Bool = false) {
         _model = State(initialValue: TitleModel(ref: ref))
@@ -32,7 +33,11 @@ struct TitlePage: View {
             if openVersionsOnLoad { run(nil, forcePicker: true) }
         }
         .onChange(of: model.season) { Task { await model.loadSeason() } }
-        .sheet(item: $picker, onDismiss: { playItem = pendingPlay; pendingPlay = nil }) { ctx in
+        .onDisappear { runTask?.cancel() }
+        .sheet(item: $picker, onDismiss: {
+            if let item = pendingPlay { playItem = item; PlayResolver.refreshLibraryLater(for: item) }
+            pendingPlay = nil
+        }) { ctx in
             VersionPicker(libraryItems: ctx.items, request: ctx.request) { item in
                 pendingPlay = item
                 picker = nil
@@ -80,7 +85,8 @@ struct TitlePage: View {
     /// nil row = movie. Resolves on a task; picker/player presented from the outcome.
     private func run(_ row: EpisodeRow?, forcePicker: Bool = false) {
         busy = true; error = nil
-        Task {
+        runTask?.cancel()
+        runTask = Task {
             defer { busy = false }
             do {
                 let isShow = model.ref.isShow
@@ -89,11 +95,12 @@ struct TitlePage: View {
                     items: items, season: isShow ? row?.season : nil,
                     episode: isShow ? row?.number : nil,
                     forcePicker: forcePicker, alwaysShow: alwaysShowVersions)
+                guard !Task.isCancelled else { return }
                 switch outcome {
                 case .play(let item): playItem = item; PlayResolver.refreshLibraryLater(for: item)
                 case .picker(let ctx): picker = ctx
                 }
-            } catch { self.error = error.localizedDescription }
+            } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
         }
     }
 }
