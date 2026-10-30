@@ -34,6 +34,7 @@ struct ScrubBar: View {
         }
         .focusable()
         .focused($focused)
+        .onChange(of: focused) { onInput() }
         .onMoveCommand { dir in
             onInput()
             switch dir {
