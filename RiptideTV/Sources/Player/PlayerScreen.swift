@@ -14,6 +14,11 @@ struct PlayerScreen: View {
     @State private var startAt: Double??
     @State private var askResume = false
     @State private var goTask: Task<Void, Never>?
+    @AppStorage("autoplayNext") private var autoplayNext = true
+    @State private var upNextCountdown: Int?
+    @State private var upNextShown = false
+    @State private var upNextDismissed = false
+    @State private var upNextTask: Task<Void, Never>?
     @Environment(\.dismiss) private var dismiss
 
     enum Sheet: String, Identifiable { case audio, subtitles, more; var id: String { rawValue } }
@@ -34,11 +39,16 @@ struct PlayerScreen: View {
     private var prevEpisode: LibraryItem? { isAddon ? nil : try? store.previousEpisode(before: item.itemKey) }
     private var nextEpisode: LibraryItem? { isAddon ? nil : try? store.nextEpisode(after: item.itemKey) }
 
+    private var inIntro: Bool { item.season != nil && (model.markers.intro?.contains(model.position) ?? false) }
+    private var shouldOfferUpNext: Bool {
+        model.ended || (model.markers.creditsStart.map { model.position >= $0 } ?? false)
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let startAt { MPVHostView(model: model, item: item, startAt: startAt).ignoresSafeArea() }
-            if !controlsVisible && !syncing {
+            if !controlsVisible && !syncing && !inIntro && !upNextShown {
                 Color.clear.focusable().onMoveCommand { _ in showControls() }
                     .onTapGesture { showControls() }
             }
@@ -50,6 +60,15 @@ struct PlayerScreen: View {
                                 onPrev: { go(prevEpisode) }, onNext: { go(nextEpisode) },
                                 onAudio: { sheet = .audio }, onSubs: { sheet = .subtitles }, onSync: { startSync() },
                                 onMore: { sheet = .more }, onInput: showControls)
+            }
+            if inIntro && !syncing {
+                Button { model.skipIntro() } label: { Label("Skip Intro", systemImage: "forward.frame") }
+                    .onMoveCommand { _ in showControls() }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .padding(60)
+            }
+            if upNextShown && !syncing, let next = nextEpisode {
+                UpNextBanner(next: next, countdown: upNextCountdown, onPlay: playUpNext, onCancel: cancelUpNext)
             }
             if let err = model.playbackError {
                 VStack(spacing: 24) {
@@ -73,7 +92,11 @@ struct PlayerScreen: View {
         }
         .onChange(of: model.ended) { _, ended in
             guard ended else { return }
-            if let next = nextEpisode { go(next) } else { close() }
+            if nextEpisode == nil || upNextDismissed { close() }
+            else if !upNextShown { beginUpNext() }
+        }
+        .onChange(of: shouldOfferUpNext) { _, offer in
+            if offer && nextEpisode != nil && !upNextDismissed && !upNextShown { beginUpNext() }
         }
         .onAppear {
             UIApplication.shared.isIdleTimerDisabled = true
@@ -99,8 +122,35 @@ struct PlayerScreen: View {
         }
     }
 
+    private func beginUpNext() {
+        upNextShown = true
+        hideTask?.cancel()
+        controlsVisible = false
+        guard autoplayNext else { return }
+        upNextTask = Task {
+            for n in stride(from: 10, through: 0, by: -1) {
+                upNextCountdown = n
+                try? await Task.sleep(for: .seconds(1))
+                if Task.isCancelled { return }
+            }
+            playUpNext()
+        }
+    }
+
+    private func clearUpNext() { upNextTask?.cancel(); upNextTask = nil; upNextShown = false; upNextCountdown = nil }
+
+    private func playUpNext() { let next = nextEpisode; clearUpNext(); go(next) }
+
+    private func cancelUpNext() {
+        clearUpNext()
+        upNextDismissed = true
+        if model.ended { close() }
+    }
+
     private func go(_ episode: LibraryItem?) {
         guard let episode else { return }
+        clearUpNext()
+        upNextDismissed = false
         goTask?.cancel()
         goTask = Task {
             guard let next = try? await PlayItemBuilder.make(for: episode, store: store), !closed else { return }
