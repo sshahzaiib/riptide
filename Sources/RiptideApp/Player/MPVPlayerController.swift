@@ -217,7 +217,11 @@ final class MPVPlayerController: PlatformViewController {
         // Fixed upstream in mpv af067b5e + c5d391ad (2026-09-01), not yet in
         // any MPVKit release. Skipping coreaudio sidesteps it; it stays as
         // fallback in case avfoundation ever fails.
+        #if os(tvOS)
+        checkError(mpv_set_option_string(mpv, "ao", "audiounit"))   // MPVKit tvOS build: audiounit only
+        #else
         checkError(mpv_set_option_string(mpv, "ao", "avfoundation,coreaudio"))
+        #endif
         checkError(mpv_set_option_string(mpv, "ytdl", "no"))
         checkError(mpv_set_option_string(mpv, "keep-open", "yes"))
         // Auto-select English subtitles during load: a manual sid switch on
