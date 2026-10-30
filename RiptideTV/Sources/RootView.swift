@@ -5,12 +5,20 @@ struct RootView: View {
     @AppStorage("wizardDone") private var wizardDone = false
     @Environment(\.scenePhase) private var scenePhase
 
+    private var forceMain: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.environment["RIPTIDE_TV_SKIP_WIZARD"] == "1"
+        #else
+        false
+        #endif
+    }
+
     var body: some View {
         Group {
-            if !wizardDone || !AppSettings.shared.isConfigured {
-                WizardView(wizardDone: $wizardDone)
+            if forceMain || (wizardDone && AppSettings.shared.isConfigured) {
+                MainTabView()
             } else {
-                Text("Main") // Task 8 replaces with MainTabView
+                WizardView(wizardDone: $wizardDone)
             }
         }
         .task { await pullTrakt() }
