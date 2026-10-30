@@ -2,17 +2,6 @@ import SwiftUI
 import StreamCore
 import class StreamCore.LibraryItem
 
-/// What the stream picker needs to query addons for one movie or episode.
-struct StreamRequest: Identifiable {
-    let id = UUID()
-    let type: StremioAddonClient.MediaType
-    let imdbID: String
-    let title: String
-    let season: Int?
-    let episode: Int?
-    let tmdbID: Int
-}
-
 /// Detail page for a TMDB search result. Library-priority: anything already
 /// in the library plays directly; otherwise "Find Streams" queries addons.
 struct SearchDetailView: View {

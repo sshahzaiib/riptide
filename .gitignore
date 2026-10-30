@@ -5,3 +5,5 @@
 dist/
 docs/superpowers/
 .superpowers/
+RiptideTV/RiptideTV.xcodeproj
+RiptideTV/build/
