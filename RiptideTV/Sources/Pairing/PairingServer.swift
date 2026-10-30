@@ -17,6 +17,9 @@ final class PairingServer {
     @ObservationIgnored private let queue = DispatchQueue(label: "riptide.pairing")
     private static let maxRequest = 64 * 1024
 
+    /// apply receives each submitted payload and returns the current state of all seven fields.
+    /// An empty payload must change nothing and just report state; the server calls it once on
+    /// start() to populate the list.
     init(apply: @escaping (PairingPayload) async -> [PairingFieldState]) {
         self.apply = apply
     }
@@ -32,7 +35,6 @@ final class PairingServer {
                 if case .ready = state, let port = l.port?.rawValue {
                     if let ip = Self.lanIPv4() {
                         self.url = URL(string: "http://\(ip):\(port)/\(self.token)")
-                        print("[pairing] listening on \(self.url?.absoluteString ?? "-")")
                     }
                 } else if case .failed = state {
                     self.stop()
