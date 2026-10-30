@@ -42,7 +42,10 @@ struct PlayerScreen: View {
 
     private var inIntro: Bool { item.season != nil && (model.markers.intro?.contains(model.position) ?? false) }
     private var shouldOfferUpNext: Bool {
-        model.ended || (model.markers.creditsStart.map { model.position >= $0 } ?? false)
+        if model.ended { return true }
+        if let credits = model.markers.creditsStart { return model.position >= credits }
+        // ponytail: no chapter markers (most files) → last 10 s stands in for the credits
+        return model.duration > 0 && model.duration - model.position <= 10
     }
 
     var body: some View {
