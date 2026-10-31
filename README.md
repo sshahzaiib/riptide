@@ -119,4 +119,4 @@ Riptide is free and GPL-licensed. If it replaced a paid player for you,
 
 ## License
 
-[GPL-3.0](LICENSE). Copyright © 2026 Shahzaib Muhammad Akram.
+[GPL-3.0](LICENSE). Copyright © 2026 Shahzaib.
