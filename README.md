@@ -16,7 +16,7 @@ streams through your debrid account.
 
 ## Requirements
 
-- macOS 26+ (or Apple TV 4K on tvOS 18+, see [Apple TV](#apple-tv))
+- macOS 14 Sonoma+ (or Apple TV 4K on tvOS 18+, see [Apple TV](#apple-tv))
 - Real-Debrid premium account + [API token](https://real-debrid.com/apitoken)
 - Free [TMDB API Read Access Token](https://www.themoviedb.org/settings/api) (posters/metadata)
 - Optional: [AllDebrid API key](https://alldebrid.com/apikeys) as a backup resolver

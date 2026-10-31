@@ -103,7 +103,7 @@ struct PlayerWindowView: View {
                             Button(action: { model.skipIntro() }) {
                                 Label("Skip Intro", systemImage: "forward.frame")
                                     .padding(.horizontal, 12).padding(.vertical, 6)
-                                    .glassEffect(.clear, in: .capsule)
+                                    .clearGlass(in: .capsule)
                             }
                             .buttonStyle(.plain)
                             .frame(maxWidth: .infinity, alignment: .trailing)
@@ -117,7 +117,7 @@ struct PlayerWindowView: View {
                             .containerRelativeFrame(.horizontal) { length, _ in
                                 min(max(length * 0.45, 560), max(length - 32, 320))
                             }
-                            .glassEffect(.clear, in: .rect(cornerRadius: 16))
+                            .clearGlass(in: .rect(cornerRadius: 16))
                             .padding(16)
                             .offset(controlsOffset)
                             // Drag the pill by any non-interactive spot (sliders
@@ -459,7 +459,7 @@ struct PlayerWindowView: View {
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
-        .glassEffect(.clear, in: .rect(cornerRadius: 12))
+        .clearGlass(in: .rect(cornerRadius: 12))
         .allowsHitTesting(false)
     }
 
@@ -488,7 +488,7 @@ struct PlayerWindowView: View {
             .help("Close")
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
-        .glassEffect(.clear, in: .capsule)
+        .clearGlass(in: .capsule)
         .padding(12)
     }
 
@@ -501,14 +501,14 @@ struct PlayerWindowView: View {
             HStack(spacing: 10) {
                 if upNextFailed {
                     Button("Retry") { clearUpNext(); beginUpNext() }
-                        .buttonStyle(.glass)
+                        .glassButton()
                     Text("Couldn't fetch the stream").font(.callout).foregroundStyle(.secondary)
                 } else {
                     Button(action: { upNextTask?.cancel(); playUpNext() }) {
                         Label(upNextCountdown.map { "Playing in \($0)s" } ?? "Play Now",
                               systemImage: "play.fill")
                     }
-                    .buttonStyle(.glassProminent)
+                    .glassButton(prominent: true)
                     .disabled(upNextPlay == nil)
                 }
                 Button("Cancel") {
@@ -516,11 +516,11 @@ struct PlayerWindowView: View {
                     clearUpNext()
                     upNextDismissed = true
                 }
-                .buttonStyle(.glass)
+                .glassButton()
             }
         }
         .padding(16)
-        .glassEffect(.clear, in: .rect(cornerRadius: 16))
+        .clearGlass(in: .rect(cornerRadius: 16))
         .animation(.easeInOut(duration: 0.2), value: upNextCountdown)
     }
 
@@ -665,5 +665,24 @@ struct PlayerWindowView: View {
         return s >= 3600
             ? String(format: "%d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60)
             : String(format: "%d:%02d", s / 60, s % 60)
+    }
+}
+
+// Liquid Glass on macOS 26+, material/bordered look on older systems.
+private extension View {
+    @ViewBuilder func clearGlass<S: Shape>(in shape: S) -> some View {
+        if #available(macOS 26, *) {
+            glassEffect(.clear, in: shape)
+        } else {
+            background(.ultraThinMaterial, in: shape)
+        }
+    }
+
+    @ViewBuilder func glassButton(prominent: Bool = false) -> some View {
+        if #available(macOS 26, *) {
+            if prominent { buttonStyle(.glassProminent) } else { buttonStyle(.glass) }
+        } else {
+            if prominent { buttonStyle(.borderedProminent) } else { buttonStyle(.bordered) }
+        }
     }
 }

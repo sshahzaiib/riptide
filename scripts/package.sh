@@ -26,7 +26,7 @@ cp .build/release/RiptideApp "$APP/Contents/MacOS/"
 # AppIcon.icns (assets/icon/build.sh) is the flat fallback.
 if [ -d assets/icon/Riptide.icon ]; then
   xcrun actool --compile "$APP/Contents/Resources" --app-icon Riptide --platform macosx \
-    --minimum-deployment-target 26.0 --output-partial-info-plist "$(mktemp)" assets/icon/Riptide.icon >/dev/null
+    --minimum-deployment-target 14.0 --output-partial-info-plist "$(mktemp)" assets/icon/Riptide.icon >/dev/null
   ICON=Riptide
 else
   cp assets/AppIcon.icns "$APP/Contents/Resources/"; ICON=AppIcon
@@ -45,7 +45,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleVersion</key><string>$BUILD</string>
   <key>CFBundleIconFile</key><string>$ICON</string>
   <key>CFBundleIconName</key><string>$ICON</string>
-  <key>LSMinimumSystemVersion</key><string>26.0</string>
+  <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.entertainment</string>
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>NSHighResolutionCapable</key><true/>
