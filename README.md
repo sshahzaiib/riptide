@@ -10,6 +10,10 @@ mpv player (MKV, every codec) — a personal Infuse replacement.
 Browse your debrid torrents as a poster library, match them against TMDB
 metadata, play anything mpv can decode, and sync watch progress with Trakt.
 
+Search beyond your library with your own Stremio addon (Torrentio,
+AIOStreams, or any addon URL you paste into Settings): pick a result and it
+streams through your debrid account.
+
 ## Requirements
 
 - macOS 26+ (or Apple TV 4K on tvOS 18+, see [Apple TV](#apple-tv))
@@ -100,7 +104,7 @@ what you watched on the Mac.
 
 Riptide is a player for files that already sit in **your own** debrid
 account. It hosts nothing, indexes nothing, and ships with no content
-sources. You are responsible for what you add to your account and for
+sources. Addon search only uses addon URLs you add yourself. You are responsible for what you add to your account and for
 complying with the terms of the services you connect.
 
 ## Support

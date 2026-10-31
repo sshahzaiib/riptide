@@ -28,6 +28,5 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: brew install xcodegen
-      - run: xcodebuild -downloadPlatform tvOS
       - run: cd RiptideTV && xcodegen generate
       - run: xcodebuild -project RiptideTV/RiptideTV.xcodeproj -scheme RiptideTV -destination 'generic/platform=tvOS Simulator' build CODE_SIGNING_ALLOWED=NO
