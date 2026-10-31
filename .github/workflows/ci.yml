@@ -13,8 +13,8 @@ jobs:
     name: test
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      - uses: actions/checkout@v7
+      - uses: actions/cache@v6
         with:
           path: .build
           key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
@@ -26,7 +26,7 @@ jobs:
     name: tvOS build
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: brew install xcodegen
       - run: xcodebuild -downloadPlatform tvOS
       - run: cd RiptideTV && xcodegen generate
