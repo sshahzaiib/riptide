@@ -12,6 +12,7 @@ targets:
     platform: tvOS
     sources:
       - path: Sources
+      - path: Assets.xcassets
       - path: ../Sources/RiptideApp
         includes:
           - Library/LibraryModel.swift
@@ -56,6 +57,7 @@ targets:
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: "${RIPTIDE_TV_TEAM}"
         PRODUCT_BUNDLE_IDENTIFIER: com.northlab.riptide.tv
+        ASSETCATALOG_COMPILER_APPICON_NAME: "App Icon & Top Shelf Image"
         OTHER_LDFLAGS: ["-lc++"]
   RiptideTVTests:
     type: bundle.unit-test
