@@ -34,6 +34,60 @@ Use `scripts/run.sh` rather than `swift run RiptideApp`: an ad-hoc signed
 binary changes its signature every rebuild, so macOS re-prompts for Keychain
 access each launch.
 
+## Apple TV
+
+A tvOS companion app, `RiptideTV`, shares the library, player and sync code
+with the Mac app. It is installed through Xcode, not the App Store.
+
+### Requirements
+
+- Apple TV 4K on tvOS 18+
+- Xcode 27
+- A paid Apple developer account if you want installs that last a year (a
+  free account works, but the install expires after 7 days)
+- The same Real-Debrid and TMDB keys as the Mac app
+
+### Install
+
+    brew install xcodegen
+    scripts/run-tv.sh    # simulator: generate project, build, launch
+
+For a real Apple TV:
+
+    export RIPTIDE_TV_TEAM=<your team id>
+    cd RiptideTV && xcodegen generate && open RiptideTV.xcodeproj
+
+Select your Apple TV as the run destination and hit Run.
+
+### First-run setup
+
+1. **Pair** - the TV shows a QR code and a URL for a setup page you open on your phone.
+2. **Trakt** - sign in with a device code, or skip.
+3. **Done** - your library loads.
+
+Settings has "Set up from another device" to reopen the pairing page later.
+
+### The pairing page
+
+Typing API keys with a remote is miserable, so the TV serves a small form
+that you fill in from your phone. Real-Debrid, TMDB and the optional keys
+go in there and are saved to the Apple TV's Keychain.
+
+The setup page is served over plain HTTP on your local network. Your keys travel unencrypted between your phone and the Apple TV for the few seconds it takes to submit the form. HTTPS would require a self-signed certificate and a browser warning on every device, which we judged worse for users than this risk. The page only exists while the setup screen is open, lives at a random one-time address, and nothing else in the app ever listens on the network.
+
+### Why Trakt is strongly recommended
+
+tvOS may purge an app's local data when the device is short on storage.
+Trakt is the source of truth for watch progress: without it, Continue
+Watching is forgotten whenever tvOS clears storage, and it never matches
+what you watched on the Mac.
+
+### What the TV app does not do
+
+- No downloads.
+- No backup or restore.
+- No AllDebrid-only setups - Real-Debrid and TMDB are required, same as the Mac.
+
 ## What Riptide is and is not
 
 Riptide is a player for files that already sit in **your own** debrid

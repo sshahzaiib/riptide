@@ -16,6 +16,8 @@ via mpv, sync watch progress with Trakt.
     swift test --filter TestClassName/testMethodName   # single test
     scripts/run.sh             # build, codesign, and launch the app
     NOTARY_PROFILE=riptide scripts/package.sh   # release .app + DMG, notarized
+    scripts/run-tv.sh          # xcodegen, build for tvOS simulator, install, launch
+    cd RiptideTV && xcodegen generate && xcodebuild test -project RiptideTV.xcodeproj -scheme RiptideTV -destination 'platform=tvOS Simulator,name=Apple TV 4K (3rd generation)' CODE_SIGNING_ALLOWED=NO
 
 Release builds land in `dist/` (gitignored), signed with the Developer ID
 for team `YWM9Q6F35V`. The notarytool credentials live in the login Keychain
@@ -131,6 +133,24 @@ are `@Observable` singletons backed by `KeychainStore`, a thin `SecItem`
 wrapper. No token ever touches UserDefaults or disk outside Keychain. RD +
 TMDB are required for the library to function; OpenSubtitles and Trakt are
 optional.
+
+### RiptideTV (tvOS)
+
+`RiptideTV/project.yml` (xcodegen) defines the tvOS app; `RiptideTV/RiptideTV.xcodeproj`
+and `RiptideTV/build/` are gitignored and regenerated. Floor is tvOS 18
+(StreamCore declares `.tvOS(.v18)`). Signing team comes from `RIPTIDE_TV_TEAM`.
+
+Shared sources: files from `Sources/RiptideApp` are compiled into the TV
+target by reference via the `includes` list in `project.yml`. A file listed
+there must compile on both platforms; guard with `#if canImport(AppKit)`.
+
+DEBUG env hooks, passed as `SIMCTL_CHILD_*` to `xcrun simctl launch`:
+`RIPTIDE_TV_SKIP_WIZARD=1`, `RIPTIDE_TV_TAB=<label>`,
+`RIPTIDE_TV_WIZARD_STEP=trakt|done`, `RIPTIDE_TV_OPEN=<tmdbID>[:movie|show]`,
+`RIPTIDE_TV_DEBUG_URL=<url>`. Relaunching with a hook requires terminating first (`xcrun simctl terminate booted com.northlab.riptide.tv`, or `xcrun simctl launch --terminate-running-process`), because a plain `simctl launch` of a running app returns the same PID and ignores the new environment.
+
+The phone-pairing contract lives in `Sources/StreamCore/Pairing/` (tested in
+StreamCoreTests). First-run wizard: Pair -> Trakt (skippable) -> Done.
 
 ## Licensing constraint
 

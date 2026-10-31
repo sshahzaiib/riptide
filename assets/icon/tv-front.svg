@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 600"><defs>
+  <!-- strip is one continuous ribbon: A up the stem, B over A at the top fold, C over B at the right fold and over A at the bottom crossing -->
+  <linearGradient id="gA" gradientUnits="userSpaceOnUse" x1="340" y1="830" x2="340" y2="250"><stop offset="0" stop-color="#0A47A0"/><stop offset=".55" stop-color="#1067C9"/><stop offset="1" stop-color="#1374DC"/></linearGradient>
+  <linearGradient id="gB" gradientUnits="userSpaceOnUse" x1="314" y1="235" x2="800" y2="512"><stop offset="0" stop-color="#1374DC"/><stop offset=".5" stop-color="#1A93E6"/><stop offset="1" stop-color="#1FB0DE"/></linearGradient>
+  <linearGradient id="gC" gradientUnits="userSpaceOnUse" x1="822" y1="499" x2="290" y2="810"><stop offset="0" stop-color="#1FB0DE"/><stop offset=".55" stop-color="#22C3CF"/><stop offset="1" stop-color="#17A9C9"/></linearGradient>
+  <filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="13"/></filter>
+  <mask id="mA" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024"><path d="M340 830 V 250" fill="none" stroke="#fff" stroke-width="136" stroke-linecap="round"/></mask>
+  <mask id="mB" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024"><path d="M314 235 L 800 512" fill="none" stroke="#fff" stroke-width="136" stroke-linecap="round"/></mask>
+  <symbol id="ribbon" viewBox="0 0 1024 1024" preserveAspectRatio="xMidYMid meet">
+    <g fill="none" stroke-width="136" stroke-linecap="round">
+      <path d="M340 830 V 250" stroke="url(#gA)"/>
+      <!-- shadows cast onto A: by B at the top fold, by C at the bottom crossing -->
+      <g mask="url(#mA)" filter="url(#soft)" stroke="#06244F" stroke-opacity=".45" transform="translate(0 20)">
+        <path d="M314 235 L 800 512"/><path d="M822 499 L 290 810"/>
+      </g>
+      <path d="M314 235 L 800 512" stroke="url(#gB)"/>
+      <!-- shadow cast onto B by C at the right fold -->
+      <g mask="url(#mB)" filter="url(#soft)" stroke="#06244F" stroke-opacity=".45" transform="translate(0 20)"><path d="M822 499 L 290 810"/></g>
+      <path d="M822 499 L 290 810" stroke="url(#gC)"/>
+    </g>
+  </symbol>
+</defs><use href="#ribbon" x="20" width="380" height="600"/><text x="400" y="362" font-family="SF Pro Rounded, ui-rounded, system-ui" font-weight="800" font-size="168" letter-spacing="-3" fill="#0B2554">Riptide</text></svg>

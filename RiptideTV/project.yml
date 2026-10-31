@@ -1,0 +1,73 @@
+name: RiptideTV
+options:
+  bundleIdPrefix: com.northlab
+  deploymentTarget: { tvOS: "18.0" }
+  xcodeVersion: "27.1"
+packages:
+  Riptide: { path: .. }
+  MPVKit: { url: https://github.com/mpvkit/MPVKit.git, from: 0.41.0 }
+targets:
+  RiptideTV:
+    type: application
+    platform: tvOS
+    sources:
+      - path: Sources
+      - path: Assets.xcassets
+      - path: ../Sources/RiptideApp
+        includes:
+          - Library/LibraryModel.swift
+          - Library/ShowPageModel.swift
+          - Library/SidebarSection.swift
+          - Discover/DiscoverModel.swift
+          - Discover/TraktRowResolver.swift
+          - UpNext/UpNextModel.swift
+          - Watchlist/WatchlistModel.swift
+          - Favorites/FavoritesModel.swift
+          - Search/GlobalSearchModel.swift
+          - Search/StreamPickerModel.swift
+          - Search/StreamRequest.swift
+          - Player/PlayItem.swift
+          - Player/PlayItemBuilder.swift
+          - Player/DebridResolver.swift
+          - Player/StreamingCachePreset.swift
+          - Player/SubtitleCache.swift
+          - Player/SubtitleStyle.swift
+          - Player/PlayerModel.swift
+          - Player/MPVPlayerController.swift
+          - Player/MetalLayer.swift
+          - Settings/AppSettings.swift
+          - Settings/KeychainStore.swift
+          - Settings/TraktService.swift
+          - Cache/ShelfDiskCache.swift
+    dependencies:
+      - package: Riptide
+        product: StreamCore
+      - package: MPVKit
+        product: MPVKit
+        embed: false
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: Riptide
+        NSLocalNetworkUsageDescription: Riptide hosts a one-time setup page on your local network so you can enter keys from a phone or laptop.
+        UIUserInterfaceStyle: Dark
+    settings:
+      base:
+        SWIFT_VERSION: "5"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: "${RIPTIDE_TV_TEAM}"
+        PRODUCT_BUNDLE_IDENTIFIER: com.northlab.riptide.tv
+        ASSETCATALOG_COMPILER_APPICON_NAME: "App Icon & Top Shelf Image"
+        OTHER_LDFLAGS: ["-lc++"]
+  RiptideTVTests:
+    type: bundle.unit-test
+    platform: tvOS
+    sources: [Tests]
+    dependencies:
+      - target: RiptideTV
+      - package: Riptide
+        product: StreamCore
+    settings:
+      base:
+        SWIFT_VERSION: "5"
+        GENERATE_INFOPLIST_FILE: YES

@@ -9,8 +9,7 @@
 #   xcrun notarytool store-credentials riptide --apple-id <id> --team-id YWM9Q6F35V
 #
 # mpv/ffmpeg are linked statically, so the bundle is the one executable plus
-# an Info.plist; nothing to embed. Drop an icon at assets/AppIcon.icns to
-# include it (make one from a 1024px PNG with `iconutil -c icns`).
+# an Info.plist plus the app icon (see assets/icon/).
 set -e
 cd "$(dirname "$0")/.."
 
@@ -23,7 +22,15 @@ swift build -c release
 
 rm -rf dist && mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/RiptideApp "$APP/Contents/MacOS/"
-[ -f assets/AppIcon.icns ] && cp assets/AppIcon.icns "$APP/Contents/Resources/"
+# Icon: the Icon Composer package gives Tahoe its glass/dark/tinted variants;
+# AppIcon.icns (assets/icon/build.sh) is the flat fallback.
+if [ -d assets/icon/Riptide.icon ]; then
+  xcrun actool --compile "$APP/Contents/Resources" --app-icon Riptide --platform macosx \
+    --minimum-deployment-target 26.0 --output-partial-info-plist "$(mktemp)" assets/icon/Riptide.icon >/dev/null
+  ICON=Riptide
+else
+  cp assets/AppIcon.icns "$APP/Contents/Resources/"; ICON=AppIcon
+fi
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -36,7 +43,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$BUILD</string>
-  <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>CFBundleIconFile</key><string>$ICON</string>
+  <key>CFBundleIconName</key><string>$ICON</string>
   <key>LSMinimumSystemVersion</key><string>26.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.entertainment</string>
   <key>NSPrincipalClass</key><string>NSApplication</string>
