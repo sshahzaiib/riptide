@@ -8,9 +8,11 @@
 set -e
 cd "$(dirname "$0")/.."
 swift build "$@"
-# Cert hash, not name: the name is ambiguous (a revoked duplicate exists).
-# "Apple Development: zaibansari20@gmail.com (GSK3AYXNYW)", valid one.
+# Signing identity: $RIPTIDE_SIGN_ID, else the first valid "Apple Development"
+# cert in the Keychain (by hash: -v skips revoked duplicates that share a name),
+# else ad-hoc (works, but Keychain re-prompts every rebuild).
+SIGN_ID="${RIPTIDE_SIGN_ID:-$(security find-identity -v -p codesigning | awk '/"Apple Development/ {print $2; exit}')}"
 codesign --force --identifier com.northlab.riptide \
-  --sign 4C0E315942792A22B816A1228C4866640AEB3E65 \
+  --sign "${SIGN_ID:--}" \
   .build/debug/RiptideApp
 exec .build/debug/RiptideApp

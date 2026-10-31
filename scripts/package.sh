@@ -16,7 +16,9 @@ cd "$(dirname "$0")/.."
 VERSION="${VERSION:-0.1.0}"
 BUILD="$(git rev-list --count HEAD)"
 APP=dist/Riptide.app
-IDENTITY="Developer ID Application: Shahzaib Muhammmad Akram (YWM9Q6F35V)"
+# $RIPTIDE_DEVELOPER_ID, else the first valid Developer ID Application cert in the Keychain.
+IDENTITY="${RIPTIDE_DEVELOPER_ID:-$(security find-identity -v -p codesigning | awk '/"Developer ID Application/ {print $2; exit}')}"
+[ -n "$IDENTITY" ] || { echo "no Developer ID Application certificate in the Keychain" >&2; exit 1; }
 
 swift build -c release
 
