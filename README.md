@@ -1,6 +1,10 @@
-# Riptide
+<p align="center"><img src="assets/readme/mac-icon.png" width="128" alt="Riptide icon"></p>
 
-Native macOS app that streams your Real-Debrid library with an embedded
+<h1 align="center">Riptide</h1>
+
+<p align="center">For macOS and Apple TV</p>
+
+Native macOS and tvOS app that streams your Real-Debrid library with an embedded
 mpv player (MKV, every codec) — a personal Infuse replacement.
 
 Browse your debrid torrents as a poster library, match them against TMDB
@@ -8,7 +12,7 @@ metadata, play anything mpv can decode, and sync watch progress with Trakt.
 
 ## Requirements
 
-- macOS 26+
+- macOS 26+ (or Apple TV 4K on tvOS 18+, see [Apple TV](#apple-tv))
 - Real-Debrid premium account + [API token](https://real-debrid.com/apitoken)
 - Free [TMDB API Read Access Token](https://www.themoviedb.org/settings/api) (posters/metadata)
 - Optional: [AllDebrid API key](https://alldebrid.com/apikeys) as a backup resolver
@@ -36,8 +40,12 @@ access each launch.
 
 ## Apple TV
 
-A tvOS companion app, `RiptideTV`, shares the library, player and sync code
-with the Mac app. It is installed through Xcode, not the App Store.
+<p align="center"><img src="assets/readme/tv-shelf.png" width="600" alt="Riptide on the Apple TV Top Shelf"></p>
+
+Riptide is now available on Apple TV. The tvOS app, `RiptideTV`, shares the
+library, player and sync code with the Mac app: poster library, mpv playback,
+Skip Intro, Up Next countdown and Trakt sync. It is installed through Xcode,
+not the App Store (the release `.dmg` is the Mac app only).
 
 ### Requirements
 
