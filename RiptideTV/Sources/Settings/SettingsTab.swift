@@ -10,12 +10,14 @@ struct SettingsTab: View {
                 TraktSection()
                 AddonsList(settings: settings)
                 PlaybackSection()
-                Section("Set up from another device") {
+                // Version lives in this footer, not its own section: plain-text
+                // rows below the last focusable row can't be scrolled into view.
+                Section {
                     NavigationLink("Set up from another device") { PairingDestination() }
-                }
-                Section("About") {
-                    Text("Riptide for Apple TV \(Self.info("CFBundleShortVersionString")) (\(Self.info("CFBundleVersion")))")
-                    Text("github.com/sshahzaiib/riptide").foregroundStyle(.secondary)
+                } header: {
+                    Text("Set up from another device")
+                } footer: {
+                    Text("Riptide for Apple TV \(Self.info("CFBundleShortVersionString")) (\(Self.info("CFBundleVersion"))) · github.com/sshahzaiib/riptide")
                 }
             }
             .navigationTitle("Settings")
