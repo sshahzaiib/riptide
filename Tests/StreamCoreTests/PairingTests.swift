@@ -44,4 +44,12 @@ final class PairingTests: XCTestCase {
         XCTAssertNil(PairingHTTP.parse(Data("POST /x HTTP/1.1\r\nContent-Length: abc\r\n\r\nabc".utf8)))
         XCTAssertNil(PairingHTTP.parse(Data([0xFF, 0xFE])))
     }
+
+    func testPageExplainsAddonOrder() {
+        let html = PairingPage.html(fields: [
+            PairingFieldState(name: "addonURLs", label: "Addon URLs", isSet: false, result: nil),
+            PairingFieldState(name: "rdToken", label: "Real-Debrid token", isSet: false, result: nil),
+        ], token: "t")
+        XCTAssertEqual(html.components(separatedBy: "Order matters").count, 2)   // once, under the addon field only
+    }
 }
