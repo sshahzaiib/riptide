@@ -39,5 +39,6 @@ struct MainTabView: View {
             MoviesTab(library: AppModels.library).titleStack().tabItem { Text("Movies") }.tag("Movies")
             SettingsTab().tabItem { Text("Settings") }.tag("Settings")
         }
+        .task(id: TraktService.shared.isConnected) { await TraktToggles.loadMembership() }
     }
 }

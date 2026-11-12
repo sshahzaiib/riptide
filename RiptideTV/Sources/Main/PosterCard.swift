@@ -35,6 +35,7 @@ struct PosterCard: View {
                 }
             }
             .buttonStyle(.card)
+            .contextMenu { TraktToggles(ref: ref) }
             Text(title).font(.callout.weight(.medium)).lineLimit(1)
             if let subtitle, !subtitle.isEmpty {
                 Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
