@@ -28,7 +28,7 @@ struct SettingsTab: View {
 }
 
 /// Wrapper so each visit builds a fresh listener + token.
-private struct PairingDestination: View {
+struct PairingDestination: View {
     @State private var server = PairingServer.live()
     @Environment(\.dismiss) private var dismiss
 
