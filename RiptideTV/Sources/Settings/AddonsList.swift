@@ -7,32 +7,31 @@ struct AddonsList: View {
     var body: some View {
         Section {
             if settings.addons.isEmpty { Text("No addons").foregroundStyle(.secondary) }
+            // One focusable button per row: tvOS focuses a List row as a whole,
+            // so buttons nested in a row can't be reached with the remote and
+            // the row's text doesn't adapt to the focus highlight.
             ForEach(settings.addons) { addon in
-                HStack {
+                Button { pending = addon } label: {
                     VStack(alignment: .leading) {
                         Text(addon.name)
                         Text(addon.url.host() ?? addon.url.absoluteString)
                             .font(.caption).foregroundStyle(.secondary)
                     }
-                    Spacer()
-                    Button { move(addon, by: -1) } label: { Image(systemName: "chevron.up") }
-                        .disabled(addon.id == settings.addons.first?.id)
-                        .accessibilityLabel("Move up")
-                    Button { move(addon, by: 1) } label: { Image(systemName: "chevron.down") }
-                        .disabled(addon.id == settings.addons.last?.id)
-                        .accessibilityLabel("Move down")
-                    Button("Remove", role: .destructive) { pending = addon }
                 }
             }
         } header: {
             Text("Addons")
         } footer: {
-            Text("Play uses the first addon that has a stream; the ones below it are the fallback. Add addons from Set up from another device.")
+            Text("Play uses the first addon that has a stream; the ones below it are the fallback. Select an addon to move or remove it. Add addons from Set up from another device.")
         }
-        .confirmationDialog("Remove \(pending?.name ?? "addon")?", isPresented: Binding(
+        .confirmationDialog(pending?.name ?? "Addon", isPresented: Binding(
             get: { pending != nil }, set: { if !$0 { pending = nil } }), titleVisibility: .visible) {
-            Button("Remove", role: .destructive) {
-                if let a = pending { settings.saveAddons(settings.addons.filter { $0.id != a.id }) }
+            if let addon = pending {
+                if addon.id != settings.addons.first?.id { Button("Move Up") { move(addon, by: -1) } }
+                if addon.id != settings.addons.last?.id { Button("Move Down") { move(addon, by: 1) } }
+                Button("Remove", role: .destructive) {
+                    settings.saveAddons(settings.addons.filter { $0.id != addon.id })
+                }
             }
         }
     }
