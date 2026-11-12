@@ -28,8 +28,11 @@ enum PlayResolver {
         let model = StreamPickerModel()
         await model.load(request)
         guard !model.rows.isEmpty else { throw Error.nothingToPlay }
-        // Rows are pre-sorted (cached first, resolution desc); skip known-uncached.
-        guard let url = model.rows.first(where: { $0.meta.cached != false })?.stream.httpURL
+        // Rows are pre-sorted (addon order, then cached, resolution desc), so this is the
+        // first addon with something playable; later addons are the fallback. Skip known-uncached.
+        // A verified-cached stream from a later addon beats an unknown one from an earlier addon.
+        guard let url = (model.rows.first { $0.meta.cached == true }
+                         ?? model.rows.first { $0.meta.cached == nil })?.stream.httpURL
         else { throw Error.noCachedStream }
         return playItem(url: url, request: request)
     }

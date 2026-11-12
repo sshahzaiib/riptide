@@ -49,7 +49,9 @@ targets:
       path: Info.plist
       properties:
         CFBundleDisplayName: Riptide
-        NSLocalNetworkUsageDescription: Riptide hosts a one-time setup page on your local network so you can enter keys from a phone or laptop.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        NSLocalNetworkUsageDescription: Riptide hosts a one-time setup page on your local network so you can enter keys from a phone or laptop. It also connects to stream addons you host on your network.
         UIUserInterfaceStyle: Dark
     settings:
       base:

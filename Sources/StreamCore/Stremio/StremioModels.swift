@@ -46,6 +46,15 @@ public struct AddonStream: Sendable, Decodable, Hashable {
         return parsed
     }
 
+    /// Addon "action" entries that aren't media, e.g. Comet's
+    /// "[RD🔄] Comet Sync" (url …/debrid-sync/0).
+    // ponytail: marker match — the protocol has no flag for these; add
+    // patterns here as other addons' action entries turn up.
+    public var isAction: Bool {
+        (name ?? "").unicodeScalars.contains("\u{1F504}")   // 🔄
+            || (url ?? "").contains("/debrid-sync/")
+    }
+
     /// Raw addon text for UI display (addons put metadata in name + title,
     /// or name + description — AIOStreams uses description).
     public var displayText: String {

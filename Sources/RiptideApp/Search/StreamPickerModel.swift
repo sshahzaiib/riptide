@@ -3,11 +3,12 @@ import StreamCore
 
 extension URLSession {
     /// Session for addon requests (stream queries, add-time validation) —
-    /// 5 s per-request timeout so one slow/dead addon can't stall the merged
-    /// list or hang the Settings validation spinner.
+    /// 10 s per-request timeout: long enough for a self-hosted addon's cold
+    /// live scrape (~6 s observed), short enough that one dead addon can't
+    /// stall the list or hang the Settings validation spinner.
     static let addon: URLSession = {
         let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 5
+        config.timeoutIntervalForRequest = 10
         return URLSession(configuration: config)
     }()
 }
@@ -28,16 +29,28 @@ final class StreamPickerModel {
     private(set) var loadingCount = 0       // addons still in flight
     private(set) var failedAddons: [String] = []
     var filterAddonID: UUID?
+    /// Addon order as of the current load — every row's addon is in it.
+    private var addonOrder: [UUID] = []
 
     var visibleRows: [Row] {
         guard let filterAddonID else { return rows }
         return rows.filter { $0.addon.id == filterAddonID }
     }
 
+    /// visibleRows grouped per addon, in the user's addon order (rows are
+    /// already sorted that way, so this only chunks consecutive runs).
+    var sections: [(addon: ConfiguredAddon, rows: [Row])] {
+        visibleRows.reduce(into: []) { out, row in
+            if out.last?.addon.id == row.addon.id { out[out.count - 1].rows.append(row) }
+            else { out.append((row.addon, [row])) }
+        }
+    }
+
     func load(_ request: StreamRequest) async {
         rows = []
         failedAddons = []
         let addons = AppSettings.shared.addons
+        addonOrder = addons.map(\.id)
         loadingCount = addons.count
         let client = StremioAddonClient(session: .addon)
 
@@ -60,7 +73,8 @@ final class StreamPickerModel {
                     continue
                 }
                 rows.append(contentsOf: streams.compactMap { stream in
-                    guard stream.httpURL != nil else { return nil }   // debrid-resolved only
+                    // debrid-resolved media only: no P2P results, no addon actions
+                    guard stream.httpURL != nil, !stream.isAction else { return nil }
                     return Row(addon: addon, stream: stream,
                                meta: StreamResultParser.parse(stream))
                 })
@@ -175,30 +189,14 @@ final class StreamPickerModel {
         return true
     }
 
+    /// Addon order first (the first addon in Settings wins; later ones are
+    /// the fallback), then cached / resolution / size within each addon.
     private func sortRows() {
-        let addonOrder = AppSettings.shared.addons.map(\.id)
-        func cachedRank(_ cached: Bool?) -> Int {
-            switch cached { case .some(true): 0; case .none: 1; case .some(false): 2 }
-        }
-        func resolutionRank(_ resolution: String?) -> Int {
-            switch resolution {
-            case "2160p"?: 0; case "1080p"?: 1; case "720p"?: 2; case "480p"?: 3; default: 4
-            }
+        func key(_ row: Row) -> (Int, Int, Int, Int64) {
+            row.meta.sortKey(addonIndex: addonOrder.firstIndex(of: row.addon.id) ?? .max)
         }
         rows.sort { a, b in
-            if cachedRank(a.meta.cached) != cachedRank(b.meta.cached) {
-                return cachedRank(a.meta.cached) < cachedRank(b.meta.cached)
-            }
-            if resolutionRank(a.meta.resolution) != resolutionRank(b.meta.resolution) {
-                return resolutionRank(a.meta.resolution) < resolutionRank(b.meta.resolution)
-            }
-            if (a.meta.sizeBytes ?? 0) != (b.meta.sizeBytes ?? 0) {
-                return (a.meta.sizeBytes ?? 0) > (b.meta.sizeBytes ?? 0)
-            }
-            if a.addon.id != b.addon.id {
-                return (addonOrder.firstIndex(of: a.addon.id) ?? .max)
-                     < (addonOrder.firstIndex(of: b.addon.id) ?? .max)
-            }
+            if key(a) != key(b) { return key(a) < key(b) }
             // Stable final tie-break so incremental addon results don't
             // visibly shuffle equal-ranked rows while loading.
             return (a.stream.url ?? a.stream.displayText)
