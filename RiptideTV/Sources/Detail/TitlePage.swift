@@ -23,12 +23,13 @@ struct TitlePage: View {
             VStack(alignment: .leading, spacing: 30) {
                 header
                 buttons
-                if let error { Text(error).foregroundStyle(.red) }
+                if let error = error ?? TraktToggles.error(for: model.ref) { Text(error).foregroundStyle(.red) }
                 if model.ref.isShow { seasons; EpisodeList(rows: model.rows) { run($0, start: $1) } }
             }
             .padding(60)
         }
         .overlay { if busy { ProgressView().scaleEffect(2) } }
+        .task { await TraktToggles.loadMembership() }
         .task {
             await model.load()
             if openVersionsOnLoad { run(nil, forcePicker: true) }
@@ -88,6 +89,7 @@ struct TitlePage: View {
                 .buttonStyle(.borderedProminent)
             }
             Button("Other versions") { run(target, forcePicker: true) }
+            TraktToggles(ref: model.ref)
         }
         .disabled(busy)
     }
