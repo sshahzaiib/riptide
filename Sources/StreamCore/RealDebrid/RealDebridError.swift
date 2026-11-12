@@ -31,3 +31,22 @@ public enum RealDebridError: Error, Equatable, Sendable {
         }
     }
 }
+
+/// Without this, UI that shows `error.localizedDescription` prints
+/// "The operation couldn't be completed. (StreamCore.RealDebridError error 6.)".
+extension RealDebridError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .unauthorized: "Real-Debrid rejected the token. Check it in Settings."
+        case .rateLimited: "Real-Debrid is rate limiting requests. Try again in a moment."
+        case .infringingFile: "Real-Debrid has blocked this file. Try another version."
+        case .hosterUnavailable(let code): "The file host is unavailable right now (Real-Debrid code \(code))."
+        case .torrentFailed(let status): "Real-Debrid couldn't prepare this torrent (\(status))."
+        case .noDownloadableLinks: "Real-Debrid returned no playable links for this file."
+        case .timedOut: "Real-Debrid took too long to respond. Try again."
+        case .api(let code, let message): message.isEmpty ? "Real-Debrid error \(code)." : "Real-Debrid: \(message) (code \(code))."
+        case .http(let status): "Real-Debrid returned HTTP \(status)."
+        case .badResponse: "Real-Debrid sent a response Riptide couldn't read."
+        }
+    }
+}
