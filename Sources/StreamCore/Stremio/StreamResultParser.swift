@@ -14,6 +14,18 @@ public struct ParsedStreamMeta: Sendable, Equatable {
     }
 }
 
+extension ParsedStreamMeta {
+    /// Lower sorts first: the user's addon order, then cached > unknown >
+    /// uncached, then resolution, then larger files.
+    public func sortKey(addonIndex: Int) -> (Int, Int, Int, Int64) {
+        let cachedRank = switch cached { case .some(true): 0; case .none: 1; case .some(false): 2 }
+        let resolutionRank = switch resolution {
+        case "2160p"?: 0; case "1080p"?: 1; case "720p"?: 2; case "480p"?: 3; default: 4
+        }
+        return (addonIndex, cachedRank, resolutionRank, -(sizeBytes ?? 0))
+    }
+}
+
 /// Best-effort extraction from human-formatted addon text. The protocol is
 /// the stable contract; this text is not — unknown formats just yield nils
 /// and the UI falls back to the raw text.
@@ -38,9 +50,16 @@ public enum StreamResultParser {
             if let value = Double(digits) { sizeBytes = Int64(value * multiplier) }
         }
 
+        // Emoji variation selectors glue onto the symbol before them ("⬇️" is one
+        // Character), which hides the bare symbol from regex matching — drop them.
+        let plain = String(String.UnicodeScalarView(text.unicodeScalars.filter { $0 != "\u{FE0F}" }))
+
         // ponytail: heuristic markers — "download"/⏳ = uncached (Torrentio
-        // "[RD download]"), ⚡ or "[XX+]" (RD+/PM+/TB+/AD+) = cached.
-        if firstMatch(#"(?i)\bdownload\b"#, in: text) != nil || text.contains("⏳") {
+        // "[RD download]"), as is ⬇ inside a service tag (Comet "[RD⬇️]" — a
+        // bare ⬇ elsewhere is a peer/download count in other addons);
+        // ⚡ or "[XX+]" (RD+/PM+/TB+/AD+) = cached.
+        if firstMatch(#"(?i)\bdownload\b"#, in: text) != nil || text.contains("⏳")
+            || firstMatch("\\[[A-Za-z]{2,4}\u{2B07}", in: plain) != nil {
             cached = false
         } else if text.contains("⚡") || firstMatch(#"\[[A-Za-z]{2,4}\+\]"#, in: text) != nil {
             cached = true

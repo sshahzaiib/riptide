@@ -12,11 +12,16 @@ struct ServicesSection: View {
         } header: {
             Text("Services")
         } footer: {
-            Text("Change keys from Set up from another device")
+            Text("Select a service to change its key from another device")
         }
     }
 
+    /// Rows are links (to where keys are changed), not plain text: tvOS only
+    /// scrolls to what can take focus, so static rows at the top of the list
+    /// could not be scrolled back into view.
     private func row(_ name: String, _ value: String) -> some View {
-        LabeledContent(name, value: value.isEmpty ? "Not set" : "Set")
+        NavigationLink { PairingDestination() } label: {
+            LabeledContent(name, value: value.isEmpty ? "Not set" : "Set")
+        }
     }
 }

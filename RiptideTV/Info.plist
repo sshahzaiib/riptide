@@ -20,8 +20,13 @@
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Riptide hosts a one-time setup page on your local network so you can enter keys from a phone or laptop.</string>
+	<string>Riptide hosts a one-time setup page on your local network so you can enter keys from a phone or laptop. It also connects to stream addons you host on your network.</string>
 	<key>UIUserInterfaceStyle</key>
 	<string>Dark</string>
 </dict>

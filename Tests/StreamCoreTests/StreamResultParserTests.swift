@@ -69,4 +69,64 @@ final class StreamResultParserTests: XCTestCase {
         XCTAssertEqual(StreamResultParser.parse(stream(name: "RD download")).service, .realDebrid)
         XCTAssertEqual(StreamResultParser.parse(stream(name: "⚡ AD")).service, .allDebrid)
     }
+
+    // MARK: Comet (self-hosted) — shapes captured from a live instance
+
+    func testCometCached() {
+        let meta = StreamResultParser.parse(stream(
+            name: "[RD⚡] Comet 2160p",
+            description: "📄 The.Godfather.1972.2160p.REMUX.mkv\n💾 78.3 GB 🔎 Comet|StremThru",
+            videoSize: 84_122_195_722))
+        XCTAssertEqual(meta.cached, true)
+        XCTAssertEqual(meta.resolution, "2160p")
+        XCTAssertEqual(meta.sizeBytes, 84_122_195_722)
+        XCTAssertEqual(meta.service, .realDebrid)
+    }
+
+    func testCometUncachedDownArrow() {
+        let meta = StreamResultParser.parse(stream(name: "[AD⬇️] Comet 1080p"))
+        XCTAssertEqual(meta.cached, false)
+        XCTAssertEqual(meta.service, .allDebrid)
+    }
+
+    func testCometSyncEntryIsAnActionNotAStream() {
+        let sync = AddonStream(name: "[RD🔄] Comet Sync",
+                               title: nil, description: "Sync debrid account library now.",
+                               url: "http://192.168.1.2:8000/s/t/c/debrid-sync/0",
+                               infoHash: nil, behaviorHints: nil)
+        XCTAssertTrue(sync.isAction)
+        XCTAssertFalse(stream(name: "[RD⚡] Comet 2160p").isAction)
+    }
+
+    // MARK: Ordering — the user's addon order outranks quality
+
+    func testFirstAddonOutranksBetterStreamFromSecondAddon() {
+        let small = ParsedStreamMeta(resolution: "720p", sizeBytes: 1, cached: true)
+        let big = ParsedStreamMeta(resolution: "2160p", sizeBytes: 99, cached: true)
+        XCTAssertTrue(small.sortKey(addonIndex: 0) < big.sortKey(addonIndex: 1))
+    }
+
+    func testWithinAnAddonCachedThenResolutionThenSize() {
+        let cached720 = ParsedStreamMeta(resolution: "720p", cached: true)
+        let unknown4k = ParsedStreamMeta(resolution: "2160p", cached: nil)
+        let uncached4k = ParsedStreamMeta(resolution: "2160p", cached: false)
+        XCTAssertTrue(cached720.sortKey(addonIndex: 0) < unknown4k.sortKey(addonIndex: 0))
+        XCTAssertTrue(unknown4k.sortKey(addonIndex: 0) < uncached4k.sortKey(addonIndex: 0))
+        let big = ParsedStreamMeta(resolution: "1080p", sizeBytes: 9, cached: true)
+        let little = ParsedStreamMeta(resolution: "1080p", sizeBytes: 2, cached: true)
+        XCTAssertTrue(big.sortKey(addonIndex: 0) < little.sortKey(addonIndex: 0))
+        XCTAssertTrue(big.sortKey(addonIndex: 0) < cached720.sortKey(addonIndex: 0))
+    }
+
+    func testActionDetectedByURLAlone() {
+        let sync = AddonStream(name: "Sync library", title: nil, description: nil,
+                               url: "http://host/s/t/c/debrid-sync/1", infoHash: nil, behaviorHints: nil)
+        XCTAssertTrue(sync.isAction)
+    }
+
+    func testDownArrowAsPeerCountDoesNotMeanUncached() {
+        let meta = StreamResultParser.parse(stream(
+            name: "[RD+] MediaFusion 1080p", description: "Movie.2023.1080p\n👤 20 ⬇️ 5 💾 2 GB"))
+        XCTAssertEqual(meta.cached, true)
+    }
 }

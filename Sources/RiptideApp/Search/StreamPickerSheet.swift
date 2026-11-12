@@ -120,9 +120,15 @@ struct StreamPickerSheet: View {
                 Button("Retry") { Task { await model.load(request) } }
             }
         } else {
-            List(model.visibleRows) { row in
-                Button { select(row) } label: { rowView(row) }
-                    .buttonStyle(.plain)
+            List {
+                ForEach(model.sections, id: \.addon.id) { section in
+                    Section(section.addon.name) {
+                        ForEach(section.rows) { row in
+                            Button { select(row) } label: { rowView(row) }
+                                .buttonStyle(.plain)
+                        }
+                    }
+                }
             }
             .listStyle(.inset)
             .safeAreaInset(edge: .bottom) {

@@ -31,8 +31,12 @@ struct VersionPicker: View {
                         }
                     }
                 }
-                ForEach(model.rows) { row in
-                    Button { select(row) } label: { rowView(row) }
+                ForEach(model.sections, id: \.addon.id) { section in
+                    Section(section.addon.name) {
+                        ForEach(section.rows) { row in
+                            Button { select(row) } label: { rowView(row) }
+                        }
+                    }
                 }
                 if model.loadingCount > 0 { ProgressView() }
                 else if libraryItems.isEmpty && model.rows.isEmpty {
@@ -54,8 +58,6 @@ struct VersionPicker: View {
                     .compactMap { $0 }.joined(separator: " · ")).bold()
                 if row.meta.cached == true { Image(systemName: "checkmark.circle.fill") }
                 if row.meta.cached == false { Text("NOT CACHED").font(.caption2) }
-                Spacer()
-                Text(row.addon.name).font(.caption).foregroundStyle(.secondary)
             }
             Text(row.stream.displayText).font(.caption).foregroundStyle(.secondary).lineLimit(2)
         }

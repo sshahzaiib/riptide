@@ -23,6 +23,7 @@ public enum PairingPage {
             rows += "<label for=\"\(name)\">\(esc(f.label))</label>\n"
             if f.name == "addonURLs" {
                 rows += "<textarea id=\"\(name)\" name=\"\(name)\" rows=\"4\" placeholder=\"One manifest URL per line\"></textarea>\n"
+                rows += "<p class=\"hint\">Order matters: Play uses the first addon that has a stream, and the others are the fallback. New addons are added to the end of the list. Reorder them on the TV in Settings, under Addons.</p>\n"
             } else {
                 rows += "<input id=\"\(name)\" name=\"\(name)\" type=\"text\" autocapitalize=\"off\" autocorrect=\"off\" spellcheck=\"false\" placeholder=\"\(f.isSet ? "Saved - leave blank to keep" : "Not set")\">\n"
             }
@@ -41,7 +42,7 @@ public enum PairingPage {
         label{display:block;margin:16px 0 4px;font-weight:600}
         input[type=text],textarea{width:100%;box-sizing:border-box;font-size:17px;padding:12px;border:1px solid #888;border-radius:8px}
         .clear label{display:inline;font-weight:400}
-        .result{margin:6px 0 0;color:#555}
+        .result,.hint{margin:6px 0 0;color:#555}
         button{width:100%;margin-top:24px;padding:14px;font-size:18px;border-radius:8px;border:0;background:#0a84ff;color:#fff}
         </style></head><body>
         <h1>Riptide setup</h1>
