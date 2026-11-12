@@ -44,6 +44,7 @@ struct MoreSheet: View {
                     }
                 }
             }
+            .padding(.horizontal, 40).scrollClipDisabled()   // the focused row grows past the list; give it room and let it draw
             .navigationTitle("More")
         }
     }

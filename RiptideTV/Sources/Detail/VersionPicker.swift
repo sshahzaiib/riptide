@@ -39,6 +39,7 @@ struct VersionPicker: View {
                     Text("No streams found").foregroundStyle(.secondary)
                 }
             }
+            .padding(.horizontal, 40).scrollClipDisabled()   // the focused row grows past the list; give it room and let it draw
         }
         .disabled(picking)
         .onDisappear { pickTask?.cancel() }
