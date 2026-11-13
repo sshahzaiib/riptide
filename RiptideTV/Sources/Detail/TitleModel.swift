@@ -81,6 +81,14 @@ final class TitleModel {
         }
     }
 
+    /// Trakt's next episode for a show we don't own. Local watch states only
+    /// cover what was played on this device, so without this a show continued
+    /// from another device would start at S1E1.
+    private var upNext: UpNextItem? {
+        guard showModel == nil, let id = ref.tmdbID else { return nil }
+        return UpNextModel.shared.entries.first { $0.item.isShow && $0.item.tmdbID == id }?.item
+    }
+
     /// The row the show-level Play button starts: resume/next-up for owned shows.
     var playTarget: EpisodeRow? {
         if let key = showModel?.selected?.itemKey,
@@ -88,6 +96,9 @@ final class TitleModel {
         if showModel == nil {
             let resumable = rows.compactMap { r in resumeState(for: r).map { (r, $0.lastWatchedAt) } }
             if let hit = resumable.max(by: { $0.1 < $1.1 }) { return hit.0 }
+            if let next = upNext, let hit = rows.first(where: { $0.season == next.season && $0.number == next.number }) {
+                return hit
+            }
             return rows.first { !rowFinished($0) } ?? rows.first
         }
         return rows.first
@@ -111,7 +122,7 @@ final class TitleModel {
                 seasonNumbers = showModel.visibleSeasonNumbers
                 if let s = showModel.selected?.season { season = s }
             }
-            if showModel == nil, let s = await remoteResumeSeason(id: id) { season = s }
+            if showModel == nil, let s = await remoteResumeSeason(id: id) ?? upNext?.season { season = s }
             if !seasonNumbers.contains(season) {
                 season = seasonNumbers.first { $0 > 0 } ?? seasonNumbers.first ?? 1
             }

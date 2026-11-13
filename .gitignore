@@ -7,3 +7,4 @@ docs/superpowers/
 .superpowers/
 RiptideTV/RiptideTV.xcodeproj
 RiptideTV/build/
+RiptideTV/build-device/

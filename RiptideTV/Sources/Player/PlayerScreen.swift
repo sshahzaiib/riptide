@@ -58,6 +58,8 @@ struct PlayerScreen: View {
             }
             if syncing {
                 SubSyncOverlay(model: model) { syncing = false; showControls() }
+            } else if let sheet {
+                panel(sheet)
             } else if controlsVisible {
                 ControlsOverlay(model: model, item: item,
                                 hasPrev: prevEpisode != nil, hasNext: nextEpisode != nil,
@@ -90,13 +92,10 @@ struct PlayerScreen: View {
             Button("Start over") { startAt = .some(nil) }
         }
         .onPlayPauseCommand { model.togglePause(); showControls() }
-        .onExitCommand { if syncing { return }; controlsVisible ? hide() : close() }
-        .sheet(item: $sheet) { s in
-            switch s {
-            case .audio: TrackPicker(kind: .audio, model: model, item: item)
-            case .subtitles: TrackPicker(kind: .subtitles, model: model, item: item, onSync: { startSync() })
-            case .more: MoreSheet(model: model)
-            }
+        .onExitCommand {
+            if syncing { return }
+            if sheet != nil { closePanel(); return }
+            controlsVisible ? hide() : close()
         }
         .onChange(of: model.ended) { _, ended in
             guard ended else { return }
@@ -114,9 +113,27 @@ struct PlayerScreen: View {
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
             hideTask?.cancel()
-            if sheet == nil { shutdownOnce() }   // a sheet presented from here must not kill mpv
+            shutdownOnce()
         }
     }
+
+    /// Track and options lists sit beside the video. A tvOS sheet covers the
+    /// whole screen and takes the player out of view while it is open.
+    private func panel(_ s: Sheet) -> some View {
+        Group {
+            switch s {
+            case .audio: TrackPicker(kind: .audio, model: model, item: item, onClose: closePanel)
+            case .subtitles: TrackPicker(kind: .subtitles, model: model, item: item, onSync: { startSync() }, onClose: closePanel)
+            case .more: MoreSheet(model: model, onClose: closePanel)
+            }
+        }
+        .frame(width: 760)
+        .background(.black.opacity(0.8))
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .ignoresSafeArea()
+    }
+
+    private func closePanel() { sheet = nil; showControls() }
 
     private func startSync() { sheet = nil; hideTask?.cancel(); controlsVisible = false; syncing = true }
 
