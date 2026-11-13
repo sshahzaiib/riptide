@@ -3,7 +3,7 @@ import SwiftUI
 struct MoreSheet: View {
     static let speeds: [Double] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
     let model: PlayerModel
-    @Environment(\.dismiss) private var dismiss
+    var onClose: () -> Void = {}
     @AppStorage(SubtitleSize.storageKey) private var subSize = SubtitleSize.default.rawValue
 
     private var inIntro: Bool {
@@ -25,10 +25,10 @@ struct MoreSheet: View {
                 if inIntro || model.markers.creditsStart != nil {
                     Section("Chapters") {
                         if inIntro {
-                            Button("Skip intro") { model.skipIntro(); dismiss() }
+                            Button("Skip intro") { model.skipIntro(); onClose() }
                         }
                         if let credits = model.markers.creditsStart {
-                            Button("Skip to credits") { model.seek(to: credits); dismiss() }
+                            Button("Skip to credits") { model.seek(to: credits); onClose() }
                         }
                     }
                 }
@@ -44,7 +44,7 @@ struct MoreSheet: View {
                     }
                 }
             }
-            .padding(.horizontal, 40).scrollClipDisabled()   // the focused row grows past the list; give it room and let it draw
+            .padding(.horizontal, 20)   // the focused row grows past the list; give it room and let it draw
             .navigationTitle("More")
         }
     }

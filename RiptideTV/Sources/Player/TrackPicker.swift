@@ -7,7 +7,8 @@ struct TrackPicker: View {
     let model: PlayerModel
     let item: PlayItem
     var onSync: () -> Void = {}
-    @Environment(\.dismiss) private var dismiss
+    /// Shown as a panel over the video, not a sheet, so closing is the host's job.
+    var onClose: () -> Void = {}
 
     private var tracks: [MPVTrack] { kind == .audio ? model.audioTracks : model.subTracks }
     private var canSearch: Bool { !AppSettings.shared.openSubsKey.isEmpty }
@@ -31,17 +32,17 @@ struct TrackPicker: View {
                 }
                 if kind == .subtitles && canSearch {
                     NavigationLink("Search OpenSubtitles…") {
-                        SubtitleSearchView(model: model, item: item) { dismiss() }
+                        SubtitleSearchView(model: model, item: item) { onClose() }
                     }
                 }
             }
-            .padding(.horizontal, 40).scrollClipDisabled()   // the focused row grows past the list; give it room and let it draw
+            .padding(.horizontal, 20)   // the focused row grows past the list; give it room and let it draw
             .navigationTitle(kind == .audio ? "Audio" : "Subtitles")
         }
     }
 
     private func row(_ title: String, checked: Bool, _ action: @escaping () -> Void) -> some View {
-        Button { action(); dismiss() } label: {
+        Button { action(); onClose() } label: {
             HStack { Text(title); Spacer(); if checked { Image(systemName: "checkmark") } }
         }
     }
